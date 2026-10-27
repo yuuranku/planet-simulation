@@ -1,0 +1,4 @@
+#globe-place-labels{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:2}
+#globe-place-labels .place{position:absolute;left:0;top:0;white-space:nowrap;font:500 12px/1.2 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:#f4f7fa;text-shadow:0 1px 3px rgba(0,0,0,.85),0 0 2px rgba(0,0,0,.9)}
+#globe-place-labels .place.state{font-weight:700;font-size:13px;letter-spacing:2px;color:#fff3dc}
+#globe-place-labels .place.city::before{content:"";display:inline-block;width:6px;height:6px;margin-right:4px;border-radius:50%;background:#fff;border:1.5px solid #2b333a;vertical-align:1px}

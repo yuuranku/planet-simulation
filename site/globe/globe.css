@@ -1,0 +1,77 @@
+/* White map rail and flush control sidebar, matching the saved-world atlas. */
+*{box-sizing:border-box}
+body.globe-page{--globe-rail-width:72px;--globe-sidebar-width:320px;--globe-content-left:calc(var(--globe-rail-width) + var(--globe-sidebar-width));--map-ink:#202124;--map-muted:#70757a;--map-accent:#1a73e8;--map-panel:#fff;--map-field:#f1f3f4;--map-border:#e4e7e9;color-scheme:light;margin:0;height:100dvh;overflow:hidden;background:#111924;color:#202124;font:14px/1.5 Arial,"Microsoft YaHei","Planet Sans",sans-serif}
+body.globe-sidebar-collapsed{--globe-content-left:var(--globe-rail-width)}
+[hidden]{display:none!important}
+button,input,select{font:inherit}
+button,a,select{-webkit-tap-highlight-color:transparent}
+button{cursor:pointer}
+button:disabled{cursor:default;opacity:.45}
+.globe-icon-button,.globe-rail-item{border:0;background:transparent;color:#5f6368;text-decoration:none;display:flex;align-items:center;justify-content:center}
+.globe-icon-button{width:40px;height:40px;padding:9px;border-radius:50%;flex-shrink:0}
+.globe-icon-button:hover{background:#3c40430f}
+.globe-icon-button svg,.globe-rail-item svg{width:24px;height:24px;flex-shrink:0}
+.globe-rail{position:absolute;z-index:10;inset:0 auto 0 0;width:var(--globe-rail-width);display:flex;flex-direction:column;align-items:center;background:#f4fafb;border-right:1px solid #e4ecef}
+.globe-menu{margin:16px 0}
+.globe-rail-item{width:68px;min-height:70px;padding:10px 0;flex-direction:column;gap:8px;border-radius:12px;font-size:12px;line-height:16px;color:#405367}
+.globe-rail-item:hover{background:#e8f0f2}
+.globe-rail-item[aria-pressed="true"]{color:#1a73e8;background:#e8f0fe}
+.globe-reset{margin-top:auto;margin-bottom:12px}
+.globe-sidebar{position:absolute;z-index:9;inset:0 auto 0 var(--globe-rail-width);width:var(--globe-sidebar-width);overflow-y:auto;overscroll-behavior:contain;background:#fff;border-right:1px solid #dadce0;box-shadow:2px 0 5px #0002;scrollbar-width:thin}
+.globe-sidebar-heading{display:flex;align-items:flex-start;gap:12px;padding:24px 18px 20px 24px;border-bottom:1px solid #e8eaed}
+.globe-sidebar-heading>div{flex:1;min-width:0}
+.globe-sidebar-heading>.globe-icon-button{margin:-7px -5px 0 0}
+.eyebrow{margin:0 0 5px;color:#70757a;font-size:12px}
+.globe-sidebar h1{margin:0;font-size:22px;line-height:1.4;font-weight:500;overflow-wrap:anywhere}
+.globe-control-section{padding:20px 24px;border-bottom:1px solid #e8eaed}
+.globe-control-section h2{margin:0;font-size:15px;line-height:24px;font-weight:500}
+.section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.inventory{font-size:11px;line-height:18px;color:#70757a}
+.field{display:block;margin:16px 0;color:#5f6368;font-size:12px;font-weight:500}
+.field select{display:block;width:100%;max-width:100%;margin-top:7px;min-height:42px;padding:9px 30px 9px 12px;border:1px solid #dadce0;border-radius:6px;background:#fff;color:#202124;font-size:13px;font-weight:400;color-scheme:light}
+.globe-page select option,.globe-page select optgroup{background:#fff;color:#202124;color-scheme:light}
+.globe-page select option:disabled{color:#80868b}
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px;color:#3c4043;font-size:13px}
+.switch-row input{appearance:none;position:relative;flex:0 0 auto;margin:0;width:34px;height:20px;border:0;border-radius:20px;background:#dadce0;cursor:pointer}
+.switch-row input::before{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #0003;transition:transform 140ms ease}
+.switch-row input:checked{background:#1a73e8}
+.switch-row input:checked::before{transform:translateX(14px)}
+.switch-row input:disabled{opacity:.4;cursor:default}
+.globe-action{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:40px;padding:8px 16px;border:1px solid #dadce0;border-radius:20px;background:#fff;color:#1967d2;font-size:13px;font-weight:500}
+.globe-action:hover{background:#f4f8ff}
+.globe-action svg{width:22px;height:22px}
+.globe-action.primary{background:#1a73e8;border-color:#1a73e8;color:#fff;min-width:76px}
+.globe-action.primary:hover{background:#1765cc}
+.moon-overview{width:100%;margin-top:16px}
+.orbit-toggle{width:100%;margin:8px 0}
+.control-note{margin:3px 0 12px;color:#70757a;font-size:11px;line-height:1.7}
+.playback-row{display:flex;align-items:center;gap:14px;margin-top:18px}
+#globe-time{font-size:12px;color:#5f6368;font-variant-numeric:tabular-nums}
+.globe-gesture-note{padding:16px 24px;margin:0;color:#70757a;font-size:11px}
+#globe{position:absolute;inset:0 0 0 var(--globe-content-left);overflow:hidden;outline-offset:-3px}
+#globe canvas{display:block;width:100%;height:100%;touch-action:none}
+.globe-live-status:empty,.globe-selection:empty,#globe-region:empty{display:none}
+.globe-live-status:not(:empty),.globe-selection:not(:empty),#globe-region:not(:empty){margin:12px 24px;color:#5f6368;font-size:12px;line-height:1.6}
+#celestial-status:not(:empty){color:#925313}
+#celestial-labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+#celestial-labels span{position:absolute;left:0;top:0;pointer-events:auto;white-space:nowrap;font-size:11px;font-weight:500;color:#202124;background:rgb(255 255 255 / 94%);border:1px solid #dadce0;border-radius:5px;padding:3px 6px;box-shadow:0 1px 3px #0002}
+@media(max-width:700px){
+ body.globe-page{--globe-rail-width:0px;--globe-content-left:0px}
+ .globe-rail{inset:0 0 auto;width:100%;height:56px;flex-direction:row;justify-content:flex-start;gap:3px;padding:0 6px;border-right:0;border-bottom:1px solid #dadce0;background:#fff}
+ .globe-menu{margin:0 4px 0 0}
+ .globe-rail-item{flex:1;min-width:0;width:auto;min-height:52px;padding:5px 0;gap:3px;border-radius:8px;font-size:10px;line-height:13px}
+ .globe-rail-item svg{width:21px;height:21px}
+ .globe-reset{margin:0 0 0 auto}
+ #globe{inset:56px 0 0}
+ .globe-sidebar{inset:auto 0 0;width:100%;max-height:min(55dvh,460px);border:1px solid #dadce0;border-bottom:0;border-radius:16px 16px 0 0;box-shadow:0 -2px 10px #0002;padding-bottom:env(safe-area-inset-bottom)}
+ .globe-sidebar-heading{padding:17px 18px 15px 20px}
+ .globe-sidebar h1{font-size:20px}
+ .globe-control-section{padding:17px 20px}
+}
+@media(prefers-reduced-motion:reduce){.switch-row input::before{transition:none}}
+
+/* One display state covers projected map names and every celestial caption. */
+#globe.globe-labels-hidden #globe-place-labels,
+#globe.globe-labels-hidden #celestial-labels{display:none}
+
+.globe-note{padding:12px 24px 0;margin:0;color:#70757a;font-size:11px;line-height:1.7}

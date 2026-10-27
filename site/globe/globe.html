@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><link rel="icon" href="data:,"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>球体</title>
+
+<link rel="stylesheet" href="../fonts/fonts.css"><link rel="stylesheet" href="map-design.css"><link rel="stylesheet" href="globe.css"><link rel="stylesheet" href="globe-extra.css"></head>
+<body class="globe-page map-ui">
+<script data-map-loading="globe" src="map-loading.js"></script>
+<nav id="globe-rail" class="globe-rail" aria-label="地图工具">
+  <button id="globe-sidebar-toggle" class="globe-icon-button globe-menu" type="button" data-globe-sidebar-toggle aria-label="收起球面控制栏" aria-controls="globe-sidebar" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a id="atlas-link" class="globe-rail-item" href="#" aria-label="返回平面地图"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2zM9 3v16M15 5v16"/></svg><span>平面图</span></a>
+  <button class="globe-rail-item" type="button" data-globe-section="globe-layers-section" aria-controls="globe-sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 8 9-5 9 5-9 5zM3 12l9 5 9-5M3 16l9 5 9-5"/></svg><span>图层</span></button>
+  <button class="globe-rail-item" type="button" data-globe-section="celestial-settings" aria-controls="globe-sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="5" transform="rotate(-35 12 12)"/></svg><span>天体</span></button>
+  <button id="globe-reset" class="globe-rail-item globe-reset" type="button" aria-label="复位球面视角"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg><span>复位</span></button>
+</nav>
+<aside id="globe-sidebar" class="globe-sidebar" aria-labelledby="globe-world-name">
+  <header class="globe-sidebar-heading"><div><p class="eyebrow">世界球面</p><h1 id="globe-world-name" data-name-id="world:main" tabindex="-1">星球</h1></div><button class="globe-icon-button" type="button" data-globe-sidebar-close aria-label="收起球面控制栏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>
+  <div id="globe-status" class="globe-live-status" role="status"></div>
+  <div id="globe-coordinates" class="globe-selection" aria-live="polite"></div>
+  <div id="celestial-status" class="globe-live-status" role="status"></div>
+  <section id="globe-layers-section" class="globe-control-section" aria-labelledby="globe-layers-heading">
+    <h2 id="globe-layers-heading" tabindex="-1">地图图层</h2>
+    <label class="field" for="globe-theme">专题着色<select id="globe-theme" aria-label="球体专题"><option value="terrain">地形</option></select></label>
+    <button id="globe-labels-toggle" class="globe-action" type="button" aria-pressed="true">隐藏标签</button>
+    <label class="switch-row" for="globe-graticule"><span>经纬网</span><input type="checkbox" id="globe-graticule"></label>
+  </section>
+  
+<section id="celestial-settings" class="globe-control-section" aria-labelledby="celestial-heading">
+  <div class="section-heading"><h2 id="celestial-heading" tabindex="-1">天体与时间</h2><span class="inventory"></span></div>
+  <button id="globe-show-moons" class="globe-action moon-overview" type="button" aria-describedby="globe-moons-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="5" transform="rotate(-35 12 12)"/></svg><span>卫星总览</span></button>
+  <p id="globe-moons-note" class="control-note">查看全部卫星及其轨道。</p>
+  <div id="celestial-controls">
+    <div class="playback-row"><button id="globe-play" class="globe-action primary" type="button" aria-pressed="true">暂停</button><output id="globe-time" aria-live="off"></output></div>
+    <label class="field" for="globe-speed">时间流速<select id="globe-speed"><option value="0.25">15 分钟 / 秒</option><option value="1">1 小时 / 秒</option><option value="24">1 日 / 秒</option><option value="168">7 日 / 秒</option></select></label>
+    <label class="switch-row" for="globe-day-night"><span>昼夜光照</span><input id="globe-day-night" type="checkbox" checked></label>
+    <button id="globe-orbits" class="globe-action orbit-toggle" type="button" aria-pressed="true">隐藏轨道</button>
+    
+    <label class="field" for="globe-scale">天体比例<select id="globe-scale"><option value="schematic">压缩示意</option><option value="physical">主世界与卫星真比例</option></select></label>
+    <p id="celestial-scale-note" class="control-note"></p>
+    <label class="field" for="globe-focus">取景<select id="globe-focus"><option value="world">主世界近景</option><option value="moons">卫星总览</option><option value="system">恒星系统示意</option></select></label>
+  </div>
+</section>
+  <p class="globe-note">云层贴图：<a href="https://www.solarsystemscope.com/textures/" target="_blank" rel="noreferrer">Solar System Scope</a> · <a href="cloud-texture-license.txt" target="_blank" rel="noreferrer">CC BY 4.0 · 已缩放并转为灰度</a></p>
+  <p class="globe-gesture-note">拖动旋转 · 滚轮或双指缩放</p>
+</aside>
+<main id="globe" tabindex="0" aria-label="世界球体，可拖动旋转和缩放"></main>
+<script src="globe-sidebar.js"></script><script type="module" src="globe-bundle.js"></script></body></html>

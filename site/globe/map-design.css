@@ -1,0 +1,92 @@
+/* Shared map controls. All assets remain local, including the system font. */
+.world-parameters { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--map-border); font-size: 13px; }
+.world-parameters h3 { margin: 0 0 12px; font-size: 15px; font-weight: 500; }
+.world-parameters dl { margin: 0; }
+.world-parameters dl > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; padding: 6px 0; }
+.world-parameters dt { color: var(--map-muted); }
+.world-parameters dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.world-parameters p { color: var(--map-muted); font-size: 12px; line-height: 1.7; }
+.world-info-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.world-info-actions a, .world-info-actions button { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 14px; border: 1px solid var(--map-border); border-radius: 20px; color: var(--map-accent); background: #fff; font: inherit; text-decoration: none; cursor: pointer; }
+.world-info-actions a:hover, .world-info-actions button:hover { background: var(--map-highlight); }
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Planet Sans", sans-serif;
+  font-synthesis: none;
+  --map-ink: #1d1d1f;
+  --map-muted: #606773;
+  --map-accent: #007aff;
+  --map-panel: rgb(250 251 253 / 94%);
+  --map-field: rgb(118 118 128 / 9%);
+  --map-border: rgb(60 60 67 / 13%);
+  --map-highlight: rgb(0 122 255 / 9%);
+  --map-shadow: 0 10px 32px rgb(22 39 58 / 13%), 0 1px 4px rgb(22 39 58 / 8%);
+  --map-radius: 20px;
+  --map-ease: cubic-bezier(.2,.7,.2,1);
+}
+.dark-map {
+  color-scheme: dark;
+  --map-ink: #f5f5f7;
+  --map-muted: #c0c4cd;
+  --map-accent: #64aaff;
+  --map-panel: rgb(35 41 53 / 94%);
+  --map-field: rgb(180 190 210 / 12%);
+  --map-border: rgb(220 230 250 / 16%);
+  --map-highlight: rgb(100 170 255 / 15%);
+  --map-shadow: 0 10px 32px rgb(0 0 0 / 23%), 0 1px 4px rgb(0 0 0 / 14%);
+}
+/* Flat atlas shell adapted from the supplied Google Maps clone. Keep these
+   tokens on its body so the globe and generator studio retain their themes. */
+body.map-ui:has(#atlas-rail) {
+  --atlas-rail-width: 72px;
+  --atlas-search-width: 376px;
+  --atlas-panel-width: 392px;
+  --map-ink: #202124;
+  --map-muted: #70757a;
+  --map-accent: #1a73e8;
+  --map-panel: #fff;
+  --map-field: #f1f3f4;
+  --map-border: #e4e7e9;
+  --map-highlight: #e8f0fe;
+  --map-shadow: 0 1px 4px #0003;
+  --map-radius: 16px;
+  font-family: Arial, "Microsoft YaHei", "Planet Sans", sans-serif;
+  font-size: 14px;
+}
+.map-glass {
+  background: var(--map-panel);
+  color: var(--map-ink);
+  border: 1px solid var(--map-border);
+  border-radius: var(--map-radius);
+  box-shadow: var(--map-shadow);
+}
+@supports (backdrop-filter: blur(8px)) {
+  .map-glass { backdrop-filter: blur(8px); }
+}
+.map-ui button, .map-ui input, .map-ui select { font: inherit; }
+.map-ui button, .map-ui a, .map-ui input, .map-ui select { -webkit-tap-highlight-color: transparent; }
+.map-ui :is(button, a, input, select, summary):focus-visible {
+  outline: 3px solid var(--map-accent);
+  outline-offset: 3px;
+}
+.map-ui :is(button, select) { cursor: pointer; }
+.map-ui button:disabled { cursor: default; opacity: .45; }
+.map-ui :is(h1, h2, h3) { text-wrap: balance; }
+.map-ui output { font-variant-numeric: tabular-nums; }
+.map-ui .map-button { transition: background-color 160ms var(--map-ease), color 160ms var(--map-ease); }
+@media (prefers-reduced-motion: reduce) {
+  .map-ui *, .map-ui *::before, .map-ui *::after { scroll-behavior: auto; transition: none !important; animation: none !important; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root { --map-panel: #fafbfd; }
+  .dark-map { --map-panel: #232935; }
+  .map-glass { backdrop-filter: none; }
+}
+[data-name-id], [data-city-screen-label][data-feature-id]:not([data-feature-kind="elevation"]) { cursor: text;pointer-events:auto; }
+.atlas-name-dialog { border:1px solid var(--map-border);border-radius:var(--map-radius);background:var(--map-panel);color:var(--map-ink);box-shadow:var(--map-shadow);width:min(360px,calc(100vw - 32px));padding:22px; }
+.atlas-name-dialog::backdrop { background:#08111f66; }
+.atlas-name-dialog label { display:block;font-weight:600; }
+.atlas-name-dialog input { display:block;width:100%;margin-top:14px;font:inherit;padding:10px 12px;border:1px solid var(--map-border);border-radius:9px;background:var(--map-field);color:var(--map-ink); }
+.atlas-name-dialog form>div { display:flex;justify-content:flex-end;gap:10px;margin-top:18px; }
+.atlas-name-dialog .primary { background:var(--map-accent);color:#fff; }
+.atlas-name-dialog [role="status"] { font-size:12px;color:var(--map-muted);min-height:16px; }

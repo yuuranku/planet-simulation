@@ -1,0 +1,7 @@
+Sun model color map: NASA Visualization Technology Applications and Development (VTAD)
+Source page: https://science.nasa.gov/learn/heat/resource/sun-3d-model/
+Source: https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/s/Sun_1_1391000.glb?emrc=6adafea318592
+Source SHA256: a178f5c43c2c9a6ee6c011c315149a7ab5a2594fd5aa9119ee219625a18da1dd
+Usage policy: https://www.nasa.gov/nasa-brand-center/images-and-media/
+Changes: Original NASA Sun emissive RGB and UV, sampled without lighting through six 1024px cube faces and reprojected to 2048 x 1024 equirectangular sRGB; RGB JPEG encoding at 2048 x 1024, quality 94; no recoloring, generated detail or baked limb darkening.
+Visualization reference for a fictional star; not live observations or a radiometric scientific product.

@@ -1,0 +1,9 @@
+Third-party components included in the Android package:
+- AndroidX WebKit, Core, Lifecycle, VersionedParcelable, Collection and Annotation: Copyright The Android Open Source Project, Apache License 2.0.
+- Kotlin standard library: Copyright JetBrains s.r.o. and Kotlin Programming Language contributors, Apache License 2.0.
+- Three.js: see three-js-MIT.txt.
+- polygon-clipping: see polygon-clipping-MIT.txt. Its bundled splaytree uses splaytree-MIT.txt; bundled Microsoft code uses Apache-2.0.txt.
+- robust-predicates: see robust-predicates-Unlicense.txt.
+- Noto Sans SC: see site/fonts/OFL.txt.
+- Cloud texture: see site/globe/cloud-texture-license.txt.
+- Celestial assets and modifications: see site/globe/celestial/manifest.json and sun-color-LICENSE.txt.

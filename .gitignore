@@ -1,0 +1,16 @@
+# Build output and local state
+.gradle/
+build/
+dist/
+.local/
+__pycache__/
+*.py[cod]
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+*.pfx
+local.properties
+signing-password*
+node_modules/

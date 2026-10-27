@@ -1,0 +1,60 @@
+{
+  "generatorId": "7e73804e46a9881ee241bc87ea02dc5e21da984b09c22746670d7fd766a5f020",
+  "identity": {
+    "schema": "city-generator-components-v1",
+    "sourceCommit": "51bf8223f96ed0bd781f047d975d580d359ea1c5",
+    "sourceSha256": {
+      "city-detail.js": "922e662bf36efe85c8d08046c5dc0ddefb5f24993b25830ea42956245d7c42cc",
+      "city-site-entry.js": "2de357a5951ecef783d5bcf1b992274cd1053a7cd2a718a16bb6bb9a21859826",
+      "city-character-entry.js": "a96e59439efa3d0c75f4c6ee909872cc2f2c8c1c56e53ecbc96ba464ff88655b",
+      "city-naming.json": "ec035b1359b283bee66f9399df608c085c00178cb61ba9553c82ee6077c98204"
+    },
+    "dependencies": {
+      "esbuild": "0.25.12",
+      "flatbush": "4.6.2",
+      "polygon-clipping": "0.15.7",
+      "polyclip-ts": "0.16.8",
+      "bignumber.js": "9.3.1",
+      "splaytree-ts": "1.0.2"
+    }
+  },
+  "outputs": {
+    "city-site.js": {
+      "sha256": "9a8a379b5945fd160b55ce790dec967094ebde956226f9e115f3c55722a599a7",
+      "bytes": 396273
+    },
+    "city-character.js": {
+      "sha256": "e3a2a023e0d2723a6df24c5e6a0d01b1ae38bec29a6f4cc672151b2155026e96",
+      "bytes": 33633
+    },
+    "city-detail.js": {
+      "sha256": "80a4a8bd4707c8485a96b97e6bbc4c585ff3e98eab4db0cf095a79da7bde3dc8",
+      "bytes": 333582
+    },
+    "city-era.js": {
+      "sha256": "95ff9aaff5832a28ddeb08e3346a189f09f295720a7296a45cd95acd44f5d549",
+      "bytes": 21443
+    },
+    "city-style.js": {
+      "sha256": "da58fc87648d5b322543a0d6bfbdb422f638de7789e3fec041fa3b55968c7640",
+      "bytes": 21146
+    },
+    "city-worker.js": {
+      "sha256": "b5c48d75d751b71ac440df750043823b1119ead8406a5af38c2fb891e927fd4c",
+      "bytes": 686
+    },
+    "city-map.js": {
+      "sha256": "abbcc657da4b9c9f82f231ae4d96a3842eea74d5b2c24072ee440027bdf3db3e",
+      "bytes": 62859
+    }
+  },
+  "eraExtension": {
+    "version": "era-2",
+    "files": [
+      "city-era.js",
+      "city-style.js",
+      "city-worker.js"
+    ],
+    "note": "Era grammars; atlas style layer; natural river meanders; burgage towns; worker generation; spatial indexes"
+  }
+}

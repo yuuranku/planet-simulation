@@ -1,0 +1,44 @@
+[
+  {
+    "id": "settlement-0001",
+    "sourceId": "settlement-0001",
+    "kind": "city",
+    "name": "黎西",
+    "label": "华夏河畔城 · 18,958人"
+  },
+  {
+    "id": "settlement-0005",
+    "sourceId": "settlement-0005",
+    "kind": "city",
+    "name": "欧马法",
+    "label": "阿拉伯湖港城 · 12,326人"
+  },
+  {
+    "id": "settlement-0006",
+    "sourceId": "settlement-0006",
+    "kind": "city",
+    "name": "北陈",
+    "label": "东方王朝海港 · 28,358人"
+  },
+  {
+    "id": "settlement-0015",
+    "sourceId": "settlement-0015",
+    "kind": "city",
+    "name": "尼基维布斯",
+    "label": "地中海小城 · 2,949人"
+  },
+  {
+    "id": "settlement-0017",
+    "sourceId": "settlement-0017",
+    "kind": "city",
+    "name": "鲁登",
+    "label": "西日耳曼河镇 · 8,763人"
+  },
+  {
+    "id": "border-site-001",
+    "sourceId": "border-site-001",
+    "kind": "city",
+    "name": "藤泉",
+    "label": "日本边境要塞 · 98人"
+  }
+]

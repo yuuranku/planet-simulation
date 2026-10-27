@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="离线运行的城市地图生成器，包含地形、水系、街巷、建筑与港口。">
+  <title>城市生成器 · 便携版</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../fonts/fonts.css">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="assets/atlas-interaction.js"></script>
+  <script defer src="assets/city-era.js"></script>
+  <script defer src="assets/city-character.js"></script>
+  <script defer src="assets/city-detail.js"></script>
+  <script defer src="assets/city-site.js"></script>
+  <script defer src="assets/city-style.js"></script>
+  <script defer src="assets/city-layout-store.js"></script>
+  <script defer src="assets/city-map.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="page-header">
+    <div class="title"><span class="mark" aria-hidden="true">▦</span><div><h1>城市生成器</h1><p>离线便携版 · dev164 · 时代形制扩展</p></div></div>
+    <div class="file-actions" aria-label="城市文件">
+      <button id="import-city-button" type="button">导入城市输入</button><input id="import-city" type="file" accept=".json,application/json" hidden>
+      <button id="export-input" type="button" disabled>导出城市输入</button>
+      <button id="import-layout-button" type="button">导入布局</button><input id="import-layout" type="file" accept=".json,application/json" hidden>
+      <button id="export-json" type="button" disabled>保存布局 JSON</button>
+      <button id="export-svg" type="button" disabled>导出 SVG</button>
+    </div>
+  </header>
+  <main>
+    <section class="city-toolbar" aria-label="城市设置">
+      <div class="city-choice"><label for="city-select">示例与导入城市</label><select id="city-select" disabled><option>正在加载…</option></select></div>
+      <div class="city-choice era-choice"><label for="era-select">时代</label><select id="era-select" disabled>
+        <option value="input">按城市输入</option><option value="ancient">古典时代</option><option value="medieval">中世纪</option>
+        <option value="early-modern">近世</option><option value="preindustrial">前工业时代</option><option value="industrial">工业时代</option></select></div>
+      <div class="city-choice era-choice"><label for="culture-select">建筑文化</label><select id="culture-select" disabled><option value="input">按城市输入</option></select></div>
+      <div class="city-heading"><h2 id="city-name">城市地图</h2><p id="city-description">选择城市，查看它的街巷与周边。</p></div>
+      <div class="generation-actions"><div class="generation-buttons"><button id="random-city" type="button" disabled title="随机地理、时代、文化与布局种子">随机城市</button><button id="regenerate" class="primary" type="button" disabled>重新生成</button></div><span id="generation-hint">布局会自动保存在当前浏览器。</span></div>
+    </section>
+    <section id="city-map-section" aria-label="城市与周边地图">
+      <div id="city-map-viewport" tabindex="0" aria-label="城市地图，可拖动、缩放，也可用方向键平移">
+        <svg id="city-map-canvas" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="城市、地形、水系与农田"><g id="city-map-camera"><g id="city-fabric-layer"></g></g></svg>
+        <div class="city-map-extents" aria-label="地图范围"><button id="city-map-city" type="button" aria-pressed="true">城市</button><button id="city-map-region" type="button" aria-pressed="false">周边</button></div>
+        <div class="city-map-compass" aria-hidden="true">N<span>↑</span></div>
+        <output id="city-map-status" role="status" aria-live="polite"></output>
+        <nav class="city-map-tools" aria-label="地图缩放"><button id="city-map-zoom-in" type="button" aria-label="放大">＋</button><button id="city-map-zoom-out" type="button" aria-label="缩小">−</button><button id="city-map-reset" type="button" aria-label="复位">⌂</button></nav>
+        <div class="city-map-scale"><span id="city-scale-label"></span><i id="city-scale-rule"></i></div>
+      </div>
+      <footer class="map-footer"><div class="city-map-caption"><span><i class="city-key-building"></i>建筑</span><span><i class="city-key-water"></i>水系</span><span><i class="city-key-field"></i>农田</span><span><i class="city-key-rail"></i>铁路</span><span><i class="city-key-park"></i>公园</span></div><p>拖动平移 · 滚轮缩放 · 双指缩放</p></footer>
+    </section>
+    <dl id="city-stats" class="city-stats" aria-label="城市信息"><div><dt>人口</dt><dd id="population">—</dd></div><div><dt>建筑</dt><dd id="building-count">—</dd></div><div><dt>城市风格</dt><dd id="character">—</dd></div><div><dt>时代</dt><dd id="era">—</dd></div><div><dt>城市形制</dt><dd id="layout-grammar">—</dd></div><div><dt>布局种子</dt><dd id="seed">—</dd></div></dl>
+    <p class="save-note">“保存布局”保留当前完整地图；“城市输入”用于按同一地理条件重新生成。跨设备使用前，请先保存布局文件。</p>
+    <p id="app-status" class="app-status" role="status" aria-live="polite"></p>
+  </main>
+</body>
+</html>

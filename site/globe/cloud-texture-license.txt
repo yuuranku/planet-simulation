@@ -1,0 +1,5 @@
+Earth cloud texture by Solar System Scope, CC BY 4.0. Resized to 4096 x 2048 and converted to a grayscale cloud opacity map.
+Source: https://www.solarsystemscope.com/textures/
+Original image: https://www.solarsystemscope.com/textures/download/8k_earth_clouds.jpg
+License: https://creativecommons.org/licenses/by/4.0/
+No endorsement by Solar System Scope is implied.

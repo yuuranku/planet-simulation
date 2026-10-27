@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application' version '8.7.3'
+}
+
+android {
+    namespace 'cn.planet.world'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+
+    defaultConfig {
+        applicationId 'cn.planet.world'
+        minSdk 26
+        targetSdk 35
+        versionCode 2
+        versionName '1.0.1'
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            java.srcDirs = ['src']
+            assets.srcDirs = ['assets', layout.buildDirectory.dir('generated/site-assets')]
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
+
+// WebViewAssetLoader expects the shared site under assets/site in the APK.
+def copySite = tasks.register('copySite', Sync) {
+    from '../site'
+    into layout.buildDirectory.dir('generated/site-assets/site')
+    doFirst {
+        if (!file('../site/index.html').isFile()) {
+            throw new GradleException('Shared site/index.html is missing')
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn copySite }

@@ -1,0 +1,562 @@
+{
+  "schema": "world-atlas-celestial-assets-v5",
+  "projection": "equirectangular",
+  "textures": {
+    "rock-1": {
+      "color": {
+        "filename": "lroc_color_2k.jpg",
+        "width": 2048,
+        "height": 1024,
+        "format": "jpeg",
+        "sha256": "f7130a1822681fa7512d7dcfd40db8c10b9ba4f06777910348698260ed7a2170",
+        "bytes": 457942,
+        "provenance": {
+          "kind": "nasa-svs",
+          "pageUrl": "https://svs.gsfc.nasa.gov/4720/",
+          "url": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_2k.jpg",
+          "credit": "NASA's Scientific Visualization Studio",
+          "description": "2025 CGI color map from LRO/LROC Hapke-normalized WAC mosaic; not measured terrain of a fictional body."
+        }
+      },
+      "height": {
+        "filename": "ldem_3_8bit.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "6d93f887e7d8bedfe35ab89ba785e5e3ca12381bd092a5e6abe2c707dda8bb98",
+        "bytes": 111552,
+        "provenance": {
+          "kind": "nasa-svs",
+          "pageUrl": "https://svs.gsfc.nasa.gov/4720/",
+          "url": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/ldem_3_8bit.jpg",
+          "credit": "NASA's Scientific Visualization Studio",
+          "description": "8-bit CGI elevation reference from LRO/LOLA; separate height data, not inferred from albedo."
+        }
+      }
+    },
+    "ice-1": {
+      "color": {
+        "filename": "PIA18435-2k.jpg",
+        "width": 2048,
+        "height": 1024,
+        "format": "jpeg",
+        "sha256": "518068413790d403b2a55cd7e23acf39bbbcb839d11064033c156eacad0a5d77",
+        "bytes": 579172,
+        "provenance": {
+          "kind": "nasa-photojournal",
+          "pageUrl": "https://science.nasa.gov/photojournal/color-maps-of-enceladus-2014/",
+          "url": "https://assets.science.nasa.gov/dynamicimage/assets/science/psd/photojournal/pia/pia18/pia18435/PIA18435.jpg?w=2048&h=1024&fit=clip&crop=faces%2Cfocalpoint",
+          "credit": "NASA/JPL-Caltech/Space Science Institute/Lunar and Planetary Institute",
+          "description": "Cassini PIA18435 Enceladus cylindrical mosaic, photometrically corrected UV/IR enhanced color; color only, not natural color or elevation."
+        }
+      }
+    },
+    "barren-1": {
+      "color": {
+        "filename": "barren-1-color.png",
+        "width": 512,
+        "height": 256,
+        "format": "png",
+        "sha256": "c7bf9869916945f8c05737334f4d02b45d136c3c904e3f6c0c084e047f43ba3d",
+        "bytes": 71086,
+        "provenance": {
+          "kind": "procedural",
+          "description": "Existing authored static procedural texture, preserved without re-synthesis during the NASA import."
+        }
+      },
+      "height": {
+        "filename": "barren-1-height.png",
+        "width": 512,
+        "height": 256,
+        "format": "png",
+        "sha256": "16ce64b06fa9c7343ca7aec4a6452fbbaa7e9df07f2ab7972c03952661c5b9be",
+        "bytes": 38977,
+        "provenance": {
+          "kind": "procedural",
+          "description": "Existing authored static procedural texture, preserved without re-synthesis during the NASA import."
+        }
+      }
+    },
+    "barren-2": {
+      "color": {
+        "filename": "barren-2-color.png",
+        "width": 512,
+        "height": 256,
+        "format": "png",
+        "sha256": "78faabb08c444d1e4a95d239becf749c71bd5fdb4e776d4d68d109b55b9d74be",
+        "bytes": 73382,
+        "provenance": {
+          "kind": "procedural",
+          "description": "Existing authored static procedural texture, preserved without re-synthesis during the NASA import."
+        }
+      },
+      "height": {
+        "filename": "barren-2-height.png",
+        "width": 512,
+        "height": 256,
+        "format": "png",
+        "sha256": "d6c4464bd4bca398605f1d2b4e766972924fc8216a74ca6c995143c01e57fcc7",
+        "bytes": 38430,
+        "provenance": {
+          "kind": "procedural",
+          "description": "Existing authored static procedural texture, preserved without re-synthesis during the NASA import."
+        }
+      }
+    },
+    "io": {
+      "color": {
+        "filename": "satellite-io-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "8c7ba810af55e4e32badbd6ef20d69616a59ee9f6a4e756816f4011fb4f8d706",
+        "bytes": 136699,
+        "provenance": {
+          "kind": "nasa-3d-resources",
+          "pageUrl": "https://science.nasa.gov/3d-resources/jupiter-io-b/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/image/jupiter---io-(b)/Jupiter%20-%20Io%20(B).jpg",
+          "sourceSha256": "79239daa0ac6438d02a7b536f3eb8d044098b8cf33c8f2f91dbab4f5f054bfa7",
+          "credit": "USGS, JPL, & Caltech",
+          "license": "NASA/JPL image use guidelines",
+          "licenseUrl": "https://www.jpl.nasa.gov/jpl-image-use-policy/",
+          "description": "Io: Caltech/JPL/USGS map with color from a Galileo global mosaic. NASA-provided 3D model texture; color only, not measured elevation. Original image coverage and mosaic seams are retained.",
+          "transform": "Resized from 1440 x 720 to 1024 x 512; RGB JPEG quality 88, no recoloring or synthetic detail."
+        }
+      }
+    },
+    "europa": {
+      "color": {
+        "filename": "satellite-europa-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "fc3a09a85a772afe5121f9fe76ec09643ea6de52ca96058b594ed011f6946d8d",
+        "bytes": 110320,
+        "provenance": {
+          "kind": "nasa-3d-resources",
+          "pageUrl": "https://science.nasa.gov/3d-resources/jupiter-europa/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/image/jupiter---europa/Jupiter%20-%20Europa.jpg",
+          "sourceSha256": "50d01ca5c01352d1c507bb17fefd1c46ba11260305656250062c6cdac89c8ebf",
+          "credit": "USGS, JPL, & Caltech",
+          "license": "NASA/JPL image use guidelines",
+          "licenseUrl": "https://www.jpl.nasa.gov/jpl-image-use-policy/",
+          "description": "Europa: USGS global cylindrical mosaic from Voyager imagery. NASA-provided 3D model texture; color only, not measured elevation. Original image coverage and mosaic seams are retained.",
+          "transform": "Resized from 1440 x 720 to 1024 x 512; RGB JPEG quality 88, no recoloring or synthetic detail."
+        }
+      }
+    },
+    "ganymede": {
+      "color": {
+        "filename": "satellite-ganymede-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "13b6b49f70763fd878e3ccc766d2fb9cdae6b76e9dca2bc2f0d89749c7a7a43b",
+        "bytes": 147788,
+        "provenance": {
+          "kind": "nasa-3d-resources",
+          "pageUrl": "https://science.nasa.gov/3d-resources/jupiter-ganymede/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/image/jupiter---ganymede/Jupiter%20-%20Ganymede.jpg",
+          "sourceSha256": "1aa9d5a6f20e72230c13ce3d78592fc056e22f1e1ee39ea7acfa7e08d09fe173",
+          "credit": "USGS, JPL, & Caltech",
+          "license": "NASA/JPL image use guidelines",
+          "licenseUrl": "https://www.jpl.nasa.gov/jpl-image-use-policy/",
+          "description": "Ganymede: USGS global cylindrical mosaic from Voyager imagery. NASA-provided 3D model texture; color only, not measured elevation. Original image coverage and mosaic seams are retained.",
+          "transform": "Resized from 1440 x 720 to 1024 x 512; RGB JPEG quality 88, no recoloring or synthetic detail."
+        }
+      }
+    },
+    "callisto": {
+      "color": {
+        "filename": "satellite-callisto-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "0a7a393921d50e10e60c3b8bc653bda742bffc49b64980e7fde90ee209383684",
+        "bytes": 169898,
+        "provenance": {
+          "kind": "nasa-3d-resources",
+          "pageUrl": "https://science.nasa.gov/3d-resources/jupiter-callisto/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/image/jupiter---callisto/Jupiter%20-%20Callisto.jpg",
+          "sourceSha256": "b9f4fa5db94debabd12814853fd132db3449889646a490b6f95a897b2c47b121",
+          "credit": "USGS, JPL, & Caltech",
+          "license": "NASA/JPL image use guidelines",
+          "licenseUrl": "https://www.jpl.nasa.gov/jpl-image-use-policy/",
+          "description": "Callisto: USGS global cylindrical mosaic from Voyager imagery. NASA-provided 3D model texture; color only, not measured elevation. Original image coverage and mosaic seams are retained.",
+          "transform": "Resized from 1440 x 720 to 1024 x 512; RGB JPEG quality 88, no recoloring or synthetic detail."
+        }
+      }
+    }
+  },
+  "planetTextures": {
+    "rock-1": {
+      "color": {
+        "filename": "planet-rock-1-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "9943c3168186ed0f99a876fe89b253735360022193d483a9ffe71cea2d52d37b",
+        "bytes": 191706,
+        "provenance": {
+          "kind": "nasa-vtad-model-reference",
+          "referenceBody": "mercury",
+          "pageUrl": "https://science.nasa.gov/resource/mercury-3d-model/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/m/Mercury_1_4878.glb",
+          "sourceSha256": "0222fa976a5bb3ae3222eeddaaa7150656837a97c515f065eb855e0b1dd2ab94",
+          "credit": "NASA Visualization Technology Applications and Development (VTAD)",
+          "license": "NASA media usage guidelines",
+          "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "description": "Official NASA Mercury model base color as a visual reference for a fictional companion. This is a visualization texture, not a claim of complete measured or natural-color coverage.",
+          "preparedMapSHA256": "9662f843df57d131083373192dbbe9d07de880d0596f200624cb84acd554869b",
+          "transform": "Original NASA model UV sampled without lighting through six 1024px cube faces, reprojected to 2048 x 1024 equirectangular sRGB; no inferred height or new detail; RGB JPEG encoding at 1024 x 512, quality 92; no generated detail or height."
+        }
+      }
+    },
+    "rock-2": {
+      "color": {
+        "filename": "planet-rock-2-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "dc2ab50263f829c5d2f5c9f94b27e337bf49218832f140fe4f5db3e536ddf3f9",
+        "bytes": 196603,
+        "provenance": {
+          "kind": "nasa-3d-resources",
+          "referenceBody": "mars",
+          "pageUrl": "https://science.nasa.gov/3d-resources/mars/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/image/mars/Mars.jpg",
+          "sourceSha256": "12ec6bf02ebd42a246edc778cb2ce8c595b4d9f0892badf0bfff8abb2303c780",
+          "credit": "NASA/JPL/Caltech",
+          "license": "NASA media usage guidelines",
+          "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "description": "NASA Mars visualization color reference for a fictional companion; no measured elevation inferred from this image.",
+          "preparedMapSHA256": "0ea78ceb1ed8312911905a41d06b5b6176f9c49ff9515875c152af44efb73984",
+          "transform": "Original NASA-provided full 2:1 cylindrical model texture; RGB JPEG encoding at 1024 x 512, quality 92; no generated detail or height."
+        }
+      }
+    },
+    "rock-3": {
+      "color": {
+        "filename": "planet-rock-3-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "6c11d2ad398c7e92b8dc1aaf52d714ab368a9ce59942ab2db64e9c4dabe47788",
+        "bytes": 143642,
+        "provenance": {
+          "kind": "nasa-vtad-model-reference",
+          "referenceBody": "ceres",
+          "pageUrl": "https://science.nasa.gov/resource/ceres-3d-model/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/c/Ceres_1_1000.glb",
+          "sourceSha256": "c43ec43aa8fb90aa8cf30660c2f2853cfac408d38149d1dc470490f4f4aa9899",
+          "credit": "NASA Visualization Technology Applications and Development (VTAD)",
+          "license": "NASA media usage guidelines",
+          "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "description": "Official NASA Ceres model base color as a visual reference for a fictional companion. This is a visualization texture, not a claim of complete measured or natural-color coverage.",
+          "preparedMapSHA256": "fb0d0bcea77d265fec190ecc1901da67c1dbc2c250eb2a498d39c4347ee65b07",
+          "transform": "Original NASA model UV sampled without lighting through six 1024px cube faces, reprojected to 2048 x 1024 equirectangular sRGB; no inferred height or new detail; RGB JPEG encoding at 1024 x 512, quality 92; no generated detail or height."
+        }
+      }
+    },
+    "ice-1": {
+      "color": {
+        "filename": "planet-ice-1-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "a6aae7b6df37cd84872c5701443277bfc38cf325edca082c4b5b73df07407b15",
+        "bytes": 11005,
+        "provenance": {
+          "kind": "nasa-vtad-model-reference",
+          "referenceBody": "uranus",
+          "pageUrl": "https://science.nasa.gov/resource/uranus-3d-model/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/u/Uranus_1_51118.glb",
+          "sourceSha256": "9c56f96bbfa82d923479c3dd83a00c35238a36addcfbcc61916f1377fe586bd5",
+          "credit": "NASA Visualization Technology Applications and Development (VTAD)",
+          "license": "NASA media usage guidelines",
+          "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "description": "NASA Uranus visualization color reference for a fictional companion; no measured elevation inferred from this image.",
+          "preparedMapSHA256": "d0ec1f2444d9af16c58e8f6036e6ee5314c590116a28b791f30d99c3861e6093",
+          "transform": "Original NASA-provided full 2:1 cylindrical model texture; RGB JPEG encoding at 1024 x 512, quality 92; no generated detail or height."
+        }
+      }
+    },
+    "ice-2": {
+      "color": {
+        "filename": "planet-ice-2-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "24c664703e2f0ac5e5147953f3fa56db5dbdd6a2731074e367bbe223f0597033",
+        "bytes": 63640,
+        "provenance": {
+          "kind": "nasa-vtad-model-reference",
+          "referenceBody": "neptune",
+          "pageUrl": "https://science.nasa.gov/resource/neptune-3d-model/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/n/Neptune_1_49528.glb",
+          "sourceSha256": "2fc3af08d56ed429b9cc56b95d151102aa5807ea958e7cb8806a42e12a699ba8",
+          "credit": "NASA Visualization Technology Applications and Development (VTAD)",
+          "license": "NASA media usage guidelines",
+          "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "description": "NASA Neptune visualization color reference for a fictional companion; no measured elevation inferred from this image.",
+          "preparedMapSHA256": "a9938e90f29079a96043751b26cf8a56056d959dd179379c8ee51b3a426a126b",
+          "transform": "Original NASA-provided full 2:1 cylindrical model texture; RGB JPEG encoding at 1024 x 512, quality 92; no generated detail or height."
+        }
+      }
+    },
+    "barren-1": {
+      "color": {
+        "filename": "planet-barren-1-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "83926178b87fc75f3aa19a014f1fe622fb7300c6ce7932cc561d2541e6c87dad",
+        "bytes": 257062,
+        "provenance": {
+          "kind": "nasa-3d-resources",
+          "referenceBody": "venus",
+          "pageUrl": "https://science.nasa.gov/3d-resources/venus/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/cds/3d/resources/image/venus/Venus.jpg",
+          "sourceSha256": "e395bced59e95339efbdd002d4a0bbbf81fe323a6694f3a4039120560c80e789",
+          "credit": "NASA/JPL/Caltech",
+          "license": "NASA media usage guidelines",
+          "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "description": "NASA Venus visualization color reference for a fictional companion; no measured elevation inferred from this image. Magellan radar mosaic of the surface; radar appearance is not visible-light color or a view through clouds.",
+          "preparedMapSHA256": "65f5357fb393b5fa524491f6ea5a1c57ba26c0e49deec51dc7de3b31c264faf2",
+          "transform": "Original NASA-provided full 2:1 cylindrical model texture; RGB JPEG encoding at 1024 x 512, quality 92; no generated detail or height."
+        }
+      }
+    },
+    "barren-2": {
+      "color": {
+        "filename": "planet-barren-2-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "1bc1e00cbcca80ee13c0f0bf9598caed62c67e046bed899bf27d8a7a0ade7013",
+        "bytes": 107985,
+        "provenance": {
+          "kind": "nasa-vtad-model-reference",
+          "referenceBody": "pluto",
+          "pageUrl": "https://science.nasa.gov/resource/pluto-3d-model/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/p/l/Pluto_1_2374.glb",
+          "sourceSha256": "9915e6874ff7e7cd64faf8ef016ea16de6c8058417c42909efa099a88f2dd25b",
+          "credit": "NASA Visualization Technology Applications and Development (VTAD)",
+          "license": "NASA media usage guidelines",
+          "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "description": "Official NASA Pluto model base color as a visual reference for a fictional companion. This is a visualization texture, not a claim of complete measured or natural-color coverage.",
+          "preparedMapSHA256": "974145f128ccf018dfd9d6a8c1029580dc68f153e8bcc766dddc48dd0d392d10",
+          "transform": "Original NASA model UV sampled without lighting through six 1024px cube faces, reprojected to 2048 x 1024 equirectangular sRGB; no inferred height or new detail; RGB JPEG encoding at 1024 x 512, quality 92; no generated detail or height."
+        }
+      }
+    },
+    "gas-1": {
+      "color": {
+        "filename": "planet-gas-1-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "e477523bb0c7317cb1a7b00f545cb99b338da98ddb23d5dd6b9f578d77cef2b0",
+        "bytes": 152663,
+        "provenance": {
+          "kind": "nasa-vtad-model-reference",
+          "referenceBody": "jupiter",
+          "pageUrl": "https://science.nasa.gov/resource/jupiter-3d-model/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/j/Jupiter_1_142984.glb",
+          "sourceSha256": "8edc4e9b88b73ca1b125a258f0ecaef7fc6494a7cadda37704af459a119f4870",
+          "credit": "NASA Visualization Technology Applications and Development (VTAD)",
+          "license": "NASA media usage guidelines",
+          "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "description": "Official NASA Jupiter model base color as a visual reference for a fictional companion. This is a visualization texture, not a claim of complete measured or natural-color coverage.",
+          "preparedMapSHA256": "7af09e9dd7efa22b92d81bab8176b603827d45ce78b41b2ee13d7c88b6b52f04",
+          "transform": "Original NASA model UV sampled without lighting through six 1024px cube faces, reprojected to 2048 x 1024 equirectangular sRGB; no inferred height or new detail; RGB JPEG encoding at 1024 x 512, quality 92; no generated detail or height."
+        }
+      }
+    },
+    "gas-2": {
+      "color": {
+        "filename": "planet-gas-2-color.jpg",
+        "width": 1024,
+        "height": 512,
+        "format": "jpeg",
+        "sha256": "8668e92b244d83317e33ea2eab821afbca393d267b1da29f7596bb0c8a926e1c",
+        "bytes": 67337,
+        "provenance": {
+          "kind": "nasa-vtad-model-reference",
+          "referenceBody": "saturn",
+          "pageUrl": "https://science.nasa.gov/resource/saturn-3d-model/",
+          "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/s/Saturn_1_120536.glb",
+          "sourceSha256": "8dbfde533b13e938408d8aded1d1ce48a084806233f67775371d83013dba7d38",
+          "credit": "NASA Visualization Technology Applications and Development (VTAD)",
+          "license": "NASA media usage guidelines",
+          "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "description": "Official NASA Saturn model base color as a visual reference for a fictional companion. This is a visualization texture, not a claim of complete measured or natural-color coverage.",
+          "preparedMapSHA256": "6dfc89f56d0b67434be47b5ab9620fd5e20850c241673fc291081d7483d58d46",
+          "transform": "Original NASA model UV sampled without lighting through six 1024px cube faces, reprojected to 2048 x 1024 equirectangular sRGB; no inferred height or new detail; RGB JPEG encoding at 1024 x 512, quality 92; no generated detail or height."
+        }
+      }
+    }
+  },
+  "ring": {
+    "filename": "ring.png",
+    "width": 4096,
+    "height": 16,
+    "format": "png",
+    "sha256": "31640a7f028a8cb73fd61cd4f55780d30d7447f11776820606c217f76f2f4dd7",
+    "bytes": 7259,
+    "provenance": {
+      "kind": "nasa-cassini-photo-authored-opacity",
+      "referenceBody": "saturn",
+      "pageUrl": "https://science.nasa.gov/photojournal/a-full-sweep-of-saturns-rings/",
+      "url": "https://assets.science.nasa.gov/content/dam/science/psd/photojournal/pia/pia11/pia11142/PIA11142.jpg",
+      "sourceSha256": "b606f18d7a9a65320f6bc9fa023c0f506b45802141d9526e09c9fff823fc0d56",
+      "sourceImageSha256": "b606f18d7a9a65320f6bc9fa023c0f506b45802141d9526e09c9fff823fc0d56",
+      "sourceBytes": 723009,
+      "sourceFilename": "tools/sources/PIA11142.jpg",
+      "sourceDimensions": [
+        12126,
+        1439
+      ],
+      "sourceAssetId": "PIA11142",
+      "profileRgbSha256": "daf37ba86806287ca0cf880f783abb6a49412c8f9755d8f2fb5981d30fc23f50",
+      "credit": "NASA/JPL/Space Science Institute; World Atlas authored visualization opacity",
+      "license": "NASA media usage guidelines",
+      "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "description": "Cassini natural-color mosaic radial appearance, not reflectance or a de-lit albedo map. Replacement alpha is an authored visualization, not measured transparency or recovered optical depth. Observed RGB contains the 2008 viewing and illumination conditions.",
+      "observation": {
+        "date": "2008-11-26",
+        "viewElevationDegrees": -10,
+        "phaseAngleDegrees": 28,
+        "reportedApproximateRadialKmPerPixel": 7,
+        "reportedApproximateSpanKm": 65700
+      },
+      "photoProfile": {
+        "schema": "world-atlas-ring-photo-profile-v2",
+        "cropBox": [
+          1090,
+          715,
+          11664,
+          724
+        ],
+        "coordinates": "Zero-based source pixels; right and bottom exclusive.",
+        "rows": "Mean of nine unannotated center rows, rounded to nearest uint8 RGB.",
+        "sampling": "Lanczos horizontal resample from 10574 native source columns to 4096; repeat the one radial row 16 times.",
+        "orientation": "Left to right, radially outward: C, B, Cassini division, A, F.",
+        "blackBorders": "Crop retains tiny dark fade margins; center nonblack C starts near x1110, F ends near x11642.",
+        "landmarks": {
+          "bOuterDropX": 8103,
+          "aFirstBandsX": 8478,
+          "enckeDarkGapX": [
+            10560,
+            10604
+          ],
+          "aOuterEdgeX": 11070
+        },
+        "uncertainty": "The mosaic bands curve with image row. Nine nearby rows limit lateral blur. Landmarks and normalization are visual registrations; the approximate published 7 km/pixel is not treated as exact radius calibration."
+      },
+      "radialMapping": {
+        "innerU": 0,
+        "outerU": 1,
+        "application": "Normalized photographic radial reference mapped onto each saved fictional ring. No Saturn radius or physical map resolution is changed."
+      },
+      "authoredOpacity": {
+        "factsUrl": "https://nssdc.gsfc.nasa.gov/planetary/factsheet/satringfact.html",
+        "factsUpdated": "2022-04-19",
+        "bands": [
+          {
+            "name": "C",
+            "innerKm": 74658,
+            "outerKm": 91975,
+            "sourcePixelRange": [
+              1110,
+              3910
+            ],
+            "publishedOpticalDepthRange": [
+              0.05,
+              0.35
+            ]
+          },
+          {
+            "name": "B",
+            "innerKm": 91975,
+            "outerKm": 117507,
+            "sourcePixelRange": [
+              3910,
+              8103
+            ],
+            "publishedOpticalDepthRange": [
+              0.4,
+              2.5
+            ]
+          },
+          {
+            "name": "Cassini division",
+            "innerKm": 117507,
+            "outerKm": 122340,
+            "sourcePixelRange": [
+              8103,
+              8478
+            ],
+            "publishedOpticalDepthRange": [
+              0,
+              0.1
+            ]
+          },
+          {
+            "name": "A",
+            "innerKm": 122340,
+            "outerKm": 136780,
+            "sourcePixelRange": [
+              8478,
+              11070
+            ],
+            "publishedOpticalDepthRange": [
+              0.4,
+              1
+            ]
+          }
+        ],
+        "outsideBandsOpticalDepth": 1e-05,
+        "percentiles": [
+          5,
+          95
+        ],
+        "fineStructure": "Within each visually registered zone, linearly map clipped P5/P95-normalized actual photo linear Rec.709 luminance to its published broad tau range. Cassini division uses authored tau .002-.075. No periodic function, noise or repeated synthetic stripe is added.",
+        "darkGapMask": "Multiply tau by clamp((photo sRGB Rec.709 luminance - .012)/(.07-.012),0,1)^2 to preserve actual dark scan gaps.",
+        "sourceSrgbDecode": "s / 12.92 for s <= 0.04045; ((s + 0.055) / 1.055)^2.4 otherwise",
+        "luminanceWeights": [
+          0.2126,
+          0.7152,
+          0.0722
+        ],
+        "encoding": "alpha = round(255 * (1 - exp(-authoredNormalOpticalDepth)))",
+        "scope": "C/B/A appearance and photographed gaps; outside A remains tenuous. F/G/E ring opacity is not synthesized."
+      },
+      "transform": "Decode pinned original PIA11142 JPEG; average crop center rows in original encoded RGB, Lanczos resample horizontally, repeat the radial RGB scan to 4096x16, add explicitly authored photo-modulated alpha, encode lossless RGBA PNG. No recoloring, generated fine detail, model GLB or model ring RGB is used."
+    }
+  },
+  "star": {
+    "filename": "sun-color-2k.jpg",
+    "width": 2048,
+    "height": 1024,
+    "format": "jpeg",
+    "sha256": "28ef7494a7d19e12f9f796d08672fbace881423e936617d6c34fd176dc508186",
+    "bytes": 1008009,
+    "provenance": {
+      "kind": "nasa-vtad-model-reference",
+      "referenceBody": "sun",
+      "pageUrl": "https://science.nasa.gov/learn/heat/resource/sun-3d-model/",
+      "url": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/s/Sun_1_1391000.glb?emrc=6adafea318592",
+      "sourceSha256": "a178f5c43c2c9a6ee6c011c315149a7ab5a2594fd5aa9119ee219625a18da1dd",
+      "sourceImageSha256": "44adfb68aa2e69a5f8406ea47af7880226eaea75386a33d3028a0b104e9abd61",
+      "preparedMapSHA256": "539b265aea4ab9b985b96ea51ab02b0287103e5ac5c7802017b39a5481390078",
+      "gltfRole": "emissiveTexture",
+      "credit": "NASA Visualization Technology Applications and Development (VTAD)",
+      "license": "NASA media usage guidelines",
+      "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "description": "Exact user-selected golden NASA Sun model emissive color appearance, retaining original RGB and UV. This is a 3D visualization reference; no observational wavelength, complete photospheric coverage or scientific colorimetry is asserted.",
+      "licenseFilename": "sun-color-LICENSE.txt",
+      "transform": "Original NASA Sun emissive RGB and UV, sampled without lighting through six 1024px cube faces and reprojected to 2048 x 1024 equirectangular sRGB; RGB JPEG encoding at 2048 x 1024, quality 94; no recoloring, generated detail or baked limb darkening."
+    }
+  }
+}

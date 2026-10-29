@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const inWorker = typeof document === 'undefined' && typeof importScripts === 'function';
-  if (inWorker) importScripts('noise.js', 'libraries.js', 'planet.js', 'climate.js', 'hydro.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js');
+  if (inWorker) importScripts('noise.js', 'libraries.js', 'culture-ext.js', 'religions.js', 'planet.js', 'climate.js', 'hydro.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js', 'history/regions.js', 'history/dawn.js', 'history/cities.js', 'history/polity.js', 'history/outline.js', 'history/heritage.js', 'history/apply.js', 'history/index.js');
   const G = self;
   let world = null, R = null;
 
@@ -94,12 +94,16 @@
     const Cl = G.Climate.derive(P, K, cfg, progress);
     const Hy = G.Hydro.simulate(P, Cl, cfg, progress);
     const Cv = G.Society.run(P, Cl, Hy, cfg, progress);
-    progress('国界与省界', 0.965);
-    { const BF = G.Borders.run(P, Hy, Cv, cfg.seed, Cv.cities, Cl); Cv.countryF = BF.countryF; Cv.provinceF = BF.provinceF;
+    // 历史与现在互为因果：从文明之初自由推演到现在，终局写回现在的地图（国家、省份、文化、宗教、国界省界）
+    let Hc = null;
+    try { Hc = G.History.core({ P, Hy, Cl, Cv, cfg }, progress); G.HistoryApply.apply({ P, Hy, Cl, Cv, cfg }, Hc); }
+    catch (err) { console.warn('历史推演失败，退回原有国界', err); Hc = null; }
+    if (!Hc) { progress('国界与省界', 0.975);
+      const BF = G.Borders.run(P, Hy, Cv, cfg.seed, Cv.cities, Cl); Cv.countryF = BF.countryF; Cv.provinceF = BF.provinceF;
       Cv.provinces.forEach((p, k) => { const a = BF.provAnchor[k]; if (a) { p.lx = a.x; p.ly = a.y; p.lsize = a.size; } }); }
     Cl.Ts = null; Cl.Ps = null; // 释放全分辨率四季场
     progress('等高线与气象场', 0.96);
-    world = { P, K, Cl, Hy, Cv, cfg }; navGraph = null; roadNet = null;
+    world = { P, K, Cl, Hy, Cv, cfg, Hc }; navGraph = null; roadNet = null;
     R = G.Render.create(world);
     // 等高线（半分辨率）
     // 23 层等高线（原版 hypsometry：24 档、档界按平方递增，低地加密）+ 海深线
@@ -163,7 +167,7 @@
       rivers: Hy.rivers, qth: Hy.qth, contours: cont, contourLevels: landLevels,
       plateSegs: plateLines, plateMarks: P.bMarks, plates: Cv.plates,
       winds, currents: Float32Array.from(cur), isobars,
-      cities: Cv.cities, countries: Cv.countries, provinces: Cv.provinces, cultures: Cv.cultures, languages: Cv.languages, religions: Cv.religions,
+      cities: Cv.cities, countries: Cv.countries, provinces: Cv.provinces, cultures: Cv.cultures, languages: Cv.languages, religions: Cv.religions, heritage: Cv.heritage || [],
       tribes: Cv.tribes, jimis: Cv.jimis, riverNames: Cv.riverNames, bridges: Cv.bridges,
       smallLakes: Hy.smallLakes,
       deltas: Hy.deltas.map(dl => ({ x: dl.x, y: dl.y, size: dl.size, q: dl.q })),
@@ -467,6 +471,10 @@
       else if (m.type === 'cityMap') { const r = world ? cityMap(m.idx, m.px || 1100, m.extent || 'city') : null; post({ type: 'cityMap', id: m.id, data: r }, r ? [r.img.buffer] : []); }
       else if (m.type === 'urban') { const u = world ? G.Urban.build(world, m.idx, { detail: !!m.detail }) : null; post({ type: 'urban', id: m.id, data: u }); }
       else if (m.type === 'citySite') post({ type: 'citySite', id: m.id, data: world ? G.CitySite.payload(world, m.idx, { cap: m.cap }) : null });
+      else if (m.type === 'history') { // 历史时间线：按需推演一次，结果缓存在本世界上
+        if (!world) post({ type: 'history', id: m.id, data: null });
+        else { if (!world.history) world.history = G.History.run(world, (stage, f) => post({ type: 'histProgress', stage, f })); post({ type: 'history', id: m.id, data: world.history }); }
+      }
       else if (m.type === 'route') post({ type: 'route', id: m.id, data: world ? (m.points ? roadRoute(m.points, m.mode) : navigation(m.a, m.b, m.mode)) : null });
     } catch (err) {
       post({ type: 'error', message: String(err && err.stack || err) });

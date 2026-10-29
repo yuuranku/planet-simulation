@@ -1,6 +1,6 @@
 /* White map rail and flush control sidebar, matching the saved-world atlas. */
 *{box-sizing:border-box}
-body.globe-page{--globe-rail-width:72px;--globe-sidebar-width:320px;--globe-content-left:calc(var(--globe-rail-width) + var(--globe-sidebar-width));--map-ink:#202124;--map-muted:#70757a;--map-accent:#1a73e8;--map-panel:#fff;--map-field:#f1f3f4;--map-border:#e4e7e9;color-scheme:light;margin:0;height:100dvh;overflow:hidden;background:#111924;color:#202124;font:14px/1.5 Arial,"Microsoft YaHei","Planet Sans",sans-serif}
+body.globe-page{--globe-rail-width:72px;--globe-sidebar-width:320px;--globe-content-left:calc(var(--globe-rail-width) + var(--globe-sidebar-width));--map-ink:#202124;--map-muted:#70757a;--map-accent:#1a73e8;--map-panel:#fff;--map-field:#f1f3f4;--map-border:#e4e7e9;color-scheme:light;margin:0;height:100dvh;overflow:hidden;background:#111924;color:#202124;font:14px/1.5 Arial,"Microsoft YaHei","Noto Sans SC",sans-serif}
 body.globe-sidebar-collapsed{--globe-content-left:var(--globe-rail-width)}
 [hidden]{display:none!important}
 button,input,select{font:inherit}

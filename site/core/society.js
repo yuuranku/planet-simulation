@@ -164,7 +164,7 @@
       if (newW[i]) s *= 0.18 + 0.32 * pot[i] * hab[i];
       support[i] = s; total += s;
     }
-    const ERA_RANGE = [[1e8, 1.6e8], [2.5e8, 4e8], [6.5e8, 9.5e8]][cfg.era];
+    const ERA_RANGE = [[1e8, 1.6e8], [2.5e8, 4e8], [6.5e8, 9.5e8]][cfg.popIdx !== undefined ? cfg.popIdx : cfg.era]; // 人口规模（与文明时代分开）
     let popMin, popMax;
     const capMin = Math.floor(total * idealDensity * 0.75), capMax = Math.ceil(total * idealDensity * 1.25);
     if (cfg.popMode === 'range' && cfg.popRange) { popMin = cfg.popRange[0]; popMax = Math.min(cfg.popRange[1], capMax); popMin = Math.min(popMin, popMax); }
@@ -1005,13 +1005,13 @@
     function draw(lib, key, suffixHint) {
       const list = lib.n[key] || [], ck = lib.id + ':' + key; let c = cursors.get(ck); if (c === undefined) { c = Math.floor(nr() * Math.max(1, list.length)); }
       for (let t = 0; t < list.length; t++) { const name = list[(c + t) % list.length]; if (!usedNames.has(name)) { cursors.set(ck, (c + t + 1) % list.length); usedNames.add(name); return name; } }
-      const C = lib.c || { roots: ['安'], prefixes: ['东'], suffixes: ['阳'] }; const pick = a => a[Math.floor(nr() * a.length)];
-      for (let t = 0; t < 60; t++) { const form = t % 3; let w = form === 0 ? pick(C.prefixes) + pick(C.roots) : form === 1 ? pick(C.roots) + pick(C.suffixes) : pick(C.prefixes) + pick(C.roots) + pick(C.suffixes); if (suffixHint) w += suffixHint; if (!usedNames.has(w)) { usedNames.add(w); return w; } }
-      return pick(C.roots) + pick(C.suffixes) + (suffixHint || '') + usedNames.size;
+      return makeName(lib, key === 'provinces' ? 'prov' : key === 'states' ? 'state' : key === 'cities' ? 'city' : 'other', usedNames, nr, { suffix: suffixHint || '' });
     }
     const libAt = (cell) => civ[cell] > 0 ? civLib[civ[cell] - 1] : (language[cell] > 0 ? langLib[language[cell] - 1] : LIBS[0]); // 按文明取库
     const allSettlements = settlements.concat(late);
-    allSettlements.forEach(s => { const lib = libAt(s.cell); s.name = draw(lib, 'cities'); if (s.role === 'military-post' && !/[堡关塞寨城]$/.test(s.name)) s.name += s.type === 'pass-fort' ? '关' : s.gate === 'wall' ? '塞' : '堡'; });
+    allSettlements.forEach(s => { const lib = libAt(s.cell); s.name = draw(lib, 'cities'); const pl = G.CultureExt ? G.CultureExt.ext(lib).places : null; /* 地名后缀取自文化库：关隘、要塞、港口 */
+      if (s.role === 'military-post') { const list = pl ? (s.type === 'pass-fort' ? pl.pass : pl.fort) : null; const suf = list && list.length ? list[Math.floor(nr() * list.length)] : (s.type === 'pass-fort' ? '关' : s.gate === 'wall' ? '塞' : '堡'); if (!s.name.endsWith(suf) && !/[堡关塞寨城]$/.test(s.name)) s.name += suf; }
+      else if ((s.type === 'port' || s.type === 'island-port') && pl && pl.port && pl.port.length && nr() < 0.25) { const suf = pl.port[Math.floor(nr() * pl.port.length)]; if (!s.name.endsWith(suf) && s.name.length <= 4 && !usedNames.has(s.name + suf)) { usedNames.add(s.name + suf); s.name += suf; } } });
     // 国家政体与名称
     const kPop = new Float64Array(nK), kArea = new Float64Array(nK), kRegions = new Int32Array(nK);
     for (let i = 0; i < N; i++) if (state[i] >= 0) { kPop[state[i]] += weight[i] * popTotal; kArea[state[i]] += area[(i / W) | 0]; }
@@ -1035,8 +1035,23 @@
     const shortDraw = (lib, key, max) => { let n = ''; for (let t = 0; t < 12; t++) { n = draw(lib, key).replace(/(地区|平原|高原|山地|盆地|河谷|草原|荒原|半岛|海岸|湿地|荒野|峡地|旷原|牧野|林原|戈壁)$/, ''); if (n.length <= max) return n; } return n.slice(0, max); };
     const cultures = civSeeds.map((s, k) => ({ name: shortDraw(civLib[k], 'states', 4) + '文明', style: civLib[k].label, subsistence: subsistence[k], primary: s.primary, library: civLib[k].label }));
     const languages = langSeeds.map((s, k) => ({ name: shortDraw(langLib[k], 'regions', 4) + '语', family: langFamily[k] - 1 }));
-    const relSuf = ['教', '信仰', '圣道', '古神信仰', '真言宗', '天启教'];
-    const religions = relSeeds.map((s, k) => ({ name: shortDraw(libAt(s.cell), 'regions', 3) + relSuf[k % relSuf.length] }));
+    // 宗教：从所选宗教库生成；按发源地文明的生计大类与写实 / 架空风格匹配库，尽量不重复
+    const RLIBS_ALL = (self.RELIGION_LIBRARIES || []), RCHOSEN = (Array.isArray(cfg.religionSelection) ? RLIBS_ALL.filter(l => cfg.religionSelection.includes(l.id)) : RLIBS_ALL.slice()).concat(cfg.customReligions || []);
+    const RLIBS = RCHOSEN.length ? RCHOSEN : RLIBS_ALL, usedR = new Map();
+    const religions = relSeeds.map((s, k) => {
+      const lib = libAt(s.cell), cat = civ[s.cell] > 0 ? subsistence[civ[s.cell] - 1] : lib.cat, fantasy = lib.mode === 'fantasy';
+      const score = rl => (rl.cats && rl.cats.includes(cat) ? 2 : 0) + ((rl.mode === 'fantasy') === fantasy ? 1.5 : 0) - 2.5 * (usedR.get(rl.id) || 0) + nr() * 0.8;
+      let rl = null, bs = -1e9; for (const x of RLIBS) { const v = score(x); if (v > bs) { bs = v; rl = x; } }
+      if (!rl) return { name: shortDraw(lib, 'regions', 3) + '教', type: 'polytheist', spread: 'missionary' };
+      const nUsed = usedR.get(rl.id) || 0; usedR.set(rl.id, nUsed + 1);
+      const faiths = (rl.names && rl.names.faiths) || [], suf = (rl.names && rl.names.suffix) || ['教'];
+      let name = ''; for (let t = 0; t < faiths.length; t++) { const f0 = faiths[(nUsed + t) % faiths.length]; if (!usedNames.has(f0)) { name = f0; break; } }
+      if (!name) { for (let t = 0; t < 20 && (!name || usedNames.has(name)); t++) name = shortDraw(lib, 'regions', 3) + suf[Math.floor(nr() * suf.length)]; }
+      usedNames.add(name);
+      const holyL = (rl.names && rl.names.holy) || [], holy = holyL.length ? holyL[(nUsed + k) % holyL.length] : '';
+      const col = rl.color ? rl.color.map((v, i) => Math.max(0, Math.min(255, Math.round(v + (nUsed ? (i === nUsed % 3 ? 38 : -14) * Math.min(2, nUsed) : 0))))) : null;
+      return { name, lib: rl.id, libLabel: rl.label, type: rl.type, spread: rl.spread, color: col, symbol: rl.symbol || '✦', relic: rl.relic || '', holy, holyList: (rl.names && rl.names.holy) || [], clergy: rl.clergy || {}, branches: (rl.names && rl.names.branches) || [], heresies: (rl.names && rl.names.heresies) || [] };
+    });
     // ---------- 蛮族与羁縻 ----------
     // 称谓取自文化库：t.nomad（游牧部族）、t.tribe（部落）、t.jimi（羁縻制度）；库里没有时用通用称谓
     const TT = (lib, key, def) => (lib && lib.t && Array.isArray(lib.t[key]) && lib.t[key].length ? lib.t[key] : def);
@@ -1329,7 +1344,20 @@
       settlements: cityOut.length, cultures: cultures.length, languages: languages.length, religions: religions.length, tribalShare: tribalArea / Math.max(1, claimArea),
       landArea: Math.round(claimArea), cellKm, era, eraLabel: AD.label, tribes: tribes.length, jimis: jimis.length, roads: roads.length, seaRoutes: seaRoutes.length, bridges: bridges.length
     };
+    // 历史推演（core/history.js）所需的中间量：只留在 Worker 内，不随 ready 消息发往页面
+    const hist = {
+      W, H, N, FW, R, cellKm, lat, cosL, area, NB, gdist, era: cfg.era | 0, seed: cfg.seed, endYear: cfg.endYear || 0, targetCountries: cfg.countries || 0,
+      land, ice, domain, oceanCoast, dCoast, e, eN, slopeN, T, Pr, kop, biome, order, pot, hab, weight, density, newW, stateFr,
+      civ, civCost: CV.cost, civSeeds: civSeeds.map(s => ({ cell: s.cell, primary: s.primary })), civLib, subsistence,
+      relSeeds: relSeeds.map(s => s.cell), relRaw: religionRaw, relCost: RG.cost, religion, culture,
+      country: state, province, frontier, claimed,
+      settlements: allSettlements.map(s => ({ cell: s.cell, name: s.name, pop: s.pop, score: s.score || 0, tier: s.tier, type: s.type, role: s.role, capital: s.capital, seat: s.seat, newSeat: !!s.newSeat })),
+      LIBS, usedNames, popTotal,
+      // 道路：两端的格与聚落（用于推算修建年代），以及最终绘制的全分辨率折线
+      roads: (() => { const idxOf = new Map(allSettlements.map((s, k) => [s, k])); return roads.map((r, k) => { const A = allNodes[r.a], B = allNodes[r.b]; return { imp: r.imp, a: A ? A.cell : -1, b: B ? B.cell : -1, sa: A && A.s && idxOf.has(A.s) ? idxOf.get(A.s) : -1, sb: B && B.s && idxOf.has(B.s) ? idxOf.get(B.s) : -1, lines: fineByRoute.get(k) || [] }; }); })()
+    };
     return {
+      hist,
       W, H, country: state, province, culture, language: langOut, religion, gov, nominal: claimed, tribe, jimi, popDensity: density, agri: pot, hab,
       countries, provinces, cultures, languages, religions, tribes, jimis, cities: cityOut, roads: roadOut, bridges, labels, riverNames,
       plates: P.plates.map(p => { const x = (p.lon + 180) / 360 * P.W, y = (90 - p.lat) / 180 * P.H; const ci = Math.min(H - 1, (y / 2) | 0) * W + Math.min(W - 1, (x / 2) | 0); const lib = land[ci] && civ[ci] > 0 ? libAt(ci) : LIBS[p.id % LIBS.length]; const desc = !p.continental ? (p.area > 0.06 * 4 * Math.PI ? '大洋' : '海') : (T[ci] < -4 ? '冻原' : e[ci] > 1500 ? '高原' : '平原'); return { name: draw(lib, 'regions').replace(/(地区|平原|高原)$/, '') + desc + '板块', x, y, ve: p.ve, vn: p.vn, speed: p.speed, continental: p.continental }; }),
@@ -1345,5 +1373,44 @@
     };
   }
 
+
+  // ---------- 文化库起名器：库里现成的名字用完后，用该库的前缀、词根、后缀拼出新名字（不出现数字） ----------
+  // kind：state 国名 / prov 省名 / city 城名 / other；省名的结尾词（州、牧地、河谷……）从该库自己的省名里学
+  const NG_DIR = ['东', '西', '南', '北', '新', '上', '下', '大', '小', '内', '外', '中'];
+  const ngEndCache = new Map();
+  function ngEndings(lib) {
+    const key = lib.id || lib.label || ''; if (ngEndCache.has(key)) return ngEndCache.get(key);
+    const list = (lib.n && lib.n.provinces) || [], cnt = new Map();
+    for (const nm of list) for (const k of [1, 2]) if (nm.length > k + 1) { const e = nm.slice(-k); cnt.set(e, (cnt.get(e) || 0) + 1); }
+    const thr = Math.max(3, list.length * 0.1), ends = [...cnt].filter(([e, n]) => n >= thr).sort((a, b) => b[1] - a[1] || b[0].length - a[0].length);
+    const keep = []; for (const [e, n] of ends) if (!keep.some(k => k.e.endsWith(e) && k.n >= n * 0.7)) keep.push({ e, n }); // 两字结尾（牧地）优先于其末字（地）
+    let cover = 0; for (const nm of list) if (keep.some(k => nm.endsWith(k.e))) cover++;
+    const out = { ends: keep.slice(0, 5).map(k => k.e), w: keep.slice(0, 5).map(k => k.n), share: list.length ? cover / list.length : 0 };
+    ngEndCache.set(key, out); return out;
+  }
+  function makeName(lib, kind, used, rnd, opt) {
+    opt = opt || {};
+    const C = lib && lib.c && lib.c.roots && lib.c.roots.length ? lib.c : { roots: ['安', '宁', '岚', '川', '溪', '岱'], prefixes: ['东', '西', '南', '北'], suffixes: ['阳', '平', '和'] };
+    const pre = C.prefixes && C.prefixes.length ? C.prefixes : [''], suf = C.suffixes && C.suffixes.length ? C.suffixes : [''];
+    const pick = a => a[Math.floor(rnd() * a.length) % a.length];
+    const avg = C.roots.reduce((s, r) => s + r.length, 0) / C.roots.length, single = avg < 1.5;
+    const maxLen = opt.maxLen || (kind === 'state' ? (single ? 2 : 5) : kind === 'prov' ? (single ? 3 : 6) : single ? 3 : 6);
+    const E = kind === 'prov' ? ngEndings(lib) : { ends: [], share: 0 };
+    const ending = () => { if (!E.ends.length || rnd() > Math.max(0.35, E.share)) return ''; let t = rnd() * E.w.reduce((a, b) => a + b, 0); for (let i = 0; i < E.ends.length; i++) { t -= E.w[i]; if (t <= 0) return E.ends[i]; } return E.ends[0]; };
+    const forms = kind === 'state' && single ? [() => pick(C.roots), () => pick(pre) + pick(C.roots), () => pick(C.roots) + pick(suf)]
+      : [() => pick(pre) + pick(C.roots), () => pick(C.roots) + pick(suf), () => pick(pre) + pick(C.roots) + pick(suf), () => pick(C.roots) + pick(C.roots), () => pick(C.roots)];
+    const add = w => { used.add(w); return w; };
+    for (let t = 0; t < 400; t++) {
+      let w = forms[t % forms.length](); if (!w || w.length > maxLen + (t > 200 ? 2 : 0)) continue;
+      if (kind === 'prov') { const e = ending(); if (e && !w.endsWith(e) && !w.endsWith(e[0])) w += e; }
+      if (opt.suffix) w += opt.suffix;
+      if (!used.has(w)) return add(w);
+    }
+    // 实在撞名：加方位字或再接一个后缀（仍是该库的音），绝不加数字
+    let base = pick(C.roots) + pick(suf) + (opt.suffix || '');
+    for (let t = 0; t < 2000; t++) { const w = t < NG_DIR.length * 4 ? NG_DIR[(t + Math.floor(rnd() * NG_DIR.length)) % NG_DIR.length] + base : pick(pre) + pick(C.roots) + pick(suf) + pick(suf) + (opt.suffix || ''); if (!used.has(w)) return add(w); if (t % 12 === 11) base = pick(C.roots) + pick(C.roots) + (opt.suffix || ''); }
+    let w = base; while (used.has(w)) w = NG_DIR[Math.floor(rnd() * NG_DIR.length)] + w; return add(w);
+  }
+  G.NameGen = { make: makeName, endings: ngEndings };
   G.Society = { run };
 })(typeof self !== 'undefined' ? self : this);

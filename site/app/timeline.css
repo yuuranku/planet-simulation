@@ -1,0 +1,131 @@
+/* 历史时间线：底部播放条 + 浮动字幕 + 图例小卡 + 文明脉络抽屉 */
+:root { --tlh: 0px; --tld: 0px; }
+body.tl-on .bottomleft { display: none; }
+body.tl-on .bottomright { bottom: calc(var(--tlh) + var(--tld) + 26px); transition: bottom .2s; }
+
+.tl-bar { position: fixed; left: calc(var(--rail) + 14px); right: 16px; bottom: 14px; z-index: 7; height: 58px; padding: 0 10px 0 10px; display: flex; align-items: center; gap: 12px; border-radius: 14px; }
+.tl-play { width: 38px; height: 38px; flex: none; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(26, 115, 232, .35); }
+.tl-play svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+.tl-year { display: flex; flex-direction: column; width: 108px; flex: none; line-height: 1.2; }
+.tl-year b { font: 700 18px "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tl-year span { font-size: 11.5px; color: var(--ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-track { position: relative; flex: 1; min-width: 160px; height: 38px; cursor: pointer; touch-action: none; user-select: none; }
+.tl-track canvas { position: absolute; left: 0; top: 0; }
+.tl-ticks { position: absolute; left: 0; right: 0; top: 0; height: 9px; pointer-events: none; }
+.tl-tick { position: absolute; top: 1px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; pointer-events: auto; cursor: pointer; box-shadow: 0 0 0 1px #fff; }
+.tl-tick.k-stage { width: 4px; height: 4px; margin-left: -2px; top: 2px; opacity: .7; }
+.tl-tick:hover { transform: scale(1.6); }
+.tl-thumb { position: absolute; top: 6px; width: 4px; height: 22px; margin-left: -2px; border-radius: 2px; background: #1f2933; box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(0, 0, 0, .35); pointer-events: none; }
+.tl-chip { flex: none; min-width: 40px; height: 30px; padding: 0 8px; border-radius: 8px; background: #f1f4f6; font-size: 12.5px; font-weight: 600; color: var(--ink2); }
+.tl-chip:hover { background: #e7ecef; }
+.tl-seg { display: flex; flex: none; background: #f1f4f6; border-radius: 10px; padding: 3px; }
+.tl-seg button { padding: 5px 10px; font-size: 12.5px; color: var(--ink2); border-radius: 8px; white-space: nowrap; }
+.tl-seg button.on { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+.tl-icon { width: 32px; height: 32px; flex: none; border-radius: 9px; display: grid; place-items: center; color: var(--ink2); }
+.tl-icon:hover { background: #eef2f4; }
+.tl-icon.on { background: var(--accent-soft); color: var(--accent); }
+.tl-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tl-loading { position: absolute; inset: 0; background: rgba(255, 255, 255, .97); border-radius: 14px; display: flex; align-items: center; justify-content: center; gap: 14px; font-size: 13.5px; color: var(--ink2); }
+.tl-loading .bar { width: 220px; height: 6px; border-radius: 3px; background: #e6ecef; overflow: hidden; }
+.tl-loading .bar i { display: block; height: 100%; width: 5%; background: var(--accent); transition: width .2s; }
+
+/* 编年史字幕：浮在地图下方正中，像视频字幕 */
+.tl-caption { position: fixed; left: calc(50% + var(--rail) / 2); transform: translateX(-50%); bottom: calc(var(--tlh) + var(--tld) + 26px); z-index: 6; max-width: min(620px, calc(100vw - var(--rail) - 520px)); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+.tl-feed-row { pointer-events: auto; max-width: 100%; border: 0; cursor: pointer; padding: 6px 14px; border-radius: 10px; background: rgba(28, 26, 24, .78); color: #fff; font: 14px "Songti SC", "STSong", "Noto Serif SC", serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; backdrop-filter: blur(4px); box-shadow: 0 2px 10px rgba(0, 0, 0, .2); transition: opacity .4s; }
+.tl-feed-row small { font: 600 12px var(--font); color: #f3c26b; margin-right: 8px; }
+.tl-feed-row:hover { background: rgba(28, 26, 24, .92); opacity: 1 !important; }
+.tl-feed-row.flash { animation: tlFlash .5s ease; }
+.tl-feed-more { pointer-events: none; font: 12px var(--font); color: #fff; background: rgba(28, 26, 24, .5); padding: 2px 10px; border-radius: 8px; }
+
+
+
+@keyframes tlFlash { from { opacity: .3; transform: translateY(4px); } to { transform: none; } }
+
+/* 图例小卡：左下 */
+.tl-legend { position: fixed; left: calc(var(--rail) + 14px); bottom: calc(var(--tlh) + var(--tld) + 26px); z-index: 6; max-width: 260px; padding: 10px 12px; border-radius: 12px; display: flex; flex-wrap: wrap; gap: 5px 12px; font-size: 12px; color: var(--ink2); }
+.tl-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.tl-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.tl-legend i.folk { background: repeating-linear-gradient(45deg, #efe8d8 0 3px, #d8cdb5 3px 5px); }
+.tl-legend small { font-size: 10px; color: #8b7f70; border: 1px solid #d8cfc0; border-radius: 4px; padding: 0 3px; }
+.tl-legend em { font-style: normal; color: var(--ink3); font-size: 11.5px; flex-basis: 100%; }
+
+/* 文明脉络抽屉：从播放条上方展开 */
+.tl-drawer { position: fixed; left: calc(var(--rail) + 14px); right: 16px; bottom: calc(var(--tlh) + 24px); z-index: 7; padding: 8px 12px 10px; border-radius: 14px; }
+.tl-drawer header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.tl-drawer header b { font-size: 13px; color: var(--ink); }
+.tl-drawer header small { flex: 1; font-size: 11.5px; color: var(--ink3); }
+.tl-rows { max-height: 34vh; overflow-y: auto; scrollbar-width: none; }
+.tl-rows::-webkit-scrollbar { display: none; }
+
+@media (max-width: 1000px) { .tl-caption { max-width: calc(100vw - var(--rail) - 60px); bottom: calc(var(--tlh) + var(--tld) + 80px); } .tl-legend { max-width: 220px; } }
+@media (max-width: 760px) { .tl-chip, .tl-year span { display: none; } .tl-year { width: 78px; } .tl-seg button { padding: 5px 6px; } }
+
+/* 图例里的开关 */
+.tl-toggle { flex-basis: 100%; display: flex; align-items: center; gap: 6px; margin-top: 2px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--ink); cursor: pointer; }
+.tl-toggle input { margin: 0; accent-color: var(--accent); }
+
+/* 城市兴衰卡：右上 */
+.tl-city { position: fixed; right: 16px; top: 12px; z-index: 8; width: 300px; padding: 14px 16px 12px; border-radius: 14px; font-size: 12.5px; color: var(--ink2); }
+.tl-city-x { position: absolute; right: 8px; top: 8px; }
+.tl-city-eyebrow { margin: 0 0 2px; font-size: 11.5px; color: #8a6d3b; }
+.tl-city h3 { margin: 0 0 8px; font: 700 19px "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--ink); }
+.tl-city h3 small { margin-left: 6px; font: 500 11px var(--font); color: #6f6150; border: 1px solid #cfc3b0; border-radius: 4px; padding: 0 4px; vertical-align: 3px; }
+.tl-city dl { margin: 0 0 8px; display: grid; gap: 3px; }
+.tl-city dl div { display: flex; justify-content: space-between; gap: 10px; }
+.tl-city dt { color: var(--ink3); white-space: nowrap; }
+.tl-city dd { margin: 0; color: var(--ink); text-align: right; }
+.tl-city canvas { display: block; width: 100%; border-radius: 6px; }
+.tl-city ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; max-height: 120px; overflow-y: auto; scrollbar-width: none; }
+.tl-city li b { color: #8a6d3b; margin-right: 6px; font-variant-numeric: tabular-nums; }
+.tl-city-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tl-city-acts button { padding: 4px 10px; border-radius: 8px; background: #f1f4f6; font-size: 12px; color: var(--ink); }
+.tl-city-acts button:hover { background: #e6ecef; }
+
+/* 单国视角 */
+.tl-life { position: absolute; top: 9px; height: 18px; border-radius: 4px; background: rgba(26, 115, 232, .16); box-shadow: inset 0 0 0 1.5px rgba(26, 115, 232, .7); pointer-events: none; }
+.tl-pick { cursor: pointer; border-radius: 6px; padding: 1px 4px; margin: -1px -4px; }
+.tl-pick:hover { background: #eef2f4; color: var(--ink); }
+.tl-pick.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.tl-link { color: var(--accent); cursor: pointer; text-decoration: none; }
+.tl-link:hover { text-decoration: underline; }
+.tl-focus { position: fixed; right: 16px; top: 12px; z-index: 8; width: 320px; max-height: calc(100vh - var(--tlh) - 48px); overflow-y: auto; scrollbar-width: none; padding: 14px 16px 12px; border-radius: 14px; font-size: 12.5px; color: var(--ink2); }
+.tl-focus::-webkit-scrollbar { display: none; }
+.tl-focus h3 { margin: 0 0 2px; font: 700 20px "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--ink); padding-right: 28px; }
+.tl-focus h4 { margin: 12px 0 4px; font-size: 12.5px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+.tl-focus h4 small { font-weight: 500; color: var(--ink3); }
+.tl-focus-life { margin: 0 0 6px; color: var(--ink3); }
+.tl-focus-line { margin: 2px 0; line-height: 1.5; }
+.tl-focus-line b { color: var(--ink); margin-right: 6px; font-weight: 600; }
+.tl-focus canvas { display: block; width: 100%; margin: 8px 0 4px; border-radius: 6px; background: #f7f8f9; }
+.tl-focus dl { margin: 0; display: grid; gap: 3px; }
+.tl-focus dl div { display: flex; justify-content: space-between; gap: 10px; }
+.tl-focus dt { color: var(--ink3); white-space: nowrap; }
+.tl-focus dd { margin: 0; color: var(--ink); text-align: right; }
+.tl-mini { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 132px; overflow-y: auto; scrollbar-width: none; }
+.tl-mini::-webkit-scrollbar { display: none; }
+.tl-mini li { cursor: pointer; padding: 2px 4px; border-radius: 6px; line-height: 1.45; }
+.tl-mini li:hover { background: #f1f4f6; }
+.tl-mini li b { color: #8a6d3b; margin-right: 6px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.tl-mini li small { margin-left: 6px; color: var(--ink3); }
+.tl-mini li.none { cursor: default; color: var(--ink3); }
+.tl-lin { margin-left: auto; font-weight: 400; font-size: 11.5px; color: var(--ink2); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.tl-linlist { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.tl-chipl { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: #f1f4f6; color: var(--ink); cursor: pointer; font-size: 12px; }
+.tl-chipl i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.tl-chipl small { color: var(--ink3); font-size: 10.5px; }
+.tl-chipl.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+body.tl-on .tl-city { top: 12px; }
+
+/* 世系河流图：铺满地图区域（时间轴之上） */
+.tl-river { position: fixed; left: calc(var(--rail) + 14px); right: 16px; height: min(40vh, 380px); min-height: 220px; bottom: calc(var(--tlh) + 24px); z-index: 9; padding: 10px 12px 12px; border-radius: 14px; display: flex; flex-direction: column; } /* 贴在播放条上方：地图仍露在上面 */
+.tl-river.tall { height: calc(100vh - var(--tlh) - 60px); }
+.tl-river header .tl-icon { flex: none; }
+.tl-river header { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.tl-river header b { font: 700 16px "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--ink); white-space: nowrap; }
+.tl-river header small { flex: 1; font-size: 11.5px; color: var(--ink3); line-height: 1.4; }
+.tl-river-body { position: relative; flex: 1; min-height: 0; border-radius: 10px; overflow: hidden; }
+.tl-river-body canvas { position: absolute; inset: 0; cursor: pointer; }
+.tl-river-tip { position: absolute; pointer-events: none; background: rgba(28, 26, 24, .88); color: #fff; padding: 6px 10px; border-radius: 8px; font-size: 12px; display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
+.tl-river-tip b { font: 600 13px "Songti SC", "STSong", "Noto Serif SC", serif; }
+.tl-river-tip span { color: #e2ddd2; }
+.tl-pick.dim { opacity: .45; }

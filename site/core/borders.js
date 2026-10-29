@@ -64,18 +64,21 @@
     // 国家内仍为 -1 的格（无省份的小国）
     const countryF = Int16Array.from(cF), provinceF = new Int16Array(pF.length);
     for (let f = 0; f < pF.length; f++) provinceF[f] = cF[f] >= 0 && pF[f] >= 0 && provCountry[pF[f]] === cF[f] ? pF[f] : cF[f] >= 0 ? -1 : cF[f] <= -2 ? cF[f] : -1;
-    // 省名锚点：省域内离省界最远处（全分辨率距离变换）
-    const FW = P.W, FN = provinceF.length, dd = new Uint16Array(FN).fill(65535), qq = new Int32Array(FN); let h = 0, t = 0;
+    const provAnchor = anchors(provinceF, P.W, Cv.provinces.length);
+    return { countryF, provinceF, provAnchor };
+  }
+  // 省名锚点：省域内离省界最远处（全分辨率距离变换）
+  function anchors(provinceF, FW, nProv) {
+    const FN = provinceF.length, dd = new Uint16Array(FN).fill(65535), qq = new Int32Array(FN); let h = 0, t = 0;
     for (let f = 0; f < FN; f++) { const a = provinceF[f]; if (a < 0) continue; const y = (f / FW) | 0, x = f - y * FW;
       const ns = [y > 0 ? f - FW : -1, f + FW < FN ? f + FW : -1, y * FW + (x + 1) % FW, y * FW + (x - 1 + FW) % FW];
       if (ns.some(j => j < 0 || provinceF[j] !== a)) { dd[f] = 0; qq[t++] = f; } }
     while (h < t) { const f = qq[h++], a = provinceF[f], y = (f / FW) | 0, x = f - y * FW;
       for (const j of [y > 0 ? f - FW : -1, f + FW < FN ? f + FW : -1, y * FW + (x + 1) % FW, y * FW + (x - 1 + FW) % FW]) if (j >= 0 && provinceF[j] === a && dd[j] > dd[f] + 1) { dd[j] = dd[f] + 1; qq[t++] = j; } }
-    const best = new Int32Array(Cv.provinces.length).fill(-1);
-    for (let f = 0; f < FN; f++) { const a = provinceF[f]; if (a >= 0 && (best[a] < 0 || dd[f] > dd[best[a]])) best[a] = f; }
-    const provAnchor = Cv.provinces.map((p, k) => best[k] < 0 ? null : { x: best[k] % FW + 0.5, y: ((best[k] / FW) | 0) + 0.5, size: dd[best[k]] });
-    return { countryF, provinceF, provAnchor };
+    const best = new Int32Array(nProv).fill(-1);
+    for (let f = 0; f < FN; f++) { const a = provinceF[f]; if (a >= 0 && a < nProv && (best[a] < 0 || dd[f] > dd[best[a]])) best[a] = f; }
+    return Array.from({ length: nProv }, (_, k) => best[k] < 0 ? null : { x: best[k] % FW + 0.5, y: ((best[k] / FW) | 0) + 0.5, size: dd[best[k]] });
   }
 
-  G.Borders = { run, refine };
+  G.Borders = { run, refine, anchors };
 })(typeof self !== 'undefined' ? self : this);

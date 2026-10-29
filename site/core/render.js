@@ -72,6 +72,8 @@
       for (const k of ord) { const used = new Set(); for (const o of adj[k]) if (col[o] >= 0) { used.add(col[o] % 12); }
         let best = -1; for (let t = 0; t < 36; t++) { const h = (k * 5 + t) % 12; if (!used.has(h)) { best = h + 12 * ((k + t) % 3); break; } } if (best < 0) best = k % 36; col[k] = best;
         const c = hsl(HUES[best % 12] + ((k * 37) % 9) - 4, 0.5, LIT[(best / 12) | 0]); pal.country[k * 3] = c[0]; pal.country[k * 3 + 1] = c[1]; pal.country[k * 3 + 2] = c[2]; } }
+    Cv.religions.forEach((f, i) => { if (f.color) for (let c = 0; c < 3; c++) pal.religion[i * 3 + c] = Math.round(f.color[c] * 0.6 + 255 * 0.4); }); // 宗教的象征色（来自宗教库），调淡作地图底色
+    Cv.countries.forEach((k, i) => { if (k.color) { pal.country[i * 3] = k.color[0]; pal.country[i * 3 + 1] = k.color[1]; pal.country[i * 3 + 2] = k.color[2]; } }); // 现在的国家来自历史终局：沿用历史时间线里的配色
     const provCountry = Int16Array.from(Cv.provinces.map(p => p.country));
     // 省份配色：同一国家的省用该国色相的深浅与微小色相偏移，相邻省按贪心着色错开
     { const nP = Cv.provinces.length, adj = Array.from({ length: nP }, () => new Set()), PV = Cv.province;
@@ -89,7 +91,7 @@
     const SNOW_AMT = [0, 0.34, 0.86, 0.22, 0.8];
     const civCol = (topic, vi, out) => {
       let id = -1, arr = null;
-      if (topic === 'country' || topic === 'govern') { id = Cv.country[vi]; arr = pal.country; }
+      if (topic === 'country' || topic === 'govern' || topic === 'heritage') { id = Cv.country[vi]; arr = pal.country; }
       else if (topic === 'province') { id = Cv.province[vi]; arr = pal.province; }
       else if (topic === 'culture') { id = Cv.culture[vi]; arr = pal.culture; }
       else if (topic === 'language') { id = Cv.language[vi]; arr = pal.language; }
@@ -101,7 +103,7 @@
     };
     const tmpC = [0, 0, 0], acc = [0, 0, 0];
     // 国家 / 实际治理 / 省份：使用全分辨率细化疆界（与矢量国界、省界完全一致）
-    const FULL = { country: 1, govern: 1, province: 1 };
+    const FULL = { country: 1, govern: 1, province: 1, heritage: 1 };
     const fullCol = (topic, f, out) => {
       const y = (f / W) | 0, x = f - y * W, vi = Math.min(vH - 1, y >> 1) * vW + Math.min(vW - 1, x >> 1);
       const k = Cv.countryF[f];
@@ -110,6 +112,7 @@
         if (topic === 'province') { const p = Cv.provinceF[f]; if (p >= 0) { arr = pal.province; id = p; } }
         out[0] = arr[id * 3]; out[1] = arr[id * 3 + 1]; out[2] = arr[id * 3 + 2];
         if (topic === 'govern') { const g = Cv.gov[vi] / 255; out[0] = 246 + (out[0] - 246) * g; out[1] = 241 + (out[1] - 241) * g; out[2] = 230 + (out[2] - 230) * g; }
+        if (topic === 'heritage') { out[0] = 244 + (out[0] - 244) * 0.22; out[1] = 238 + (out[1] - 238) * 0.22; out[2] = 226 + (out[2] - 226) * 0.22; } // 遗迹地图：淡化的国家疆域作底
         return;
       }
       const c = k !== -4 && Cv.nominal[vi] >= 0 ? TRIBAL : WILD; out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
@@ -264,7 +267,7 @@
       }
       const out = new Uint8ClampedArray(w * h * 4);
       const lx = -0.5, ly = -0.5, lz = 0.7071, Z = 12 * Math.pow(Math.min(1, Math.max(0.04, s)), 0.6) * (aux.relief || 1);
-      const isHuman = { country: 1, province: 1, culture: 1, language: 1, religion: 1, govern: 1 }[topic];
+      const isHuman = { country: 1, province: 1, culture: 1, language: 1, religion: 1, govern: 1, heritage: 1 }[topic];
       const zoomR = W / (s * 1400), lfOn = aux.landform !== false && zoomR >= 2.2 && topic !== 'plates';
       // 原版地貌面状图式：8×8 短线纹（屏幕像素对齐，跨瓦片连续）
       const dash = (X, Y, k) => { const u = ((X % 10) + 10) % 10, v = ((Y % 10) + 10) % 10; return k === 0 ? ((v === 2 && u >= 1 && u <= 3) || (v === 6 && u >= 5 && u <= 8) || (v === 3 && u >= 2 && u <= 3)) : ((v === 2 && u >= 1 && u <= 4) || (v === 6 && u >= 5 && u <= 8)); };
@@ -339,6 +342,7 @@
             }
           }
           if (ST.post && stylePost(ST, r, g, b, land, Math.floor((x0 + (px + 0.5) * s) / s), Math.floor(gy / s))) { r = acc[0]; g = acc[1]; b = acc[2]; }
+          if (aux.gray && land) { const l = 0.3 * r + 0.59 * g + 0.11 * b, v = 78 + l * 0.72; r = v + 5; g = v + 3; b = v - 3; } // 历史时间线：陆地灰度（保留山体明暗），让历史着色突出
           out[oo] = r; out[oo + 1] = g; out[oo + 2] = b; out[oo + 3] = 255;
         }
       }

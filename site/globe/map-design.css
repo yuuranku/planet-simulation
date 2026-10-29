@@ -11,7 +11,7 @@
 .world-info-actions a:hover, .world-info-actions button:hover { background: var(--map-highlight); }
 :root {
   color-scheme: light;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Planet Sans", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
   font-synthesis: none;
   --map-ink: #1d1d1f;
   --map-muted: #606773;
@@ -50,7 +50,7 @@ body.map-ui:has(#atlas-rail) {
   --map-highlight: #e8f0fe;
   --map-shadow: 0 1px 4px #0003;
   --map-radius: 16px;
-  font-family: Arial, "Microsoft YaHei", "Planet Sans", sans-serif;
+  font-family: Arial, "Microsoft YaHei", "Noto Sans SC", sans-serif;
   font-size: 14px;
 }
 .map-glass {

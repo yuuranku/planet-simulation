@@ -113,7 +113,7 @@
     const f = (a, b) => `<div><dt>${a}</dt><dd>${b}</dd></div>`;
     $('cityCard').innerHTML = `<button class="city-x" id="cityCardX" title="关闭"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       <p class="city-eyebrow">${[role, TYPE[c.type] || '', k ? k.name : '无国家统治'].filter(Boolean).join(' · ')}</p><h3 data-name-id="city:${idx}" title="双击改名">${c.name}</h3>
-      <dl class="city-facts">${f('人口', fmtPop(c.pop))}${f('建成区', area < 10 ? area.toFixed(1) + ' km²' : Math.round(area) + ' km²')}${f('省份', pv ? `<span data-name-id="province:${c.prov}">${pv.name}</span>` : '—')}${f('文明', cu)}${f('语言', la)}${f('宗教', re)}</dl>
+      <dl class="city-facts">${f('人口', fmtPop(c.pop))}${f('建成区', area < 10 ? area.toFixed(1) + ' km²' : Math.round(area) + ' km²')}${f('省份', pv ? `<span data-name-id="province:${c.prov}">${pv.name}</span>` : '—')}${f('文明', cu)}${f('语言', la)}${f('宗教', re)}${c.holy && c.holy.length ? f('圣城', c.holy.map(i => d.religions[i] ? '<span style="color:#6b3fa0">✦ ' + d.religions[i].name + '</span>' : '').join('、') + '的圣地') : ''}</dl>
       <div class="row" style="gap:6px;margin-top:8px"><button class="chip" id="cityZoom">放大到城市</button><button class="chip" id="cityFrom">从这里出发</button><button class="chip" id="cityTo">到这里去</button></div>`;
     $('cityCard').hidden = false;
     const zoomTo = () => { const m = app.map, r = m.urbanRadiusPx(c) / m.view.s, want = 0.4 * Math.min(m.vw, m.vh) / Math.max(1e-6, r), z = Math.max(4, Math.min(1500, want / m.fitScale())); m.flyTo(c.x, c.y, z); };

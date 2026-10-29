@@ -29,7 +29,7 @@
       return `<div class="extra">人口方式
         <span class="seg2" data-x="popMode"><button data-v="env" class="${st.popMode === 'env' ? 'on' : ''}">按环境估算</button><button data-v="range" class="${st.popMode === 'range' ? 'on' : ''}">按指定区间</button></span>
         ${st.popMode === 'range' ? `<label>下限 <input type="number" step="0.1" data-f="popLo" value="${st.popLo ?? r[0]}" min="${r[0]}" max="${r[1]}"> 亿</label><label>上限 <input type="number" step="0.1" data-f="popHi" value="${st.popHi ?? r[1]}" min="${r[0]}" max="${r[1]}"> 亿</label>` : ''}
-        <span style="width:100%;font-size:12px;color:#8b96a0">两种方式都不超过本时代人口上限（${r[1]} 亿）。</span></div>`;
+        <span style="width:100%;font-size:12px;color:#8b96a0">两种方式都不超过本档人口上限（${r[1]} 亿）。</span></div>`;
     }
     if (q.extra === 'towns') {
       return `<div class="extra"><label><input type="checkbox" data-c="townsCustom" ${st.townsCustom ? 'checked' : ''}> 分别自定义</label>
@@ -55,6 +55,7 @@
         <span class="gridinfo">网格 ${(g => `${g.W}×${g.H} · 每格约 ${g.km.toFixed(1)} km`)(G.Config.gridOf(st))}<small>由星球大小决定</small></span>
       </div>
       <div class="extra" style="margin-top:10px">文化库：已选 ${G.Home ? G.Home.selectedCount() : ''} 个库（名称、国名后缀按文明的生计大类匹配）<button class="btn ghost" data-act="libs" style="height:30px;font-size:12px">前往文化库</button></div>
+      <div class="extra" style="margin-top:8px">宗教库：已选 ${G.RelLib ? G.RelLib.selectedCount() : ''} 个库（按宗教发源地的文明匹配；宗教类型与传播方式影响历史推演）<button class="btn ghost" data-act="rlibs" style="height:30px;font-size:12px">前往宗教库</button></div>
       <div class="summary">${Q.map((q, i) => { const o = q.o.find(x => x[0] === st.a[q.id]); return `<div><span>${i + 1}. ${q.t}</span><br>${o[1]}${o[2] && o[2].length < 18 ? ' · ' + o[2] : ''}</div>`; }).join('')}</div></div>`;
     }
     $('wizBody').innerHTML = html;
@@ -72,6 +73,7 @@
       if (sg) { const k = sg.parentElement.dataset.x; st[k] = k === 'res' ? +sg.dataset.v : sg.dataset.v; draw(); return; }
       if (e.target.closest('[data-act=dice]')) { st.seed = (Math.random() * 1e9) | 0; draw(); }
       if (e.target.closest('[data-act=libs]')) { G.Home.showLibrary(); }
+      if (e.target.closest('[data-act=rlibs]')) { G.RelLib.show(); }
     });
     $('wizBody').addEventListener('change', e => {
       const t = e.target;

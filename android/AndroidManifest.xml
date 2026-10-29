@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="cn.planet.world" android:versionCode="4" android:versionName="1.4.0">
   <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
   <application android:label="星球推演" android:hardwareAccelerated="true" android:allowBackup="false" android:usesCleartextTraffic="false" android:theme="@android:style/Theme.Material.Light.NoActionBar">
     <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden">

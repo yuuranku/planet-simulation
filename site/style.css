@@ -1,5 +1,5 @@
 :root {
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Planet Sans", sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
   --ink: #1f2933; --ink2: #5f6b76; --ink3: #8b96a0; --line: #e3e8ec; --bg: #e7f2f6;
   --card: #ffffff; --accent: #1a73e8; --accent-soft: #e8f0fe; --shadow: 0 2px 10px rgba(30, 50, 70, .12), 0 1px 3px rgba(30, 50, 70, .08);
   --rail: 76px;
@@ -25,6 +25,13 @@ svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.8; strok
 .rail-btn.on { color: var(--accent); }
 .rail-btn.on:not([data-tool=hover]) { background: var(--accent-soft); }
 .rail-sp { flex: 1; }
+/* 左栏分组：视图 / 工具 / 显示 */
+.rail-cap { width: 64px; margin: 6px 0 0; font-size: 10.5px; letter-spacing: .08em; color: var(--ink3); text-align: center; user-select: none; }
+.rail-sep { display: block; width: 40px; height: 1px; margin: 6px 0 2px; background: var(--line); }
+.rail-btn[data-tool=hover] { position: relative; }
+.rail-btn[data-tool=hover]::after { content: ''; position: absolute; top: 8px; right: 14px; width: 7px; height: 7px; border-radius: 50%; background: #c3ccd3; box-shadow: 0 0 0 2px #f7fafb; }
+.rail-btn[data-tool=hover].on::after { background: #2fb36a; } /* 开关状态：绿点 = 开 */
+@media (max-height: 760px) { .rail-cap { display: none; } .rail-sep { margin: 3px 0; } .rail-btn { padding: 6px 0 5px; } }
 
 /* 左上 */
 .topleft { position: fixed; left: calc(var(--rail) + 14px); top: 12px; width: 368px; display: flex; flex-direction: column; gap: 10px; z-index: 6; }
@@ -202,7 +209,7 @@ svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.8; strok
   :root { --rail: 0px; }
   .rail { top: auto; height: 62px; width: 100%; flex-direction: row; justify-content: space-around; padding: 4px; border-right: 0; border-top: 1px solid var(--line); }
   .rail-btn { width: auto; flex: 1; font-size: 10px; padding: 4px 0; }
-  .rail-sp { display: none; }
+  .rail-sp, .rail-cap, .rail-sep { display: none; }
   #stage { bottom: 62px; }
   .topleft { left: 10px; right: 10px; width: auto; top: 10px; }
   .world-card { display: none; }
@@ -401,65 +408,37 @@ body[data-map-style="night"] #stage, body[data-map-style="blueprint"] #stage { b
 .progress-card h3 { margin: 6px 0 16px; font-size: 19px; transition: opacity .16s; min-height: 26px; }
 .progress-card .prog-small { margin: 10px 0 0; font-size: 12px; color: var(--ink3); }
 
-/* 手机：保持地图可触摸，面板与操作区适配窄屏和安全区域。 */
+/* ---------- 手机端：字号、触控目标与布局 ---------- */
 @media (max-width: 760px) {
-  .home-inner { padding: max(18px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom)); }
-  .home-head { align-items: flex-start; gap: 14px; margin-bottom: 22px; }
-  .home-actions { width: 100%; gap: 8px; }
-  .home-actions .btn { min-height: 44px; height: auto; }
-  .home h2 { font-size: 25px; }
-  .home-sub, .home-foot { flex-wrap: wrap; line-height: 1.6; }
-  .home-foot { gap: 6px; }
-  .wgrid, .lgrid { grid-template-columns: minmax(0, 1fr); }
-  .lib-tabs button { min-height: 40px; }
-  .lact { flex-wrap: wrap; }
-  .lact button { min-height: 36px; }
-  .libmodal { width: calc(100% - 24px); max-height: 90vh; max-height: 90dvh; }
-  .lform { grid-template-columns: minmax(0, 1fr); }
-  .lform input, .lform select, .lform textarea { min-width: 0; font-size: 16px; }
-  .lm-foot { flex-wrap: wrap; }
-
-  .wiz { height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
-  .wiz-head { padding: 18px 16px 8px; gap: 10px; }
-  .wiz-head h2 { font-size: 20px; }
-  .wiz-steps { padding: 10px 16px 12px; flex: none; }
-  .wiz-steps button { min-height: 40px; }
-  .wiz-body { min-height: 0; padding: 4px 16px 16px; overscroll-behavior: contain; }
-  .opts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .opt { min-width: 0; min-height: 58px; padding: 10px; overflow-wrap: anywhere; }
-  .extra label, .gridinfo { min-width: 0; flex-wrap: wrap; }
-  .extra input[type=range] { max-width: 100%; }
-  .seg2 button { min-height: 40px; }
-  .extra input[type=number], .extra select, .seedin { font-size: 16px; }
-  .wiz-foot { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
-  .wiz-foot .btn { min-width: 0; height: 44px; padding: 0 3px; font-size: 13px; }
-  .summary { grid-template-columns: minmax(0, 1fr); }
-  .progress-card { width: min(360px, calc(100vw - 32px)); }
-
-  .rail { height: calc(62px + env(safe-area-inset-bottom)); padding: 4px 4px env(safe-area-inset-bottom); justify-content: flex-start; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; }
-  .rail::-webkit-scrollbar { display: none; }
-  .rail-btn { flex: 1 0 50px; min-width: 50px; min-height: 52px; }
-  #stage { bottom: calc(62px + env(safe-area-inset-bottom)); }
-  .bottomleft, .bottomright { bottom: calc(74px + env(safe-area-inset-bottom)); }
-  .panel { bottom: calc(70px + env(safe-area-inset-bottom)); height: min(70vh, 600px); height: min(70dvh, 600px); }
-  .drawer, .saved { left: 8px; right: 8px; width: auto; top: max(70px, env(safe-area-inset-top)); bottom: calc(70px + env(safe-area-inset-bottom)); }
-  .panel header, .drawer header { padding: 14px 16px 10px; }
-  .panel-body { min-height: 0; padding: 4px 16px 16px; overscroll-behavior: contain; }
-  .tabs { margin: 0 16px; }
-  .x, .city-x { width: 44px; height: 44px; flex: none; }
-  .menu { left: 8px; top: auto; bottom: calc(70px + env(safe-area-inset-bottom)); width: min(280px, calc(100vw - 16px)); max-height: calc(100dvh - 90px); overflow-y: auto; }
-  .menu button { min-height: 44px; }
-  .style-panel { bottom: calc(120px + env(safe-area-inset-bottom)); }
-  .city-card { bottom: calc(90px + env(safe-area-inset-bottom)); }
-  .city-panel, .citygen-box { top: max(8px, env(safe-area-inset-top)); padding-bottom: env(safe-area-inset-bottom); }
-  .city-head { padding: 10px 16px 4px; }
-  .city-facts { gap: 6px 10px; }
-  #city-map-viewport { min-height: 140px; }
-  .city-map-tools button { width: 44px; height: 44px; }
-  .city-actions { gap: 6px; padding: 8px; }
-  .city-actions .btn { min-height: 40px; height: auto; padding: 0 10px; }
-  .city-actions .sp { display: none; }
-  .citygen-bar { flex-wrap: wrap; }
-  .citygen-bar span { min-width: 0; }
-  .toast { bottom: calc(75px + env(safe-area-inset-bottom)); max-width: calc(100vw - 24px); text-align: center; }
+  .rail { height: 64px; padding: 2px 4px calc(2px + env(safe-area-inset-bottom)); }
+  .rail-btn { font-size: 11px; min-height: 52px; gap: 3px; }
+  #stage { bottom: 64px; }
+  .search input { font-size: 16px; }                       /* iOS 输入框 <16px 会自动放大页面 */
+  .name-editor input, .wiz input, .wiz select, .lib-modal input, .lib-modal textarea { font-size: 16px; }
+  #scaleText { font-size: 12px; }
+  .tip { left: 10px !important; right: 10px; top: calc(66px + env(safe-area-inset-top)) !important; bottom: auto; z-index: 30; max-height: 46vh; overflow-y: auto; max-width: none; min-width: 0; font-size: 13.5px; padding: 12px 16px; pointer-events: auto; }
+  .tip h4 { font-size: 16px; } .tip .sub { font-size: 12px; } .tip dl { gap: 5px 14px; }
+  .panel, .drawer { font-size: 14px; }
+  .panel .x, .drawer .x, .city-x, #wizClose { min-width: 40px; min-height: 40px; }
+  .tg { min-height: 38px; }
+  .topic { min-height: 40px; }
+  .home-sub { flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+  .home .link, .home button.link, .wlink, .wfoot button, .wcard button { min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
+  .wcap, .badge, #homeLibCount { font-size: 12px; }
+  .wiz-foot { gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); } .wiz-foot .btn { white-space: nowrap; padding: 0 12px; min-height: 42px; font-size: 14px; }
+  .wiz-steps button, .wiz-steps .step { min-height: 38px; }
+  .wiz input[type=checkbox], .wiz input[type=radio] { width: 20px; height: 20px; }
+  .opts .opt { min-height: 64px; }
+  .citygen-bar { flex-wrap: wrap; row-gap: 2px; padding: 8px 8px 8px 16px; }
+  .citygen-bar span:not(.sp) { order: 5; flex-basis: 100%; }
+  .citygen-bar .btn { min-height: 38px; }
+  .toast { font-size: 14px; left: 12px; right: 12px; transform: none; bottom: 80px; text-align: center; }
 }
+/* 文化库扩展设定、宗教库 */
+.lform details.lx { grid-column: 1 / -1; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px 12px; }
+.lform .lx-body { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-top: 8px; }
+.lform details.lx summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink); }
+.lform .lx-body h5 { grid-column: 1 / -1; margin: 6px 0 0; font-size: 12.5px; color: var(--ink); }
+.lform .re-cats { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.lform label.inl { flex-direction: row; align-items: center; gap: 4px; }
+.tl-rulers li small { white-space: nowrap; }

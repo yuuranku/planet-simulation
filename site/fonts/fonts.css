@@ -1,1 +1,4 @@
 @font-face { font-family: "Planet Sans"; src: url("NotoSansSC-VF.ttf") format("truetype"); font-style: normal; font-weight: 100 900; font-display: swap; }
+:root { --font: "Planet Sans", sans-serif; font-family: "Planet Sans", sans-serif; }
+body.globe-page { font-family: "Planet Sans", sans-serif; }
+@media (max-width: 480px) { .home-foot { flex-direction: column; align-items: flex-start; gap: 6px; } }

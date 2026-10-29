@@ -23,6 +23,24 @@
   const xOf = l => window.CultureExt ? window.CultureExt.ext(JSON.parse(JSON.stringify(l))) : null;
   const SEL_KEY = 'planet-culture-selection-v1', CUSTOM_KEY = 'planet-culture-custom-v1', OVR_KEY = 'planet-culture-override-v1';
 
+  // ---------- 更新说明（最新在前） ----------
+  const NOTES = [
+    ['本次更新', '思潮、宗教库与遗迹', [
+      '<b>思潮接纳</b>：发展阶段改由 13 条思潮推动。思潮在世界某处兴起、向四周传播，同一文明之内传得快，各类文明接纳快慢不同；接纳了一个阶段的全部思潮才进入下一阶段。历史时间线的“思潮”图层可单看一条思潮的传播。',
+      '<b>远洋航海</b>：只有接纳了这条思潮的沿海国家才能殖民新大陆。',
+      '<b>思潮与国力</b>：冶铁、火药等军事思潮带来战场优势，官僚、律法等治理思潮让国家更富、更稳、管得更远；落后于时代的国家人心浮动。人口与疆土仍是根本。',
+      '<b>宗教库</b>：新增 15 个宗教库（写实化名与架空），设定类型、传播方式、教名、派别、异端、圣地、圣职、象征色与圣徽；宗教会传教、分裂出教派、建立神权国。可在首页或向导里勾选与编辑。',
+      '<b>文化库扩展</b>：人名与王朝、君主称谓、政府组织、起义名号、地名后缀、附庸与殖民地称号；政府风格（官僚、封建、部族、商贸、神庙）影响历史推演。每个国家有君主世系与官制变迁。',
+      '<b>遗迹地图</b>：人文专题新增遗迹地图，收录圣地、圣山、圣墓、围城、古战场、旧关塞、古城废墟、古都、帝王陵等，均来自推演出的历史；圣城在城市旁以紫色星标出。'
+    ]],
+    ['此前', '历史推演', [
+      '迁都、游牧入主定居、神权制；封建宗藩与附庸；新大陆的本土国家与殖民城市（港口先建，再向内陆推进）。',
+      '国家数量贴近设定值（±10）；文明时代与人口分开设定，可自定义年份；文化库用尽后按词根起名，不再出现数字。',
+      '历史时间线的近事栏、事件定位、世系河流图与单国视角。',
+      '修复：切换世界后地图出现错位方块。'
+    ]]
+  ];
+
   // ---------- 文化库数据 ----------
   let builtin = null;
   function loadBuiltin() {
@@ -67,6 +85,7 @@
     const list = hooks.loadSaved();
     $('homeCount').textContent = `${list.length} 个世界`;
     $('homeLibCount').textContent = `已选 ${selectedCount()} 个文化库`;
+    if ($('homeRelCount') && G.RelLib) { $('homeRelCount').textContent = `已选 ${G.RelLib.selectedCount()} 个宗教库`; G.RelLib.load().then(() => { $('homeRelCount').textContent = `已选 ${G.RelLib.selectedCount()} 个宗教库`; }); }
     $('homeSaved').innerHTML = list.length ? list.map((w, i) => `<div class="wcard"><div class="wthumb">${w.thumb ? `<img src="${w.thumb}" alt="">` : '<div class="wthumb-ph"></div>'}</div><div class="wcap">地形与水系</div>
       <div class="wbody"><span class="badge">已保存</span><h4><span data-wname="${i}" title="双击改名">${esc(w.name)}</span> <code>${w.state.seed}</code></h4>
       <p class="wmeta">${w.ms ? '用时 ' + (w.ms / 1000).toFixed(1) + ' 秒 · ' : ''}${new Date(w.updated).toLocaleString('zh-CN', { hour12: false })}${w.summary ? '<br>' + esc(w.summary) : ''}</p>
@@ -141,6 +160,7 @@
     $('homeCreate').onclick = () => hooks.createWorld();
     $('homeLib').onclick = () => showLibrary();
     if ($('homeRel')) $('homeRel').onclick = () => G.RelLib && G.RelLib.show();
+    if ($('homeNotes')) $('homeNotes').onclick = e => { e.preventDefault(); modal('更新说明', NOTES.map(([v, title, items]) => `<h5>${v} · ${title}</h5><ul class="notes">${items.map(x => `<li>${x}</li>`).join('')}</ul>`).join(''), `<button class="btn primary" data-lm-close>知道了</button>`); };
     $('homeImport').onclick = () => $('importFile').click();
     $('homeSaved').addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return; const list = hooks.loadSaved();

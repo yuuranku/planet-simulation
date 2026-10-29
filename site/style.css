@@ -442,3 +442,8 @@ body[data-map-style="night"] #stage, body[data-map-style="blueprint"] #stage { b
 .lform .re-cats { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .lform label.inl { flex-direction: row; align-items: center; gap: 4px; }
 .tl-rulers li small { white-space: nowrap; }
+
+.home-notes { margin-left: 10px; color: var(--accent, #1a73e8); text-decoration: none; }
+.home-notes:hover { text-decoration: underline; }
+ul.notes { margin: 4px 0 14px; padding-left: 18px; font-size: 13px; line-height: 1.65; color: var(--ink2); }
+ul.notes li { margin-bottom: 4px; }

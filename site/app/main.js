@@ -152,6 +152,7 @@
     if (m.type === 'progress') return onProgress(m);
     if (m.type === 'histProgress') return G.Timeline && G.Timeline.progress(m);
     if (m.type === 'ready') return onReady(m);
+    if (m.type === 'overlays') return onOverlays(m);
     if (m.type === 'strip' || m.type === 'stripEnd') { const cb = strips.get(m.id); if (cb) { if (m.type === 'strip') cb(m); else strips.delete(m.id); } return; }
     if (m.type === 'contoursFine') { if (app.data) { app.data.contoursFine = m.contours; if (map.paths) { map.paths.cont.fine = null; map.draw(); } } return; }
     if (m.type === 'error') { console.error(m.message); toast('推演出错：' + m.message.split('\n')[0]); $('progress').hidden = true; return; }
@@ -246,6 +247,13 @@
     setTimeout(() => { saveWorld(); G.Home.setJob({ name: $('worldName').textContent, seed: app.state.seed, stage: '推演完成 · 用时 ' + (m.info.ms / 1000).toFixed(1) + ' 秒', f: 1, done: true, thumb: worldThumb() }); }, 1500);
     toast(`推演完成 · 用时 ${(m.info.ms / 1000).toFixed(1)} 秒 · 网格 ${m.W}×${m.H}`);
     offerUpgrade(); renderFileInfo();
+  }
+
+  // 覆盖层（等高线 / 气象场 / 国界省界 / 专题注记）在 ready 之后补算完成，合并进数据并重画
+  function onOverlays(m) {
+    if (!app.data) return;
+    Object.assign(app.data, m.data);
+    map.buildPaths(); map.draw(); map.scheduleFrame();
   }
 
   // ---------- 地图 / 球体 ----------

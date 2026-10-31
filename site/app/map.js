@@ -44,11 +44,11 @@
   MP.buildPaths = function () {
     const d = this.d;
     const cont = { land: new Path2D(), sea: new Path2D(), index: new Path2D(), fine: null, fineIndex: null };
-    for (const c of d.contours) { const p = c.level <= 0 ? cont.sea : c.k % 4 === 0 ? cont.index : cont.land, a = c.pts; p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) p.lineTo(a[k], a[k + 1]); }
+    for (const c of d.contours || []) { const p = c.level <= 0 ? cont.sea : c.k % 4 === 0 ? cont.index : cont.land, a = c.pts; p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) p.lineTo(a[k], a[k + 1]); }
     const roads = {}; for (const k of ['trunk', 'regional', 'local', 'sea', 'rail', 'seaTrunk']) roads[k] = toPath(smoothLines(d.roads[k] || []));
-    const borders = {}; for (const k of ['country', 'frontier', 'province', 'claim']) borders[k] = toPath(d.borders[k] || []);
+    const BD = d.borders || {}, borders = {}; for (const k of ['country', 'frontier', 'province', 'claim']) borders[k] = toPath(BD[k] || []);
     const plates = d.plateSegs.map(lines => toPath(lines));
-    const isobars = d.isobars.map(s => toPath(s.lines.map(l => l.pts)));
+    const isobars = (d.isobars || []).map(s => toPath(s.lines.map(l => l.pts)));
     // 小型湖泊（矢量）：按层级分两组路径，形状为确定性的不规则湖岸
     const sl = [new Path2D(), new Path2D()], SL = d.smallLakes || [];
     for (let k = 0; k < SL.length; k += 5) { const x = SL[k], y = SL[k + 1], r = SL[k + 2], sd = SL[k + 3], p = sl[SL[k + 4] === 1 ? 0 : 1];
@@ -298,9 +298,9 @@
     if (aux.roads && tab !== 'plates' && lv >= 1) this.drawBridges(ks, lv);
     if (tab === 'plates') { each(() => { c.strokeStyle = '#d14b42'; c.lineWidth = 2 * px; c.stroke(this.paths.plates[1]); c.strokeStyle = '#e09a37'; c.lineWidth = 1.7 * px; c.setLineDash([5 * px, 3 * px]); c.stroke(this.paths.plates[2]); c.setLineDash([]); c.strokeStyle = '#2f5b4f'; c.lineWidth = 2.4 * px; c.stroke(this.paths.plates[0]); }); this.drawPlateMarks(ks); }
     if (tab === 'season') {
-      if (app.sx.pressure) each(() => { c.strokeStyle = 'rgba(90,100,120,.5)'; c.lineWidth = 0.9 * px; c.stroke(this.paths.isobars[app.season]); });
-      if (app.sx.currents) this.drawArrows(this.d.currents, 5, ks, true);
-      if (app.sx.wind) this.drawArrows(this.d.winds[app.season], 4, ks, false);
+      if (app.sx.pressure && this.paths.isobars[app.season]) each(() => { c.strokeStyle = 'rgba(90,100,120,.5)'; c.lineWidth = 0.9 * px; c.stroke(this.paths.isobars[app.season]); });
+      if (app.sx.currents && this.d.currents) this.drawArrows(this.d.currents, 5, ks, true);
+      if (app.sx.wind && this.d.winds) this.drawArrows(this.d.winds[app.season], 4, ks, false);
     }
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (aux.grid || POL) this.drawGraticule(zr, POL);
@@ -348,7 +348,7 @@
         c.moveTo(x1, y1); c.lineTo(x1 - dx * 5 - dy * 3, y1 - dy * 5 + dx * 3); c.moveTo(x1, y1); c.lineTo(x1 - dx * 5 + dy * 3, y1 - dy * 5 - dx * 3); c.stroke();
       }
     }
-    if (!current && this.app.sx.pressure) {
+    if (!current && this.app.sx.pressure && this.d.isobars && this.d.isobars[this.app.season]) {
       const ext = this.d.isobars[this.app.season].ext;
       c.textAlign = 'center'; c.textBaseline = 'middle';
       for (let i = 0; i < ext.length; i += 4) for (const k of ks) {

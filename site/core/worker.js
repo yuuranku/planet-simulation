@@ -152,8 +152,8 @@
     out.sort((a, b) => b.n - a.n); const main = out.slice(0, cap);
     extra.sort((a, b) => b.d - a.d); return main.concat(extra.slice(0, 2500));
   }
-  function topicZones(P, Cl, Hy, Cv, riverNames) {
-    const cw = Cv.W, ch = Cv.H, N = cw * ch, FW = P.W, land = Cv.land, ice = Cv.ice, Z = {};
+  function topicZones(P, Cl, Hy, Cv, riverNames, Z, push) {
+    const cw = Cv.W, ch = Cv.H, N = cw * ch, FW = P.W, land = Cv.land, ice = Cv.ice;
     const full = (A, none) => { const o = new Int16Array(N); for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const v = A[(2 * y) * FW + 2 * x]; o[y * cw + x] = v === none || !land[y * cw + x] ? -1 : v; } return o; };
     const blur = (F) => { let A = Float32Array.from(F); const T = new Float32Array(N), r = 2; for (let it = 0; it < 2; it++) {
       for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { let s = 0; for (let k = -r; k <= r; k++) s += A[y * cw + (x + k + cw) % cw]; T[y * cw + x] = s / (2 * r + 1); }
@@ -161,29 +161,30 @@
     const binned = (F, th, mask) => { const B = blur(F), o = new Int16Array(N); for (let i = 0; i < N; i++) { if (!mask(i)) { o[i] = -1; continue; } let c = 0; while (c < th.length && B[i] >= th[c]) c++; o[i] = c; } return o; };
     const cat = (A) => { const o = new Int16Array(N); for (let i = 0; i < N; i++) o[i] = land[i] && A[i] >= 0 ? A[i] : -1; return o; };
     const MIN = Math.max(6, Math.round(N / 90000));
-    Z.culture = zoneLabels(cat(Cv.culture), cw, ch, MIN, 160);
-    Z.language = zoneLabels(cat(Cv.language), cw, ch, MIN, 200);
-    Z.religion = zoneLabels(cat(Cv.religion), cw, ch, MIN, 160);
-    if (G.AdminSys) { const ord = G.AdminSys.ORDER, sysOf = Cv.countries.map(k => ord.indexOf(k.sys || G.AdminSys.classOfCountry(k))), o = new Int16Array(N);
-      for (let i = 0; i < N; i++) { const k = Cv.country[i]; o[i] = k >= 0 ? sysOf[k] : -1; } Z.system = zoneLabels(o, cw, ch, MIN, 200); }
-    { const o = new Int16Array(N); for (let i = 0; i < N; i++) { const k = Cv.country[i]; o[i] = k < 0 ? -1 : Cv.gov[i] >= 171 ? 0 : Cv.gov[i] >= 87 ? 1 : 2; } Z.govern = zoneLabels(o, cw, ch, MIN * 2, 160); }
-    const dry = i => land[i] && !ice[i];
-    Z.pop = zoneLabels(binned(Cv.popDensity, [1, 10, 50, 200], dry), cw, ch, MIN * 2, 160);
-    Z.agri = zoneLabels(binned(Cv.agri, [0.2, 0.45, 0.7], dry), cw, ch, MIN * 2, 160);
-    Z.habit = zoneLabels(binned(Cv.hab, [0.2, 0.45, 0.7], dry), cw, ch, MIN * 2, 160);
-    { const v = new Float32Array(N); for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) v[y * cw + x] = Cl.veg[(2 * y) * FW + 2 * x] / 255; Z.veg = zoneLabels(binned(v, [0.25, 0.5, 0.75], dry), cw, ch, MIN * 2, 160); }
-    Z.koppen = zoneLabels(full(Cl.koppen, 255), cw, ch, MIN, 200);
-    Z.biome = zoneLabels(full(Cl.biome, 255), cw, ch, MIN, 200);
-    { // 流域：以流经该流域最长的已命名干流命名
+    const dry = i => land[i] && !ice[i]; // 干燥掩码：pop/agri/habit/veg 注记只落在无冰陆地上
+    // 每类注记一个任务：与其它覆盖层一起分块推进，避免一次性算完阻塞瓦片渲染
+    push(() => { Z.culture = zoneLabels(cat(Cv.culture), cw, ch, MIN, 160); });
+    push(() => { Z.language = zoneLabels(cat(Cv.language), cw, ch, MIN, 200); });
+    push(() => { Z.religion = zoneLabels(cat(Cv.religion), cw, ch, MIN, 160); });
+    push(() => { if (G.AdminSys) { const ord = G.AdminSys.ORDER, sysOf = Cv.countries.map(k => ord.indexOf(k.sys || G.AdminSys.classOfCountry(k))), o = new Int16Array(N);
+      for (let i = 0; i < N; i++) { const k = Cv.country[i]; o[i] = k >= 0 ? sysOf[k] : -1; } Z.system = zoneLabels(o, cw, ch, MIN, 200); } });
+    push(() => { const o = new Int16Array(N); for (let i = 0; i < N; i++) { const k = Cv.country[i]; o[i] = k < 0 ? -1 : Cv.gov[i] >= 171 ? 0 : Cv.gov[i] >= 87 ? 1 : 2; } Z.govern = zoneLabels(o, cw, ch, MIN * 2, 160); });
+    push(() => { Z.pop = zoneLabels(binned(Cv.popDensity, [1, 10, 50, 200], dry), cw, ch, MIN * 2, 160); });
+    push(() => { Z.agri = zoneLabels(binned(Cv.agri, [0.2, 0.45, 0.7], dry), cw, ch, MIN * 2, 160); });
+    push(() => { Z.habit = zoneLabels(binned(Cv.hab, [0.2, 0.45, 0.7], dry), cw, ch, MIN * 2, 160); });
+    push(() => { const v = new Float32Array(N); for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) v[y * cw + x] = Cl.veg[(2 * y) * FW + 2 * x] / 255; Z.veg = zoneLabels(binned(v, [0.25, 0.5, 0.75], dry), cw, ch, MIN * 2, 160); });
+    push(() => { Z.koppen = zoneLabels(full(Cl.koppen, 255), cw, ch, MIN, 200); });
+    push(() => { Z.biome = zoneLabels(full(Cl.biome, 255), cw, ch, MIN, 200); });
+    push(() => { // 流域：以流经该流域最长的已命名干流命名
       const bas = full(Hy.basinId, 0), named = new Map(), RV = Hy.rivers;
       (riverNames || []).forEach((rn, ri) => { const st = RV.stems && rn.stem !== undefined ? RV.stems[rn.stem] : null; if (!st) return; const r = st.r[0], k = Math.max(RV.offs[r], RV.offs[r + 1] - 3);
         const x = RV.pts[k * 7], y = RV.pts[k * 7 + 1], id = Hy.basinId[Math.min(P.H - 1, y | 0) * FW + ((x | 0) % FW + FW) % FW]; if (id && !named.has(id)) named.set(id, ri); });
       for (let i = 0; i < N; i++) if (bas[i] >= 0 && !named.has(bas[i])) bas[i] = -1;
-      Z.basin = zoneLabels(bas, cw, ch, MIN, 160).map(z => Object.assign(z, { ri: named.get(z.c) })); }
-    return Z;
+      Z.basin = zoneLabels(bas, cw, ch, MIN, 160).map(z => Object.assign(z, { ri: named.get(z.c) })); });
   }
   function generate(cfg, post) {
     const t0 = Date.now();
+    STRIP_JOBS.clear(); // 新世界作废所有在途条带
     const progress = (stage, f) => post({ type: 'progress', stage, f });
     const P = G.Planet.build(cfg, progress);
     const K = G.Climate.simulate(P, cfg, progress);
@@ -198,46 +199,15 @@
       const BF = G.Borders.run(P, Hy, Cv, cfg.seed, Cv.cities, Cl); Cv.countryF = BF.countryF; Cv.provinceF = BF.provinceF;
       Cv.provinces.forEach((p, k) => { const a = BF.provAnchor[k]; if (a) { p.lx = a.x; p.ly = a.y; p.lsize = a.size; } }); }
     Cl.Ts = null; Cl.Ps = null; // 释放全分辨率四季场
-    progress('等高线与气象场', 0.978);
     world = { P, K, Cl, Hy, Cv, cfg, Hc }; navGraph = null; roadNet = null;
+    STRIP_JOBS.clear(); OVERLAY_TASKS.length = 0; OVERLAY_DATA = null; overlayPost = null; // 新世界作废所有在途任务
     R = G.Render.create(world);
-    // 等高线（半分辨率）
-    // 23 层等高线（原版 hypsometry：24 档、档界按平方递增，低地加密）+ 海深线
+    // 23 层等高线（原版 hypsometry：24 档、档界按平方递增，低地加密）+ 海深线的档位
     const landLevels = []; for (let k = 1; k <= 23; k++) landLevels.push(Math.max(5, Math.round(P.maxE * (k / 24) * (k / 24))));
-    // 等高线地表：湖面范围取湖水位（湖内不画等高线）
-    const eC = Float32Array.from(P.elev); for (let i = 0; i < eC.length; i++) if (Hy.lake[i]) eC[i] = Math.max(1, Hy.filled[i]);
-    const eH = P.downsample(eC, P.W, P.H, P.W / 2, P.H / 2);
-    const cont = clipCoast(contours(eH, P.W / 2, P.H / 2, [-5000, -3000, -1000, -200].concat(landLevels), 2).map(c => ({ level: c.level, pts: c.pts, k: landLevels.indexOf(c.level) + 1 })), P.elev, P.W, P.H, 0.3); // 全图级只用半分辨率线，粗步长足够
-
-    // 风场 / 洋流 / 等压线
-    const cW = P.cW, cH = P.cH, f = P.W / cW;
-    const winds = K.U.map((U, s) => { const a = []; for (let y = 3; y < cH; y += 7) for (let x = 3; x < cW; x += 7) { const i = y * cW + x; a.push((x + 0.5) * f, (y + 0.5) * f, U[i], K.V[s][i]); } return Float32Array.from(a); });
-    const cur = []; for (let y = 4; y < cH; y += 8) for (let x = 4; x < cW; x += 8) { const i = y * cW + x; if (K.isLand[i]) continue; const u = K.curU[i], v = K.curV[i]; if (Math.hypot(u, v) < 0.15) continue; cur.push((x + 0.5) * f, (y + 0.5) * f, u, v, K.anomaly[i]); }
-    const isobars = K.Pr.map(Pp => {
-      const sm = G.Climate.blur(Pp, cW, cH, 3, 2);
-      const lv = []; for (let p = 984; p <= 1036; p += 4) lv.push(p);
-      const lines = contours(sm, cW, cH, lv, f).map(c => ({ level: c.level, pts: c.pts }));
-      const ext = [];
-      for (let y = 10; y < cH - 10; y += 3) for (let x = 0; x < cW; x += 3) {
-        const v = sm[y * cW + x]; let mx = true, mn = true;
-        for (let dy = -12; dy <= 12 && (mx || mn); dy += 3) for (let dx = -12; dx <= 12; dx += 3) { if (!dx && !dy) continue; const yy = y + dy; if (yy < 0 || yy >= cH) continue; const w = sm[yy * cW + (x + dx + cW) % cW]; if (w >= v) mx = false; if (w <= v) mn = false; }
-        if (mx && v > 1016) ext.push((x + 0.5) * f, (y + 0.5) * f, 1, v); if (mn && v < 1006) ext.push((x + 0.5) * f, (y + 0.5) * f, -1, v);
-      }
-      return { lines, ext: Float32Array.from(ext) };
-    });
-    progress('国界与省界', 0.988);
-    const cw = Cv.W, chh = Cv.H, st = Cv.country, pv = Cv.province, nm = Cv.nominal;
-    const cF = Cv.countryF, pF = Cv.provinceF, FW = P.W, iceAt = f => { const y = (f / FW) | 0, x = f - y * FW; return Cv.ice[(y >> 1) * cw + (x >> 1)]; };
-    const borders = {
-      country: boundaryLines(cF, P.W, P.H, (a, b) => a !== b && a >= 0 && b >= 0, 1, true),
-      frontier: boundaryLines(cF, P.W, P.H, (a, b, i, j) => a !== b && (a >= 0) !== (b >= 0) && a > -2 && b > -2 && !iceAt(i) && !iceAt(j), 1, true),
-      province: boundaryLines(pF, P.W, P.H, (a, b, i, j) => a !== b && a >= 0 && b >= 0 && cF[i] === cF[j], 1, true),
-      claim: boundaryLines(nm, cw, chh, (a, b, i, j) => a !== b && Cv.land[i] && Cv.land[j] && (st[i] < 0 || st[j] < 0) && (a >= 0 || b >= 0), 2)
-    };
     const koppenUsed = new Set(), biomeUsed = new Set();
     for (let i = 0; i < Cl.koppen.length; i += 7) { if (Cl.koppen[i] !== 255) koppenUsed.add(Cl.koppen[i]); if (Cl.biome[i] !== 255) biomeUsed.add(Cl.biome[i]); }
     const pal = {}; for (const k in R.pal) pal[k] = Array.from(R.pal[k]);
-    // 板块边界：格边连成折线并平滑
+    // 板块边界：格边连成折线并平滑（buildPaths 无守卫，随 ready 一起发）
     const plateLines = P.bSegs.map(a => {
       const key = (x, y) => Math.round(x * 4) * 100000 + Math.round(y * 4);
       const adj = new Map(), segs = [];
@@ -258,23 +228,70 @@
       ms: Date.now() - t0, maxE: P.maxE, minE: P.minE, polar: P.polar, newWorld: P.newWorld,
       hE: K.hE, fE: K.fE, plates: P.plates.length
     };
+    // 地图先就绪：栅格瓦片不依赖覆盖层，越早发 ready 越早开始渲染
     post({
       type: 'ready', W: P.W, H: P.H, info, stats: Cv.stats, pal,
-      rivers: Hy.rivers, qth: Hy.qth, contours: cont, contourLevels: landLevels,
+      rivers: Hy.rivers, qth: Hy.qth, contourLevels: landLevels,
       plateSegs: plateLines, plateMarks: P.bMarks, plates: Cv.plates,
-      winds, currents: Float32Array.from(cur), isobars,
       cities: Cv.cities, countries: Cv.countries, provinces: Cv.provinces, cultures: Cv.cultures, languages: Cv.languages, religions: Cv.religions, heritage: Cv.heritage || [],
       tribes: Cv.tribes, jimis: Cv.jimis, riverNames: Cv.riverNames, bridges: Cv.bridges,
       smallLakes: Hy.smallLakes,
       deltas: Hy.deltas.map(dl => ({ x: dl.x, y: dl.y, size: dl.size, q: dl.q })),
-      labels: Cv.labels, symbols: Cv.symbols, roads: Cv.roads, borders,
+      labels: Cv.labels, symbols: Cv.symbols, roads: Cv.roads,
       travel: travelProfile(Cv.era, cfg),
       koppenUsed: [...koppenUsed].sort((a, b) => a - b), biomeUsed: [...biomeUsed].sort((a, b) => a - b),
-      decl: K.decl,
-      zones: topicZones(P, Cl, Hy, Cv, Cv.riverNames)
+      decl: K.decl
     });
-    // 全精度 23 层等高线在后台补算，完成后单独送达（地图先可用）
-    // 陆地全精度等高线已改由栅格按设色地表逐像素描出（render.js），不再在此补算矢量线
+    // —— 覆盖层后台补算：等高线、气象场、国界省界、专题注记，分块推进 ——
+    const D = OVERLAY_DATA = {};
+    overlayPost = post;
+    // 等高线（半分辨率，逐两层分块；湖面取湖水位，湖内不画等高线）
+    const eC = Float32Array.from(P.elev); for (let i = 0; i < eC.length; i++) if (Hy.lake[i]) eC[i] = Math.max(1, Hy.filled[i]);
+    const eH = P.downsample(eC, P.W, P.H, P.W / 2, P.H / 2);
+    const allLv = [-5000, -3000, -1000, -200].concat(landLevels);
+    D.contours = [];
+    for (let i = 0; i < allLv.length; i += 2) {
+      const lv = allLv.slice(i, i + 2);
+      OVERLAY_TASKS.push(() => {
+        const cs = contours(eH, P.W / 2, P.H / 2, lv, 2).map(c => ({ level: c.level, pts: c.pts, k: landLevels.indexOf(c.level) + 1 }));
+        D.contours.push(...clipCoast(cs, P.elev, P.W, P.H, 0.3)); // 全图级只用半分辨率线，粗步长足够
+      });
+    }
+    // 风场 / 洋流（一项）与等压线（逐季）
+    const cW = P.cW, cH = P.cH, f = P.W / cW;
+    OVERLAY_TASKS.push(() => {
+      const winds = K.U.map((U, s) => { const a = []; for (let y = 3; y < cH; y += 7) for (let x = 3; x < cW; x += 7) { const i = y * cW + x; a.push((x + 0.5) * f, (y + 0.5) * f, U[i], K.V[s][i]); } return Float32Array.from(a); });
+      const cur = []; for (let y = 4; y < cH; y += 8) for (let x = 4; x < cW; x += 8) { const i = y * cW + x; if (K.isLand[i]) continue; const u = K.curU[i], v = K.curV[i]; if (Math.hypot(u, v) < 0.15) continue; cur.push((x + 0.5) * f, (y + 0.5) * f, u, v, K.anomaly[i]); }
+      D.winds = winds; D.currents = Float32Array.from(cur);
+    });
+    D.isobars = [];
+    K.Pr.forEach((Pp, si) => {
+      OVERLAY_TASKS.push(() => {
+        const sm = G.Climate.blur(Pp, cW, cH, 3, 2);
+        const lv = []; for (let p = 984; p <= 1036; p += 4) lv.push(p);
+        const lines = contours(sm, cW, cH, lv, f).map(c => ({ level: c.level, pts: c.pts }));
+        const ext = [];
+        for (let y = 10; y < cH - 10; y += 3) for (let x = 0; x < cW; x += 3) {
+          const v = sm[y * cW + x]; let mx = true, mn = true;
+          for (let dy = -12; dy <= 12 && (mx || mn); dy += 3) for (let dx = -12; dx <= 12; dx += 3) { if (!dx && !dy) continue; const yy = y + dy; if (yy < 0 || yy >= cH) continue; const w = sm[yy * cW + (x + dx + cW) % cW]; if (w >= v) mx = false; if (w <= v) mn = false; }
+          if (mx && v > 1016) ext.push((x + 0.5) * f, (y + 0.5) * f, 1, v); if (mn && v < 1006) ext.push((x + 0.5) * f, (y + 0.5) * f, -1, v);
+        }
+        D.isobars[si] = { lines, ext: Float32Array.from(ext) };
+      });
+    });
+    // 国界与省界（逐类）
+    const cw = Cv.W, chh = Cv.H, st = Cv.country, pv = Cv.province, nm = Cv.nominal;
+    const cF = Cv.countryF, pF = Cv.provinceF, FW2 = P.W, iceAt = f => { const y = (f / FW2) | 0, x = f - y * FW2; return Cv.ice[(y >> 1) * cw + (x >> 1)]; };
+    D.borders = {};
+    OVERLAY_TASKS.push(() => { D.borders.country = boundaryLines(cF, P.W, P.H, (a, b) => a !== b && a >= 0 && b >= 0, 1, true); });
+    OVERLAY_TASKS.push(() => { D.borders.frontier = boundaryLines(cF, P.W, P.H, (a, b, i, j) => a !== b && (a >= 0) !== (b >= 0) && a > -2 && b > -2 && !iceAt(i) && !iceAt(j), 1, true); });
+    OVERLAY_TASKS.push(() => { D.borders.province = boundaryLines(pF, P.W, P.H, (a, b, i, j) => a !== b && a >= 0 && b >= 0 && cF[i] === cF[j], 1, true); });
+    OVERLAY_TASKS.push(() => { D.borders.claim = boundaryLines(nm, cw, chh, (a, b, i, j) => a !== b && Cv.land[i] && Cv.land[j] && (st[i] < 0 || st[j] < 0) && (a >= 0 || b >= 0), 2); });
+    // 专题注记（逐类）
+    const Z = D.zones = {};
+    topicZones(P, Cl, Hy, Cv, Cv.riverNames, Z, fn => OVERLAY_TASKS.push(fn));
+    scheduleOverlays();
+    // 全精度 23 层等高线已改由栅格按设色地表逐像素描出（render.js），不再补算矢量线
     setTimeout(() => G.Noise.coastElev(1, 50, P.elev, P.W, P.H, 1, P.H / 2), 0); // 预热海岸距离场
   }
 
@@ -556,14 +573,78 @@
     return { pts: Float32Array.from(pts.reverse ? pts : pts), km: Math.round(km), seaKm: Math.round(seaKm), days: Math.max(1, Math.round(days[t])) };
   }
 
+  // ---------- 渐进瓦片：先发预览帧（关闭缩放细节，快数倍），再按横条带补全细节 ----------
+  // 条带之间会让出控制权：取消的请求不再继续算，悬浮查询等消息也能及时处理
+  const STRIP_JOBS = new Map(); // id -> job
+  let stripTimer = 0;
+  const STRIP_ROWS = 64;
+  function scheduleStrips() { if (!stripTimer) stripTimer = setTimeout(runStrips, 0); }
+  function runStrips() {
+    stripTimer = 0;
+    const job = STRIP_JOBS.values().next().value;
+    if (!job) return;
+    STRIP_JOBS.delete(job.id);
+    try {
+      if (!job.previewed) {
+        job.previewed = true;
+        const buf = R.render(Object.assign({}, job.req, { preview: true }));
+        job.post({ type: 'frame', id: job.id, req: job.req, buf, preview: true }, [buf.buffer]);
+        STRIP_JOBS.set(job.id, job); // 预览已发，排到队尾继续细节条带
+      } else {
+        const pad = job.req.pad || 0, s = job.req.s;
+        const n = Math.min(STRIP_ROWS, job.req.h - job.row);
+        let buf = R.render(Object.assign({}, job.req, { h: n + 2 * pad, y0: job.req.y0 + (job.row - pad) * s })); // 条带自带 pad 圈（render 会再向外扩一圈）提供接缝上下文，裁剪后与整幅逐位一致
+        if (pad) { // render 返回的已是裁剪后（req.w 宽）的图，pad 圈落在首尾各 pad 行；取中间内容行
+          const w2 = job.req.w, c2 = new Uint8ClampedArray(w2 * n * 4);
+          for (let r = 0; r < n; r++) c2.set(buf.subarray((r + pad) * w2 * 4, (r + pad + 1) * w2 * 4), r * w2 * 4);
+          buf = c2;
+        }
+        job.post({ type: 'strip', id: job.id, y: job.row, h: n, buf }, [buf.buffer]);
+        job.row += n;
+        if (job.row < job.req.h) STRIP_JOBS.set(job.id, job);
+        else job.post({ type: 'stripEnd', id: job.id });
+      }
+    } catch (err) { job.post({ type: 'error', message: String(err && err.stack || err) }); }
+    if (STRIP_JOBS.size) scheduleStrips();
+  }
+
+  // ---------- 生成后的覆盖层（等高线 / 风场 / 洋流 / 等压线 / 国界省界 / 专题注记）----------
+  // 世界一建好就发 ready 让地图开始渲染，覆盖层拆成小块任务在后台分时推进：
+  // 每个任务之间让出控制权，且瓦片渲染（STRIP_JOBS）优先，全部完成后一次送达主线程
+  let OVERLAY_DATA = null, overlayPost = null;
+  const OVERLAY_TASKS = [];
+  let overlayTimer = 0;
+  function scheduleOverlays() { if (!overlayTimer && overlayPost) overlayTimer = setTimeout(runOverlay, 0); }
+  function runOverlay() {
+    overlayTimer = 0;
+    if (!overlayPost) return;
+    if (STRIP_JOBS.size) { overlayTimer = setTimeout(runOverlay, 20); return; } // 瓦片优先，忙时稍后再来
+    if (!OVERLAY_TASKS.length) { // 全部完成：一次送达
+      const p = overlayPost, data = OVERLAY_DATA;
+      OVERLAY_DATA = null; overlayPost = null;
+      if (p && data) p({ type: 'overlays', data });
+      return;
+    }
+    try { OVERLAY_TASKS.shift()(); }
+    catch (err) { OVERLAY_TASKS.length = 0; const p = overlayPost; OVERLAY_DATA = null; overlayPost = null; if (p) p({ type: 'error', message: String(err && err.stack || err) }); return; }
+    scheduleOverlays();
+  }
+
   function handle(m, post) {
     try {
       if (m.type === 'generate') generate(m.cfg, post);
       else if (m.type === 'render') {
         if (!R) return;
-        const buf = R.render(m.req);
-        post({ type: 'frame', id: m.id, req: m.req, buf }, [buf.buffer]);
-      } else if (m.type === 'globeAssets') { const a = globeAssets(m.w, m.h); post({ type: 'globeAssets', id: m.id, ...a }, [a.albedo.buffer, a.water.buffer, a.relief.buffer]); }
+        if (m.req.strips && m.req.s > 0 && m.req.s < 0.9) { // 放大视图（需要缩放细节）才走预览 + 条带渐进
+          STRIP_JOBS.set(m.id, { id: m.id, req: m.req, post, previewed: false, row: 0 });
+          scheduleStrips();
+        } else {
+          const buf = R.render(m.req);
+          post({ type: 'frame', id: m.id, req: m.req, buf }, [buf.buffer]);
+        }
+      }
+      else if (m.type === 'cancelRender') { const j = STRIP_JOBS.get(m.id); if (j) { j.cancelled = true; STRIP_JOBS.delete(m.id); } }
+      else if (m.type === 'globeAssets') { const a = globeAssets(m.w, m.h); post({ type: 'globeAssets', id: m.id, ...a }, [a.albedo.buffer, a.water.buffer, a.relief.buffer]); }
       else if (m.type === 'probe') post({ type: 'probe', id: m.id, data: world ? probe(m.gx, m.gy, m.season || 0) : null });
       else if (m.type === 'cityTerrain') { const img = world ? R.render({ w: m.w, h: m.h, pad: 1, x0: m.x0, y0: m.y0, s: m.s, topic: 'terrain', season: 0, aux: { elev: true, depth: true, lakes: true, snow: true, coast: true, landform: false, relief: 9, detail: 4 } }) : null; post({ type: 'cityTerrain', id: m.id, img }, img ? [img.buffer] : []); }
       else if (m.type === 'cityMap') { const r = world ? cityMap(m.idx, m.px || 1100, m.extent || 'city') : null; post({ type: 'cityMap', id: m.id, data: r }, r ? [r.img.buffer] : []); }

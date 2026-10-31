@@ -256,7 +256,7 @@
       const pad = req.pad || 0, s = req.s, w = req.w + 2 * pad, h = req.h + 2 * pad, x0 = req.x0 - pad * s, y0 = req.y0 - pad * s;
       const { topic, season = 0, aux = {} } = req;
       const ST = STYLES[aux.style] || STYLES.default, LANDR = ST.land || RAMPS.land, SEAR = ST.sea || RAMPS.sea, LAKEC = ST.lake ? hex(ST.lake) : LAKE, COASTC = ST.coast ? hex(ST.coast) : COAST, SHK = ST.shade || 0.62, BG = ST.bg ? hex(ST.bg) : [236, 242, 245];
-      const detail = s < 0.9;
+      const detail = !req.preview && s < 0.9; // preview：跳过缩放细节（渐进瓦片的预览帧）
       const octs = detail ? Math.min(5, Math.ceil(Math.log2(1 / s)) + 1) : 0;
       const eb = new Float32Array(w * h), er = new Float32Array(w * h), cs = new Float32Array(w * h), lb = new Float32Array(w * h);
       // 湖泊分级显示：全图只画大湖（≥ 40 格），区域级 ≥ 8 格，再放大全部

@@ -184,6 +184,7 @@
   }
   function generate(cfg, post) {
     const t0 = Date.now();
+    STRIP_JOBS.clear(); // 新世界作废所有在途条带
     const progress = (stage, f) => post({ type: 'progress', stage, f });
     const P = G.Planet.build(cfg, progress);
     const K = G.Climate.simulate(P, cfg, progress);
@@ -556,14 +557,56 @@
     return { pts: Float32Array.from(pts.reverse ? pts : pts), km: Math.round(km), seaKm: Math.round(seaKm), days: Math.max(1, Math.round(days[t])) };
   }
 
+  // ---------- 渐进瓦片：先发预览帧（关闭缩放细节，快数倍），再按横条带补全细节 ----------
+  // 条带之间会让出控制权：取消的请求不再继续算，悬浮查询等消息也能及时处理
+  const STRIP_JOBS = new Map(); // id -> job
+  let stripTimer = 0;
+  const STRIP_ROWS = 64;
+  function scheduleStrips() { if (!stripTimer) stripTimer = setTimeout(runStrips, 0); }
+  function runStrips() {
+    stripTimer = 0;
+    const job = STRIP_JOBS.values().next().value;
+    if (!job) return;
+    STRIP_JOBS.delete(job.id);
+    try {
+      if (!job.previewed) {
+        job.previewed = true;
+        const buf = R.render(Object.assign({}, job.req, { preview: true }));
+        job.post({ type: 'frame', id: job.id, req: job.req, buf, preview: true }, [buf.buffer]);
+        STRIP_JOBS.set(job.id, job); // 预览已发，排到队尾继续细节条带
+      } else {
+        const pad = job.req.pad || 0, s = job.req.s;
+        const n = Math.min(STRIP_ROWS, job.req.h - job.row);
+        let buf = R.render(Object.assign({}, job.req, { h: n + 2 * pad, y0: job.req.y0 + (job.row - pad) * s })); // 条带自带 pad 圈（render 会再向外扩一圈）提供接缝上下文，裁剪后与整幅逐位一致
+        if (pad) { // render 返回的已是裁剪后（req.w 宽）的图，pad 圈落在首尾各 pad 行；取中间内容行
+          const w2 = job.req.w, c2 = new Uint8ClampedArray(w2 * n * 4);
+          for (let r = 0; r < n; r++) c2.set(buf.subarray((r + pad) * w2 * 4, (r + pad + 1) * w2 * 4), r * w2 * 4);
+          buf = c2;
+        }
+        job.post({ type: 'strip', id: job.id, y: job.row, h: n, buf }, [buf.buffer]);
+        job.row += n;
+        if (job.row < job.req.h) STRIP_JOBS.set(job.id, job);
+        else job.post({ type: 'stripEnd', id: job.id });
+      }
+    } catch (err) { job.post({ type: 'error', message: String(err && err.stack || err) }); }
+    if (STRIP_JOBS.size) scheduleStrips();
+  }
+
   function handle(m, post) {
     try {
       if (m.type === 'generate') generate(m.cfg, post);
       else if (m.type === 'render') {
         if (!R) return;
-        const buf = R.render(m.req);
-        post({ type: 'frame', id: m.id, req: m.req, buf }, [buf.buffer]);
-      } else if (m.type === 'globeAssets') { const a = globeAssets(m.w, m.h); post({ type: 'globeAssets', id: m.id, ...a }, [a.albedo.buffer, a.water.buffer, a.relief.buffer]); }
+        if (m.req.strips && m.req.s > 0 && m.req.s < 0.9) { // 放大视图（需要缩放细节）才走预览 + 条带渐进
+          STRIP_JOBS.set(m.id, { id: m.id, req: m.req, post, previewed: false, row: 0 });
+          scheduleStrips();
+        } else {
+          const buf = R.render(m.req);
+          post({ type: 'frame', id: m.id, req: m.req, buf }, [buf.buffer]);
+        }
+      }
+      else if (m.type === 'cancelRender') { const j = STRIP_JOBS.get(m.id); if (j) { j.cancelled = true; STRIP_JOBS.delete(m.id); } }
+      else if (m.type === 'globeAssets') { const a = globeAssets(m.w, m.h); post({ type: 'globeAssets', id: m.id, ...a }, [a.albedo.buffer, a.water.buffer, a.relief.buffer]); }
       else if (m.type === 'probe') post({ type: 'probe', id: m.id, data: world ? probe(m.gx, m.gy, m.season || 0) : null });
       else if (m.type === 'cityTerrain') { const img = world ? R.render({ w: m.w, h: m.h, pad: 1, x0: m.x0, y0: m.y0, s: m.s, topic: 'terrain', season: 0, aux: { elev: true, depth: true, lakes: true, snow: true, coast: true, landform: false, relief: 9, detail: 4 } }) : null; post({ type: 'cityTerrain', id: m.id, img }, img ? [img.buffer] : []); }
       else if (m.type === 'cityMap') { const r = world ? cityMap(m.idx, m.px || 1100, m.extent || 'city') : null; post({ type: 'cityMap', id: m.id, data: r }, r ? [r.img.buffer] : []); }

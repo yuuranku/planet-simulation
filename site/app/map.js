@@ -33,7 +33,7 @@
     this.d = d; this.W = d.W; this.H = d.H; this.urban = new Map(); this.urbanReq = new Set(); this.stemCache = null;
     this.kmPerGrid = 2 * Math.PI * d.cfg.radius / d.W;
     this.buildPaths();
-    this.tex = null; this.texKey = ''; if (this.tiles) this.tiles.clear(); if (this.inflight) this.inflight.clear(); this.queue = [];
+    this.tex = null; this.texKey = ''; if (this.tiles) this.tiles.clear(); if (this.inflight) this.inflight.clear(); if (this.inflightId) this.inflightId.clear(); this.queue = [];
     this.gen = (this.gen || 0) + 1; // 世界代号：上一个世界还在路上的瓦片、纹理一律作废
     this.fit(); this.fitted = true;
     this.refreshRaster();
@@ -142,6 +142,8 @@
     const key = this.rasterKey();
     if (key !== this.texKey) {
       this.texKey = key; if (this.tiles) { for (const o of this.tiles.values()) o.img.close && o.img.close(); this.tiles.clear(); }
+      if (this.inflightId) { for (const id of this.inflightId.values()) this.app.cancelRender(id); this.inflightId.clear(); } // 主题/风格切换：在途条带立即停算
+      if (this.inflight) this.inflight.clear();
       this.app.render({ w: 2048, h: 1024, x0: 0, y0: 0, s: this.W / 2048, topic: this.app.topic(), season: this.app.season, aux: this.app.auxObj() }).then(img => {
         if (this.texKey !== key) return; this.tex = img; this.draw(); this.app.onTexture && this.app.onTexture(img, key);
       });
@@ -170,9 +172,12 @@
   MP.scheduleFrame = function () { this.updateTiles(); };
   MP.updateTiles = function () {
     if (!this.d || !this.texKey) return;
-    this.tiles = this.tiles || new Map(); this.inflight = this.inflight || new Set();
+    this.tiles = this.tiles || new Map(); this.inflight = this.inflight || new Set(); this.inflightId = this.inflightId || new Map();
     const z = this.tileZoom(); this.wantZ = z;
-    this.queue = z ? this.visibleTiles(z).filter(t => !this.tiles.has(this.tileKey(z, t.txm, t.ty))) : [];
+    const want = z ? this.visibleTiles(z) : [];
+    const wantKeys = new Set(want.map(t => this.tileKey(z, t.txm, t.ty)));
+    for (const [key, id] of [...this.inflightId]) if (!wantKeys.has(key)) { this.app.cancelRender(id); this.inflight.delete(key); this.inflightId.delete(key); } // 视野外的在途瓦片立即停算
+    this.queue = want.filter(t => !this.tiles.has(this.tileKey(z, t.txm, t.ty)));
     this.pump();
   };
   MP.pump = function () {
@@ -181,15 +186,24 @@
       if (this.tiles.has(key) || this.inflight.has(key)) continue;
       const { g, span } = this.tileGeom(t.z), texKey = this.texKey;
       this.inflight.add(key);
-      this.app.render({ w: TILE, h: TILE, pad: 1, x0: t.txm * span, y0: t.ty * span, s: g, topic: this.app.topic(), season: this.app.season, aux: this.app.auxObj() }).then(img => {
-        this.inflight.delete(key);
+      // 渐进瓦片：预览帧先上屏，细节条带随后逐条覆盖到同一张画布上
+      const cv = document.createElement('canvas'); cv.width = TILE; cv.height = TILE;
+      const cctx = cv.getContext('2d');
+      const p = this.app.render({ w: TILE, h: TILE, pad: 1, x0: t.txm * span, y0: t.ty * span, s: g, topic: this.app.topic(), season: this.app.season, aux: this.app.auxObj(), strips: 1 }, m => {
+        cctx.putImageData(new ImageData(new Uint8ClampedArray(m.buf.buffer || m.buf), TILE, m.h), 0, m.y);
+        if (texKey === this.texKey) { this.fade = true; this.draw(); }
+      });
+      this.inflightId.set(key, p.renderId);
+      p.then(img => {
+        this.inflight.delete(key); this.inflightId.delete(key);
         if (texKey === this.texKey) {
-          this.tiles.set(key, { img, t: performance.now() });
+          cctx.drawImage(img, 0, 0);
+          this.tiles.set(key, { img: cv, t: performance.now() });
           while (this.tiles.size > 260) { const k0 = this.tiles.keys().next().value, o = this.tiles.get(k0); o.img.close && o.img.close(); this.tiles.delete(k0); }
           this.fade = true; this.draw();
         }
         this.pump();
-      }, () => { this.inflight.delete(key); this.pump(); });
+      }, () => { this.inflight.delete(key); this.inflightId.delete(key); this.pump(); });
     }
   };
   MP.drawTiles = function (c, ks) {

@@ -96,7 +96,7 @@
 
     // ---- 4. 区块属性 ----
     const A = n => new Float32Array(nR + 1);
-    const R = { nR, regionOf, cells: new Int32Array(nR + 1), area: A(), weight: A(), pot: A(), hab: A(), eN: A(), slope: A(), T: A(), Pr: A(), arid: A(), semiArid: A(), river: new Uint8Array(nR + 1), riverCells: A(),
+    const R = { nR, regionOf, cells: new Int32Array(nR + 1), area: A(), weight: A(), pot: A(), hab: A(), eN: A(), slope: A(), T: A(), Pr: A(), arid: A(), semiArid: A(), pasture: A(), river: new Uint8Array(nR + 1), riverCells: A(),
       coast: new Uint8Array(nR + 1), cx: A(), cy: A(), civCost: A(), relCost: A(), frontier: A(), newW: A(),
       country: new Int16Array(nR + 1).fill(-1), prov: new Int16Array(nR + 1).fill(-1), civ: new Int16Array(nR + 1).fill(-1), rel: new Int16Array(nR + 1).fill(-1), relRaw: new Int16Array(nR + 1).fill(-1),
       landComp: new Int32Array(nR + 1), center: new Int32Array(nR + 1), cities: Array.from({ length: nR + 1 }, () => []) };
@@ -107,6 +107,7 @@
       const r = regionOf[i]; if (!r) continue; const y = (i / W) | 0, x = i - y * W, a = area[y];
       R.cells[r]++; R.area[r] += a; R.weight[r] += h.weight[i]; R.pot[r] += h.pot[i]; R.hab[r] += h.hab[i]; R.eN[r] += eN[i]; R.slope[r] += slopeN[i]; R.T[r] += h.T[i]; R.Pr[r] += h.Pr[i];
       const k = h.kop[i]; if (k === 3 || k === 4) R.arid[r]++; else if (k === 5 || k === 6) R.semiArid[r]++;
+      { let pv = (k === 5 || k === 6) ? 1 : (h.biome[i] === 3 && k > 6) ? 0.7 : k === 4 ? 0.3 : k === 3 ? 0.2 : 0; if (pv && (h.order[i] >= 2 || h.pot[i] > 0.5)) pv *= 0.3; R.pasture[r] += pv; } // 牧场适宜度（与 society 的判定一致）
       if (h.order[i] > R.river[r]) R.river[r] = h.order[i]; if (h.order[i] >= 3) R.riverCells[r]++;
       if (h.oceanCoast[i]) R.coast[r] = 1; if (h.frontier[i]) R.frontier[r]++; if (h.newW[i]) R.newW[r]++;
       const ang = x / W * 2 * Math.PI; cxs[r] += Math.cos(ang); sxs[r] += Math.sin(ang); sy[r] += y;
@@ -115,7 +116,7 @@
     }
     for (const [map, out] of [[vC, R.country], [vP, R.prov], [vV, R.civ], [vR, R.rel], [vRR, R.relRaw]]) { const best = new Int32Array(nR + 1); for (const [k, v] of map) { const r = (k / 65536) | 0; if (v > best[r]) { best[r] = v; out[r] = k % 65536; } } }
     for (let r = 1; r <= nR; r++) { const n = R.cells[r] || 1;
-      for (const key of ['pot', 'hab', 'eN', 'slope', 'T', 'Pr', 'arid', 'semiArid', 'civCost', 'relCost', 'frontier', 'newW']) R[key][r] /= n;
+      for (const key of ['pot', 'hab', 'eN', 'slope', 'T', 'Pr', 'arid', 'semiArid', 'pasture', 'civCost', 'relCost', 'frontier', 'newW']) R[key][r] /= n;
       R.riverCells[r] /= n;
       let ang = Math.atan2(sxs[r], cxs[r]); if (ang < 0) ang += 2 * Math.PI;
       R.cx[r] = (ang / (2 * Math.PI) * W + 0.5) * 2; R.cy[r] = (sy[r] / n + 0.5) * 2; } // 全分辨率坐标

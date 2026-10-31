@@ -159,5 +159,60 @@
   }
 
 
-  G.Noise = { mulberry32, simplex2, simplex3, fbm3, ridged3, fbm2, bspline, surface, surfaceRaw, cr, coastSurface };
+  // 近岸高程收口：设色 / 晕渲 / 等高线所用高程是一张与海岸线严格对齐的连续地表——海岸线就是它的 0 m 等高线。
+  // 做法：求每一点到“真实海岸线”（coastSurface 零线，含格下小岬小湾）的距离 d，
+  //   近岸（海岸地表的起伏带内）用局部 |海岸地表| / 梯度 精确求距，离岸稍远处平滑过渡到格网带符号距离场；
+  //   再以坡度包络 cap(d) = 岸坡 × d（离岸 COAST_REACH 格外放开）与原高程取平滑最小值。
+  // 于是高程在海岸线上恰好归零、向内单调平滑回升，色带、晕渲、等高线都绕着海岸走，不会被海岸线截断。
+  // 低平海岸远低于包络，几乎不受影响；内陆高山不受影响。
+  const COAST_SLOPE = 22;      // 远包络：平均岸坡（米 / 千米）
+  const COAST_REACH = 2.2;     // 远包络作用范围（格）
+  let coastKm = 24;            // 每格千米数（由 Render.create 按星球半径设置）
+  const sdCache = new WeakMap();
+  function coastSD(A, W, H) { // 带符号的格网海岸距离（格）：陆格 = 到最近海格中心距离 − 0.5，海格取负；邻海两格中点 ≈ 0
+    let S = sdCache.get(A); if (S) return S;
+    const N = W * H, INF = 1e9, CAP = 8;
+    const edt = (src) => { // 两遍倒角距离（经向按纬度余弦缩短），到 src 格中心
+      const D = new Float32Array(N); for (let i = 0; i < N; i++) D[i] = src(i) ? 0 : INF;
+      const cx = new Float32Array(H); for (let y = 0; y < H; y++) cx[y] = Math.max(0.15, Math.cos((0.5 - (y + 0.5) / H) * Math.PI));
+      for (let pass = 0; pass < 2; pass++) for (let k = 0; k < H; k++) { // 先自上而下、再自下而上；每行先取相邻行，再沿行双向（含经向环绕）传播
+        const y = pass ? H - 1 - k : k, yy = pass ? y + 1 : y - 1, r = y * W, ax = cx[y], dg = Math.sqrt(ax * ax + 1);
+        if (yy >= 0 && yy < H) { const q = yy * W; for (let x = 0; x < W; x++) { const xl = x === 0 ? W - 1 : x - 1, xr = x === W - 1 ? 0 : x + 1; let v = D[r + x], t = D[q + x] + 1; if (t < v) v = t; t = D[q + xl] + dg; if (t < v) v = t; t = D[q + xr] + dg; if (t < v) v = t; D[r + x] = v; } }
+        for (let j = 1; j < 2 * W; j++) { const x = j % W, p = (j - 1) % W, t = D[r + p] + ax; if (t < D[r + x]) D[r + x] = t; }
+        for (let j = 2 * W - 2; j >= 0; j--) { const x = j % W, p = (j + 1) % W, t = D[r + p] + ax; if (t < D[r + x]) D[r + x] = t; }
+      }
+      return D;
+    };
+    const Ds = edt(i => A[i] <= 0), Dl = edt(i => A[i] > 0);
+    let B = new Float32Array(N); for (let i = 0; i < N; i++) B[i] = A[i] > 0 ? Math.min(CAP, Ds[i] - 0.5) : -Math.min(CAP, Dl[i] - 0.5);
+    // 轻度模糊一次：消去倒角距离的折角，跨格平滑
+    const C = new Float32Array(N); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let s2 = 0, n = 0; for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -1; dx <= 1; dx++) { const w = (dx ? 1 : 2) * (dy ? 1 : 2); s2 += B[yy * W + ((x + dx) % W + W) % W] * w; n += w; } } C[y * W + x] = s2 / n; }
+    S = C; sdCache.set(A, S); return S;
+  }
+  function coastDist(cv, A, W, H, x, y) { // 到海岸线的距离（格，按纬度换算经向），陆上 ≥ 0
+    const S = coastSD(A, W, H), sx0 = x - 0.5, sy0 = Math.min(H - 1.001, Math.max(0, y - 0.5)), sx = ((sx0 % W) + W) % W, xi = sx | 0, tx = sx - xi, xj = xi + 1 === W ? 0 : xi + 1, yi = sy0 | 0, ty = sy0 - yi, yj = Math.min(H - 1, yi + 1);
+    const dg = Math.max(0, (S[yi * W + xi] * (1 - tx) + S[yi * W + xj] * tx) * (1 - ty) + (S[yj * W + xi] * (1 - tx) + S[yj * W + xj] * tx) * ty);
+    const t = cv / 100; if (t >= 0.85) return dg;
+    const h = 0.03, cl = Math.max(0.15, Math.cos((0.5 - y / H) * Math.PI));
+    const gx = (coastSurface(A, W, H, x + h, y) - coastSurface(A, W, H, x - h, y)) / (2 * h) / cl, gy = (coastSurface(A, W, H, x, y + h) - coastSurface(A, W, H, x, y - h)) / (2 * h);
+    const gm = Math.hypot(gx, gy), dl = gm > 1e-6 ? Math.min(1.5, cv / gm) : dg;
+    const u = Math.max(0, Math.min(1, (t - 0.45) / 0.4)), w = u * u * (3 - 2 * u); // 起伏带内用局部距离，向外平滑交给格网距离
+    return dl + (dg - dl) * w;
+  }
+  function coastCap(cv, A, W, H, x, y) {
+    if (!A) { const t = cv / 100; return t >= 0.999 ? Infinity : t <= 0 ? 0 : 110 * t / (1 - t); }
+    const u = coastDist(cv, A, W, H, x, y) / COAST_REACH;
+    return u >= 1 ? Infinity : COAST_SLOPE * coastKm * COAST_REACH * u / (1 - u);
+  }
+  const smin = (b, c) => { if (c === Infinity) return b; const r = b / Math.max(1e-6, c), r4 = r * r * r * r; return b / Math.sqrt(Math.sqrt(1 + r4)); };
+  function coastElev(e, cv, A, W, H, x, y) {
+    if (cv <= 0) return e > -0.5 ? -0.5 : e; // 海侧：保持在海平面以下
+    const b = e > 1 ? e : 1, v = smin(b, coastCap(cv, A, W, H, x, y));
+    return v > 0.5 ? v : 0.5;
+  }
+  // 某一高程层（等高线）在该点是否仍落在收口后的地表之上（≥ 该层 60%）
+  function coastKeeps(level, cv, A, W, H, x, y) { if (cv <= 0) return false; return smin(level, coastCap(cv, A, W, H, x, y)) >= 0.6 * level; }
+  function setCoastScale(km) { if (km > 0 && isFinite(km)) coastKm = km; }
+
+  G.Noise = { mulberry32, simplex2, simplex3, fbm3, ridged3, fbm2, bspline, surface, surfaceRaw, cr, coastSurface, coastElev, coastKeeps, setCoastScale };
 })(typeof self !== 'undefined' ? self : this);

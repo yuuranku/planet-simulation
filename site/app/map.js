@@ -6,7 +6,8 @@
   // 地图风格（矢量部分）：线条与注记统一换色（canvas 滤镜），古典与水墨用宋体
   const VSTYLE = { default: { filter: 'none', bg: '#e8f3f7' }, antique: { filter: 'sepia(0.85) saturate(1.15) brightness(0.92)', font: SERIF, bg: '#e8dcc0' }, modern: { filter: 'saturate(0.75)', bg: '#f2f3f0' },
     nautical: { filter: 'saturate(0.55) brightness(0.85)', font: SERIF, bg: '#f4f0e4' }, blueprint: { filter: 'grayscale(1) invert(1) brightness(1.6)', bg: '#0f2f5a' },
-    ink: { filter: 'grayscale(1) contrast(1.25) brightness(0.8)', font: SERIF, bg: '#f2efe8' }, night: { filter: 'invert(0.9) hue-rotate(180deg) saturate(1.2)', bg: '#0b1422' } };
+    ink: { filter: 'grayscale(1) contrast(1.25) brightness(0.8)', font: SERIF, bg: '#f2efe8' }, night: { filter: 'invert(0.9) hue-rotate(180deg) saturate(1.2)', bg: '#0b1422' },
+    political: { filter: 'none', bg: '#cfe9f6', political: true } };
   G.MAP_STYLES = VSTYLE;
   // 屏幕尺度分级：与原版相同的阈值
   const LEVELS = ['world', 'region', 'local', 'detail'];
@@ -14,6 +15,9 @@
   const levelOf = ratio => ratio < 2.5 ? 0 : ratio < 7 ? 1 : ratio < 18 ? 2 : 3;
   const routeVisible = (imp, lv, mode) => { const rank = { trunk: 0, regional: 1, local: 2 }[imp]; const min = mode === 'sea' ? rank : mode === 'rail' ? rank + 1 : Math.max(1, rank); return min <= lv; };
   const bridgeVisible = (imp, lv) => [1, 2, 3][imp] <= lv;
+  // 以国家为主题的人文专题：国名、省界、部族名属于专题本身；其余专题（文明、语言、宗教、人口……）只写自己的类别，国名要打开“国界与国名”才显示
+  const POLITICAL_TOPIC = { country: 1, govern: 1, province: 1, heritage: 1 };
+  G.POLITICAL_TOPIC = POLITICAL_TOPIC;
 
   function MapView(canvas, app) {
     this.cv = canvas; this.ctx = canvas.getContext('2d'); this.app = app;
@@ -26,7 +30,7 @@
   MP.level = function () { return levelOf(this.zoomRel()); };
 
   MP.setData = function (d) {
-    this.d = d; this.W = d.W; this.H = d.H; this.urban = new Map(); this.urbanReq = new Set();
+    this.d = d; this.W = d.W; this.H = d.H; this.urban = new Map(); this.urbanReq = new Set(); this.stemCache = null;
     this.kmPerGrid = 2 * Math.PI * d.cfg.radius / d.W;
     this.buildPaths();
     this.tex = null; this.texKey = ''; if (this.tiles) this.tiles.clear(); if (this.inflight) this.inflight.clear(); this.queue = [];
@@ -228,14 +232,10 @@
     const app = this.app, aux = app.aux, tab = app.tab, zr = this.zoomRel(), lv = levelOf(zr), topic = app.topic(), px = 1 / s, d = this.d;
     const each = (fn) => { for (const k of ks) { c.setTransform(dpr * s, 0, 0, dpr * s, dpr * (v.x + k * W * s), dpr * v.y); fn(k); } };
     c.lineJoin = 'round'; c.lineCap = 'round';
-    if (aux.coast) each(() => {
+    const POL = !!VS.political; // 政区图：不画陆地等高线，始终显示国界与经纬网
+    if (aux.coast && !POL) each(() => {
       c.strokeStyle = 'rgba(110,150,185,.3)'; c.lineWidth = 0.7 * px; c.stroke(this.paths.cont.sea);
-      // 23 层等高线（原版色 #76694f；每 4 层加粗为计曲线）；区域级起换用全精度线
-      const C = this.paths.cont;
-      if (lv >= 1 && !C.fine && d.contoursFine) { C.fine = new Path2D(); C.fineIndex = new Path2D(); for (const cc of d.contoursFine) { const p = cc.k % 4 === 0 ? C.fineIndex : C.fine, a = cc.pts; p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) p.lineTo(a[k], a[k + 1]); } }
-      const L = lv >= 1 && C.fine ? C.fine : C.land, LI = lv >= 1 && C.fineIndex ? C.fineIndex : C.index;
-      c.strokeStyle = lv === 0 ? 'rgba(118,105,79,.18)' : 'rgba(118,105,79,.26)'; c.lineWidth = 0.5 * px; c.stroke(L);
-      c.strokeStyle = lv === 0 ? 'rgba(118,105,79,.3)' : 'rgba(118,105,79,.42)'; c.lineWidth = 0.85 * px; c.stroke(LI);
+      // 陆地 23 层等高线改在栅格里按设色地表逐像素描出（core/render.js），与海岸线、色带同源，不再在此叠矢量线
     });
     // 城市建成区（新城市生成器）：在原位绘制建成区、街区、干道、城墙
     // 小型湖泊：区域级起显示较大的，地方级起显示全部（全图不画，节省绘制）
@@ -255,11 +255,15 @@
       });
     }
     // 边界（矢量）：省界 < 名义宣称 < 部族边疆 < 国界
-    const human = tab === 'human', showStates = aux.borders || human;
+    const human = tab === 'human', polTopic = human && POLITICAL_TOPIC[topic], showStates = aux.borders || polTopic || (human && topic === 'system') || POL;
     if (tab !== 'plates' && tab !== 'season') each(() => {
-      if (human && (topic === 'province' || lv >= 2)) { c.setLineDash([3 * px, 2.5 * px]); c.strokeStyle = 'rgba(70,60,55,.42)'; c.lineWidth = 0.8 * px; c.stroke(this.paths.borders.province); c.setLineDash([]); }
+      if (polTopic && (topic === 'province' || lv >= 2)) { c.setLineDash([3 * px, 2.5 * px]); c.strokeStyle = 'rgba(70,60,55,.42)'; c.lineWidth = 0.8 * px; c.stroke(this.paths.borders.province); c.setLineDash([]); }
       if (aux.nominal) { c.setLineDash([6 * px, 4 * px]); c.strokeStyle = 'rgba(150,70,60,.6)'; c.lineWidth = 1.1 * px; c.stroke(this.paths.borders.claim); c.setLineDash([]); }
-      if (showStates) {
+      if (showStates && POL) { // 政区图：细而清晰的深灰国界，部族边疆用细虚线
+        c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 2 * px; c.stroke(this.paths.borders.country);
+        c.strokeStyle = 'rgba(78,78,92,.85)'; c.lineWidth = 0.9 * px; c.stroke(this.paths.borders.country);
+        c.setLineDash([3 * px, 2.5 * px]); c.strokeStyle = 'rgba(96,96,110,.6)'; c.lineWidth = 0.8 * px; c.stroke(this.paths.borders.frontier); c.setLineDash([]);
+      } else if (showStates) {
         c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 3 * px; c.stroke(this.paths.borders.country);
         c.strokeStyle = 'rgba(70,52,44,.8)'; c.lineWidth = 1.25 * px; c.stroke(this.paths.borders.country);
         c.setLineDash([1.5 * px, 2.5 * px]); c.strokeStyle = 'rgba(110,80,60,.6)'; c.lineWidth = 1 * px; c.stroke(this.paths.borders.frontier); c.setLineDash([]);
@@ -285,7 +289,7 @@
       if (app.sx.wind) this.drawArrows(this.d.winds[app.season], 4, ks, false);
     }
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    if (aux.grid) this.drawGraticule(zr);
+    if (aux.grid || POL) this.drawGraticule(zr, POL);
     if (aux.polar) this.drawPolar();
     if (aux.landform && tab !== 'plates') this.drawSymbols(ks, zr);
     app.drawTools && app.drawTools(c, this, ks);
@@ -354,9 +358,9 @@
       }
     }
   };
-  MP.drawGraticule = function (zr) {
+  MP.drawGraticule = function (zr, pol) {
     const c = this.ctx, v = this.view, s = v.s, W = this.W, H = this.H, step = zr > 6 ? 5 : zr > 2.5 ? 10 : 30;
-    c.strokeStyle = 'rgba(70,105,135,.22)'; c.lineWidth = 0.8; c.font = `10px ${FONT}`; c.fillStyle = 'rgba(60,80,100,.65)';
+    c.strokeStyle = pol ? 'rgba(70,140,200,.32)' : 'rgba(70,105,135,.22)'; c.lineWidth = pol ? 0.7 : 0.8; c.font = `10px ${FONT}`; c.fillStyle = pol ? 'rgba(60,110,160,.7)' : 'rgba(60,80,100,.65)';
     c.beginPath();
     for (let la = -90 + step; la < 90; la += step) { const y = v.y + (90 - la) / 180 * H * s; c.moveTo(0, y); c.lineTo(this.vw, y); }
     const x0 = Math.floor((-v.x / s) / W * 360 / step) * step;
@@ -392,14 +396,17 @@
     const onScreen = (sx, sy, m = 40) => sx > -m && sy > -m && sx < this.vw + m && sy < this.vh + m;
     const items = []; // [priority, kind, payload, id]
     this.hits = []; this.cityDots = []; this.heritageDots = []; const N_ = (id, def) => app.nameOf ? app.nameOf(id, def) : def;
-    const human = tab === 'human', showStates = aux.borders || human;
+    const human = tab === 'human', polTopic = human && POLITICAL_TOPIC[topic], showStates = aux.borders || polTopic || (!!(VSTYLE[aux.style] || {}).political && topic === 'terrain'); // 政区风格只在地形底图上自带国名
     if (tab === 'plates') d.plates.forEach((p, i) => items.push([5, 'plate', p, 'plate:' + i]));
+    // 专题注记：本专题的类别直接写在对应区域里，优先级最高
+    const zones = d.zones && (tab === 'geo' || tab === 'human') && d.zones[topic];
+    if (zones && app.zoneText) zones.forEach((z, i) => items.push([(topic === 'govern' ? 16 : 8 + Math.min(1, 40 / (z.n + 40))) + (z.sub ? 2.5 : 0), 'zone', z, 'zone:' + topic + ':' + i]));
     if (showStates && tab !== 'plates') {
       d.countries.forEach((k, i) => { if (k.lx !== undefined) items.push([10, 'state', k, 'country:' + i]); });
-      if (human && (topic === 'province' || lv >= 2)) d.provinces.forEach((p, i) => items.push([topic === 'province' ? 11 : 12, 'province', p, 'province:' + i]));
-      if (human && (topic === 'country' || topic === 'govern' || topic === 'pop' || topic === 'culture' || topic === 'language')) d.tribes.forEach((t, i) => items.push([18, 'tribe', t, 'tribe:' + i]));
-      if (human && (topic === 'country' || topic === 'govern' || topic === 'province') && lv >= 1) (d.jimis || []).forEach((t, i) => items.push([19, 'jimi', t, 'jimi:' + i]));
+      if (polTopic && (topic === 'province' || lv >= 2)) d.provinces.forEach((p, i) => items.push([topic === 'province' ? 11 : 12, 'province', p, 'province:' + i]));
     }
+    if (human && (topic === 'country' || topic === 'govern' || topic === 'system')) d.tribes.forEach((t, i) => items.push([18, 'tribe', t, 'tribe:' + i]));
+    if (human && (topic === 'country' || topic === 'govern' || topic === 'system' || topic === 'province') && lv >= 1) (d.jimis || []).forEach((t, i) => items.push([19, 'jimi', t, 'jimi:' + i]));
     if (aux.names && tab !== 'plates') {
       // 地理名称分级：全图只有大洋、大陆、主要山脉与大片高原平原盆地；放大后出现海、湾、半岛、湖、雪山；再放大山脉让位给具体山峰与海拔
       for (let li = 0; li < d.labels.length; li++) {
@@ -407,7 +414,9 @@
         const major = t === 'ocean' || t === 'continent' || (t === 'range' && l.size > 120) || (AREA_MAJOR[t] && l.size >= AREA_MAJOR[t]);
         let minLv = major ? 0 : 1, maxLv = 9;
         if (t === 'continent') maxLv = 1;
-        if (t === 'range') { minLv = l.size > 120 ? 0 : 1; maxLv = 2; }
+        if (t === 'range') { minLv = l.size > 120 ? 0 : 1; maxLv = l.ridge ? 9 : 2; }
+        if (t === 'ridge') minLv = 2;
+        if (t === 'hills') minLv = l.size > 60 ? 1 : 2;
         if (t === 'bay') minLv = l.size >= 100 ? 1 : 2;
         if (t === 'peninsula') minLv = l.size >= 60 ? 1 : 2;
         if (t === 'peak') minLv = l.rank < 24 ? 1 : 2;
@@ -415,10 +424,12 @@
         if (t === 'island') minLv = l.size >= 30 || l.arch && l.size >= 12 ? 1 : 2;
         if (lv < minLv || lv > maxLv) continue;
         const pr = major ? 20 + ({ ocean: 0, continent: 0, range: 1, plateau: 2, basin: 2, plain: 3 }[t] || 0)
-          : 40 + ({ sea: 0, range: 1, snow: 1.5, plateau: 2, basin: 2, plain: 2.5, bay: 3, peninsula: 3, lake: 4, peak: 5 + Math.min(4, (l.rank || 0) / 40), island: 6 }[t] ?? 7);
+          : 40 + ({ sea: 0, range: lv >= 3 ? 4 : 1, ridge: 4.5, hills: 5, snow: 1.5, plateau: 2, basin: 2, plain: 2.5, bay: 3, peninsula: 3, lake: 4, peak: 5 + Math.min(4, (l.rank || 0) / 40), island: 6 }[t] ?? 7);
         items.push([pr, 'geo', l, 'label:' + li]);
       }
-      if (aux.rivers && lv >= 1) d.riverNames.forEach((r, k) => { if (lv >= 2 || k < 15) items.push([43, 'river', r, 'river:' + k]); });
+      // 河名：每一级河流在它显示出来的那一级起就有名字（全图不注河名）
+      const bigKm = 2 * Math.PI * d.cfg.radius * 0.02;
+      if (aux.rivers && lv >= 1) d.riverNames.forEach((r, k) => { const t = r.tier === undefined ? (r.minor ? 3 : 0) : r.tier; if (lv >= Math.max(1, t) && (t !== 1 || lv >= 2 || (r.km || 0) >= bigKm)) items.push([43 + t * 1.5 - Math.min(1, (r.km || 0) / 4000), 'river', r, 'river:' + k]); });
     }
     if (aux.cities && tab !== 'plates') d.cities.forEach((ct, ci) => {
       const cap = ct.capital !== undefined;
@@ -446,6 +457,70 @@
       return true;
     };
     const each = (gx, gy, fn) => { for (const k of ks) { const sx = v.x + (gx + k * this.W) * s, sy = v.y + gy * s; if (onScreen(sx, sy)) fn(sx, sy); } };
+    // 沿线排字：河名沿河道、山名沿山脊。逐字取路径切线方向，保持从左往右读；弯得太急或被别的注记占住就换位置
+    const fits = (bx) => { for (const b of boxes) if (bx[0] < b[2] && bx[2] > b[0] && bx[1] < b[3] && bx[3] > b[1]) return false; return true; };
+    const pathText = (str, gpts, o) => {
+      const chars = [...str], n = chars.length; if (!n) return 0;
+      const size = o.size * (PH ? LS : 1); c.font = `${o.weight || 500} ${size}px ${FONT}`;
+      let cw = null, tw = 0; const measure = () => { if (!cw) { cw = chars.map(ch => c.measureText(ch).width); tw = cw.reduce((a, b) => a + b, 0); } };
+      let placed = 0;
+      // 外包框粗筛：整条线都不在视口里就不逐点换算
+      this.bbCache = this.bbCache || new WeakMap(); let bb = this.bbCache.get(gpts);
+      if (!bb) { bb = [1e9, 1e9, -1e9, -1e9]; for (let i = 0; i < gpts.length; i += 2) { if (gpts[i] < bb[0]) bb[0] = gpts[i]; if (gpts[i] > bb[2]) bb[2] = gpts[i]; if (gpts[i + 1] < bb[1]) bb[1] = gpts[i + 1]; if (gpts[i + 1] > bb[3]) bb[3] = gpts[i + 1]; } this.bbCache.set(gpts, bb); }
+      for (const k of ks) {
+        if (v.x + (bb[2] + k * this.W) * s < -20 || v.x + (bb[0] + k * this.W) * s > this.vw + 20 || v.y + bb[3] * s < -20 || v.y + bb[1] * s > this.vh + 20) continue;
+        // 屏幕坐标下、视口内（含边距）的最长连续一段
+        const P = []; let run = [], best = [];
+        for (let i = 0; i < gpts.length; i += 2) { const sx = v.x + (gpts[i] + k * this.W) * s, sy = v.y + gpts[i + 1] * s;
+          if (sx > -20 && sy > -20 && sx < this.vw + 20 && sy < this.vh + 20) { const q = run[run.length - 1]; if (!q || Math.hypot(sx - q[0], sy - q[1]) > 1.2) run.push([sx, sy]); } else { if (run.length > best.length) best = run; run = []; } }
+        if (run.length > best.length) best = run;
+        if (best.length < 2) continue;
+        { // 按字号等距重采样并滑动平均：注记沿“抹平了小河曲”的走向排，不被每个小弯打断
+          const c0 = [0]; for (let i = 1; i < best.length; i++) c0.push(c0[i - 1] + Math.hypot(best[i][0] - best[i - 1][0], best[i][1] - best[i - 1][1]));
+          const L0 = c0[c0.length - 1], step = Math.max(2, size * 0.5), rs = []; let j = 0;
+          for (let dd = 0; dd <= L0; dd += step) { while (j < c0.length - 2 && c0[j + 1] < dd) j++; const t = (dd - c0[j]) / Math.max(1e-6, c0[j + 1] - c0[j]); rs.push([best[j][0] + (best[j + 1][0] - best[j][0]) * t, best[j][1] + (best[j + 1][1] - best[j][1]) * t]); }
+          const K = Math.max(1, Math.round(size * o.smooth / step)); if (rs.length > 2 * K + 1) best = rs.map((p, i) => { if (i < K || i >= rs.length - K) return p; let sx = 0, sy = 0; for (let q = -K; q <= K; q++) { sx += rs[i + q][0]; sy += rs[i + q][1]; } return [sx / (2 * K + 1), sy / (2 * K + 1)]; }); }
+        const cum = [0]; for (let i = 1; i < best.length; i++) cum.push(cum[i - 1] + Math.hypot(best[i][0] - best[i - 1][0], best[i][1] - best[i - 1][1]));
+        const L = cum[cum.length - 1]; measure();
+        const gap = n > 1 ? Math.max(o.minGap * size, Math.min(o.maxGap * size, (L * o.fill - tw) / (n - 1))) : 0, span = tw + gap * (n - 1);
+        if (span > L * 0.92) continue;
+        const at = (d) => { d = Math.max(0, Math.min(L, d)); let lo = 0, hi = cum.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= d) lo = m; else hi = m; } const t = (d - cum[lo]) / Math.max(1e-6, cum[hi] - cum[lo]); return [best[lo][0] + (best[hi][0] - best[lo][0]) * t, best[lo][1] + (best[hi][1] - best[lo][1]) * t]; };
+        const tries = o.repeat && L > span * 4.5 ? [0.25, 0.75, 0.5, 0.15, 0.85, 0.35, 0.65] : [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9];
+        let got = 0; const used = [];
+        for (const f of tries) {
+          if (got >= (o.repeat && L > span * 4.5 ? 2 : 1)) break;
+          const d0 = L * f - span / 2; if (d0 < 0 || d0 + span > L) continue;
+          if (used.some(u => Math.abs(u - L * f) < span * 1.6)) continue;
+          const a0 = at(d0), a1 = at(d0 + span), steep = Math.abs(a1[1] - a0[1]) > Math.abs(a1[0] - a0[0]) * 1.4, rev = steep ? a1[1] < a0[1] : a1[0] < a0[0]; // 横向从左往右读，竖向从上往下读
+          const glyph = []; let pos = 0, ok = true, prevAng = null;
+          for (let j = 0; j < n; j++) {
+            const jj = rev ? n - 1 - j : j, mid = rev ? d0 + span - (pos + cw[jj] / 2) : d0 + pos + cw[jj] / 2, h = Math.max(size * 0.7, 3);
+            const p0 = at(mid - h), p1 = at(mid + h); let ang = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]); if (rev) ang += Math.PI;
+            while (ang > Math.PI / 2) ang -= Math.PI; while (ang < -Math.PI / 2) ang += Math.PI; ang = Math.max(-o.tilt, Math.min(o.tilt, ang)); // 字头朝上：陡处字不躺倒，沿线竖排
+            if (prevAng !== null) { let da = ang - prevAng; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI; if (Math.abs(da) > o.maxTurn) { ok = false; break; } }
+            prevAng = ang; let [x, y] = at(mid);
+            if (o.offset) { const tx = p1[0] - p0[0], ty = p1[1] - p0[1], tl = Math.hypot(tx, ty) || 1; let nx = ty / tl, ny = -tx / tl; if (ny > 0 || (Math.abs(ny) < 0.2 && nx < 0)) { nx = -nx; ny = -ny; } x += nx * o.offset * size; y += ny * o.offset * size; } // 河名放在河道上方（竖向河段放右侧）
+            const r = size * 0.62; const bx = [x - r, y - r, x + r, y + r]; if (!fits(bx)) { ok = false; break; }
+            glyph.push([chars[jj], x, y, ang, bx]); pos += cw[jj] + gap;
+          }
+          if (!ok) continue;
+          // 读序：rev 时 glyph 是从右往左算的，绘制顺序无关
+          let ux0 = 1e9, uy0 = 1e9, ux1 = -1e9, uy1 = -1e9;
+          for (const g of glyph) { boxes.push(g[4]); ux0 = Math.min(ux0, g[4][0]); uy0 = Math.min(uy0, g[4][1]); ux1 = Math.max(ux1, g[4][2]); uy1 = Math.max(uy1, g[4][3]); }
+          if (o.id) this.hits.push({ id: o.id, box: [ux0, uy0, ux1, uy1], name: str, x: (ux0 + ux1) / 2, y: (uy0 + uy1) / 2 });
+          c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
+          for (const [ch, x, y, ang] of glyph) { c.save(); c.translate(x, y); c.rotate(ang); c.lineWidth = o.halo || 3; c.strokeStyle = o.haloColor || 'rgba(255,255,255,.88)'; c.strokeText(ch, 0, 0); c.fillStyle = o.color; c.fillText(ch, 0, 0); c.restore(); }
+          used.push(L * f); got++; placed++;
+        }
+      }
+      return placed;
+    };
+    const stemPath = (st) => { this.stemCache = this.stemCache || new Map(); if (this.stemCache.has(st)) return this.stemCache.get(st);
+      const RV = d.rivers, S = RV.stems && RV.stems[st]; if (!S) return null; const out = []; let x0 = null;
+      for (let j = S.r.length - 1; j >= 0; j--) { const r = S.r[j]; for (let k = RV.offs[r]; k < RV.offs[r + 1]; k++) { let x = RV.pts[k * 7]; const y = RV.pts[k * 7 + 1]; if (x0 !== null) { while (x - x0 > this.W / 2) x -= this.W; while (x0 - x > this.W / 2) x += this.W; } x0 = x; out.push(x, y); } }
+      this.stemCache.set(st, out); return out; };
+    const zoneSeen = new Map();
+    const ZONE_FONT = (z) => Math.max(11, Math.min(26, 2 * z.d * s * 0.42));
     for (const [pr, kind, o, id] of items) {
       if (kind === 'plate') each(o.x, o.y, (sx, sy) => {
         if (!text(N_(id, o.name), sx, sy, { size: 14, weight: 700, color: '#2a3a46', id })) return;
@@ -478,62 +553,62 @@
           if (!text(nm, sx + 6, sy - 6, { size: snow ? 11.5 : 11, weight: snow ? 600 : 500, color: snow ? '#4e7896' : '#6b4f3a', align: 'left', id })) return;
           c.beginPath(); c.moveTo(sx, sy - 4.5); c.lineTo(sx + 4.2, sy + 3); c.lineTo(sx - 4.2, sy + 3); c.closePath(); c.fillStyle = snow ? '#ffffff' : '#7a5a44'; c.fill(); c.lineWidth = 1; c.strokeStyle = snow ? '#5f86a3' : 'rgba(255,255,255,.9)'; c.stroke();
           if (l.h) text(l.h.toLocaleString() + ' m', sx + 6, sy + 9, { size: 9.5, weight: 500, color: snow ? '#5f86a3' : '#7d6a5a', align: 'left' }); });
+        else if ((l.type === 'range' || l.type === 'ridge' || l.type === 'hills') && l.ridge && pathText(nm, l.ridge, { size: l.type === 'range' ? (l.size > 120 ? 14 : 13) : l.type === 'ridge' ? 12 : 11.5, weight: 600, color: l.type === 'hills' ? '#7d6a4e' : '#8a6446', minGap: 0.35, maxGap: 2.6, fill: 0.62, maxTurn: 0.6, tilt: 0.8, smooth: 1.6, id })) { /* 已沿山脊排字 */ }
+        else if (l.type === 'ridge' || l.type === 'hills') continue;
         else { const len = l.len * s; if (len < 40 && lv < 1) continue; let a = l.angle; if (Math.cos(a) < 0) a += Math.PI; if (a > Math.PI / 2) a -= Math.PI; if (l.type === 'plateau' || len < 70) a = 0; each(l.x, l.y, (sx, sy) => text(nm, sx, sy, { size: 13, weight: 600, color: '#8a6446', ls: 3, angle: a * 0.85, id })); }
       }
-      else if (kind === 'river') each(o.x, o.y, (sx, sy) => text(N_(id, o.name), sx + 10, sy - 10, { size: 11, color: '#3f7fb0', ls: 1, id }));
+      else if (kind === 'river') {
+        const gp = o.stem !== undefined ? stemPath(o.stem) : null, t = o.tier === undefined ? 0 : o.tier;
+        if (gp) pathText(N_(id, o.name), gp, { size: t === 0 ? 12 : t === 1 ? 11.5 : 11, weight: t === 0 ? 600 : 500, color: '#2f72a8', minGap: 0.25, maxGap: 1.4, fill: 0.3, maxTurn: 0.7, tilt: 0.8, offset: 0.75, smooth: 1.4, repeat: lv >= 2, id });
+        else if (!o.minor) each(o.x, o.y, (sx, sy) => text(N_(id, o.name), sx + 10, sy - 10, { size: 11, color: '#3f7fb0', ls: 1, id }));
+      }
+      else if (kind === 'zone') {
+        const [nm, sub, col, rid] = app.zoneText(topic, o); if (!nm) continue;
+        let size = ZONE_FONT(o); const diam = 2 * 2 * o.d * s;
+        let ang = 0, room = diam * 1.25; if (o.el > 1.7) { ang = o.a; if (ang > Math.PI / 2) ang -= Math.PI; if (ang < -Math.PI / 2) ang += Math.PI; ang = Math.max(-0.6, Math.min(0.6, ang)); room = diam * Math.min(2.6, o.el * 0.9); }
+        const nch = [...nm].length; c.font = `700 ${size}px ${FONT}`; let w = c.measureText(nm).width;
+        if (w > room) { size = Math.max(11, size * room / w); c.font = `700 ${size}px ${FONT}`; w = c.measureText(nm).width; }
+        if (w > room * 1.15 || 2 * o.d * s < 7) continue;
+        const ls = nch > 1 ? Math.max(1, Math.min(size * 0.9, (room * 0.7 - w) / (nch - 1))) : 0;
+        const half = (w + ls * (nch - 1)) / 2 * Math.abs(Math.cos(ang)) + size;
+        const zkey = topic + ':' + o.c, sep = Math.max(160, w * 2.2);
+        each(o.x, o.y, (sx, sy) => { if (sx - half < 0 || sx + half > this.vw || sy < size || sy > this.vh - size) return;
+          if ((sx + half > this.vw - 70 && sy > this.vh - 190) || (sx - half < 320 && sy > this.vh - 100)) return; // 不压在缩放按钮、图层与图例按钮下
+          if (o.sub && zoneSeen.has('g' + o.g)) return; // 分块锚点只在这片区域还没有任何注记时补上一个
+          const near = zoneSeen.get(zkey); if (near && near.some(([px2, py2]) => Math.hypot(px2 - sx, py2 - sy) < sep)) return; // 同一类别相隔太近只写一次
+          const ok = text(nm, sx, sy, { size, weight: 700, color: col || '#33302c', ls, angle: ang, halo: 3.5, id: rid });
+          if (ok) { if (!zoneSeen.has(zkey)) zoneSeen.set(zkey, []); zoneSeen.get(zkey).push([sx, sy]); zoneSeen.set('g' + o.g, 1); }
+          if (ok && sub && size >= 12.5) text(sub, sx - Math.sin(ang) * size * 1.05, sy + Math.cos(ang) * size * 1.05, { size: Math.max(9.5, size * 0.6), weight: 500, color: col || '#5a544c', ls: 0.5, angle: ang, halo: 3 }); });
+      }
       else if (kind === 'city') each(o.x, o.y, (sx, sy) => this.drawCity(o, sx, sy, free, lv, true, id, N_(id, o.name)));
       else if (kind === 'heritage') each(o.x, o.y, (sx, sy) => this.drawHeritage(o, sx, sy, free, lv, id, N_(id, o.name), text));
     }
   };
   // 遗迹徽章：按类别着色（宗教紫、战争红、人文褐），中间一个字标明种类
   const HER_COL = { religious: '#6b3fa0', war: '#a8322a', culture: '#8a6a2e' };
-  // 遗迹图标（24×24 视框，白色画在类别色的徽章上）：s = 描线图标，其余为填充（evenodd 挖空）
-  const HER_ICON = {
-    holy: { d: 'M12 2.5 21 8H3Z M5 9.5h2.4v8H5Z M10.8 9.5h2.4v8h-2.4Z M16.6 9.5H19v8h-2.4Z M3 18.8h18V21H3Z' },                                   // 神殿：圣地
-    mountain: { d: 'M1.5 20.5 9 6.5l3.6 6.2L15.5 8l7 12.5Z M9 6.5l2 3.5-2-.9-2 .9Z' },                                                            // 山峰：圣山
-    tomb: { d: 'M6 21.5V10a6 6 0 0 1 12 0v11.5Z M11 9h2v3h3v2h-3v5h-2v-5H8v-2h3Z' },                                                          // 带十字的墓碑：圣墓
-    siege: { d: 'M2.5 21.5v-11h3v2.5h3v-2.5h3v2.5h3v-2.5h3v2.5h3v-2.5h3v11Z M12.6 12.5l-2.2 3.2 2.6 1.8-1.8 4h1.9l2-4.3-2.5-1.7 2-3Z' },     // 裂开的城墙：围城
-    battle: { s: 1, d: 'M5 5 18.5 18.5 M19 5 5.5 18.5 M14.5 20.5l6-6 M3.5 14.5l6 6 M15 6l3-3 M9 6 6 3' },                                       // 交叉的双剑：古战场
-    burned: { d: 'M12.5 2c1.2 4 6 6.2 6 12a6.5 6.5 0 0 1-13 0c0-3.2 2-4.8 3.2-6.6.2 2.2 1.3 3.4 2.6 3.6-.6-3.6.4-6.4 1.2-9Z' },                // 火焰：毁于战火
-    fort: { d: 'M4 21.5V8h2.5V4.5h2.5V8h1.8V4.5h2.4V8h1.8V4.5h2.5V8H20v13.5h-5.5v-4.5a2.5 2.5 0 0 0-5 0v4.5Z' },                               // 城堡：旧关塞
-    revolt: { d: 'M4.5 2.5h2.2v19H4.5Z M6.7 3.5h13l-3.3 4.3 3.3 4.3h-13Z' },                                                                // 旗帜：起事处
-    ruin: { d: 'M3 19.2h18v2.3H3Z M5 18V10l3.2-1.2V18Z M10.4 18V6.5l3.2 1.6V18Z M15.8 18v-4.8L19 12v6Z M14.8 12.6l3.4-2.1.8 1.1-3.4 2.1Z' },      // 断柱：古城废墟
-    capital: { d: 'M3 17.5 4.6 7.5l4.3 4.2L12 5l3.1 6.7 4.3-4.2L21 17.5Z M3 18.8h18V21H3Z' },                                                // 王冠：古都
-    mausoleum: { d: 'M12 2.5 22.5 21H1.5Z M6.6 15.2h10.8v1.5H6.6Z M9.2 10.6h5.6v1.4H9.2Z' },                                                                                   // 金字塔：帝王陵
-    cradle: { d: 'M11 21.5V12h2v9.5Z M12 13.5C12 8.3 8.3 5.6 3.5 6.3 3.6 11 7.3 13.8 12 13.5Z M12 11.5c0-5.2 3.7-7.9 8.5-7.2-.1 4.7-3.8 7.5-8.5 7.2Z' } // 嫩芽：文明摇篮
-  };
+  // 遗迹图标与城市符号：与历史时间线共用 app/icons.js
+  const HER_ICON = G.MapIcons.GLYPH;
   const herKey = o => o.cat === 'war' && o.kind === 'ruin' ? 'burned' : o.kind;
-  const herPath = {}; const pathOf = k => herPath[k] || (herPath[k] = new Path2D((HER_ICON[k] || HER_ICON.ruin).d));
-  // 图例用的同款 SVG
-  const herSvg = (k, col, size = 20) => { const ic = HER_ICON[k] || HER_ICON.ruin; return `<svg viewBox="-3 -3 30 30" width="${size}" height="${size}" style="vertical-align:-4px;margin-right:6px"><rect x="-3" y="-3" width="30" height="30" rx="7" style="fill:${col};stroke:none"/>${ic.s ? `<path d="${ic.d}" style="fill:none;stroke:#fff;stroke-width:2.6;stroke-linecap:round"/>` : `<path d="${ic.d}" style="fill:#fff;stroke:none;fill-rule:evenodd"/>`}</svg>`; };
+  const herSvg = (k, col, size = 20) => G.MapIcons.svgBadge(k, col, size);
   MapView.HER_COL = HER_COL; MapView.HER_ICON = HER_ICON; MapView.herKey = herKey; MapView.herSvg = herSvg;
   MP.drawHeritage = function (o, sx, sy, free, lv, id, label, text) {
     const c = this.ctx, R = o.imp >= 3 ? 10 : 8.5; if (!free(sx - R, sy - R, sx + R, sy + R)) return;
     this.heritageDots.push({ i: +id.split(':')[1], x: sx, y: sy });
-    c.save(); c.beginPath(); if (c.roundRect) c.roundRect(sx - R, sy - R, 2 * R, 2 * R, R * 0.45); else c.rect(sx - R, sy - R, 2 * R, 2 * R);
-    c.fillStyle = HER_COL[o.cat] || '#666'; c.shadowColor = 'rgba(0,0,0,.28)'; c.shadowBlur = 3; c.fill(); c.shadowBlur = 0; c.lineWidth = 1.5; c.strokeStyle = '#fff'; c.stroke();
-    const k = herKey(o), ic = HER_ICON[k] || HER_ICON.ruin, sc = (R * 1.5) / 24;
-    c.translate(sx - 12 * sc, sy - 12 * sc); c.scale(sc, sc);
-    if (ic.s) { c.strokeStyle = '#fff'; c.lineWidth = 2.6; c.lineCap = 'round'; c.stroke(pathOf(k)); } else { c.fillStyle = '#fff'; c.fill(pathOf(k), 'evenodd'); }
-    c.restore();
+    G.MapIcons.drawBadge(c, sx, sy, herKey(o), HER_COL[o.cat], R);
     if (o.imp >= 2 || lv >= 2) text(label, sx + R + 4, sy, { size: o.imp >= 3 ? 12 : 11, weight: 600, color: HER_COL[o.cat] || '#444', align: 'left', id });
   };
   MP.heritageAt = function (sx, sy) { let best = -1, bd = 12; for (const d of this.heritageDots || []) { const dd = Math.hypot(d.x - sx, d.y - sy); if (dd < bd) { bd = dd; best = d.i; } } return best; };
   MP.drawCity = function (ct, sx, sy, free, lv, names, id, label) {
     const c = this.ctx, cap = ct.capital !== undefined;
-    const r = cap ? 5 : ct.tier === 'metropolis' ? 4.4 : ct.tier === 'city' ? 3.4 : ct.tier === 'site' ? 2.8 : 2.4;
+    const R0 = G.MapIcons.R0, r = cap ? R0.capital : ct.tier === 'metropolis' ? R0.metro : ct.tier === 'city' ? R0.city : ct.tier === 'site' ? R0.site : R0.town;
     if (!free(sx - r - 1, sy - r - 1, sx + r + 1, sy + r + 1)) return;
     this.cityDots.push({ id, x: sx, y: sy });
     if (ct.role === 'military-post') { // 原版图式：要塞＝城垛方块，关隘＝带门洞的关楼
-      const k = 4.2; c.save(); c.translate(sx, sy); c.beginPath();
-      if (ct.type === 'pass-fort') { c.moveTo(-k, k); c.lineTo(-k, -k); c.lineTo(-k * 0.55, -k); c.lineTo(-k * 0.55, -k * 0.55); c.lineTo(k * 0.55, -k * 0.55); c.lineTo(k * 0.55, -k); c.lineTo(k, -k); c.lineTo(k, k); c.lineTo(k * 0.45, k); c.lineTo(k * 0.45, k * 0.15); c.arc(0, k * 0.15, k * 0.45, 0, Math.PI, true); c.lineTo(-k * 0.45, k); c.closePath(); }
-      else { c.moveTo(-k, k); c.lineTo(-k, -k); c.lineTo(-k * 0.6, -k); c.lineTo(-k * 0.6, -k * 0.55); c.lineTo(-k * 0.2, -k * 0.55); c.lineTo(-k * 0.2, -k); c.lineTo(k * 0.2, -k); c.lineTo(k * 0.2, -k * 0.55); c.lineTo(k * 0.6, -k * 0.55); c.lineTo(k * 0.6, -k); c.lineTo(k, -k); c.lineTo(k, k); c.closePath(); }
-      c.fillStyle = '#d7b978'; c.fill(); c.lineWidth = 1.1; c.strokeStyle = '#593f31'; c.lineJoin = 'round'; c.stroke(); c.restore();
+      const k = 4.2; G.MapIcons.drawFort(c, sx, sy, ct.type, k);
       if (names) { c.font = `600 11px ${FONT}`; const w = c.measureText(label).width; for (const dx of [k + 4, -(k + 4) - w]) if (free(sx + dx - 1, sy - 8, sx + dx + w + 1, sy + 8)) { this.hits.push({ id, box: [sx + dx - 1, sy - 8, sx + dx + w + 1, sy + 8], name: label, x: sx + dx + w / 2, y: sy });
         c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineWidth = 3; c.strokeStyle = 'rgba(255,255,255,.9)'; c.strokeText(label, sx + dx, sy); c.fillStyle = '#5a3f30'; c.fillText(label, sx + dx, sy); break; } }
       return;
     }
-    if (G.City && G.City.current !== null && id === 'city:' + G.City.current) { c.beginPath(); c.arc(sx, sy, r + 5, 0, 7); c.strokeStyle = 'rgba(26,115,232,.9)'; c.lineWidth = 2.2; c.stroke(); c.fillStyle = 'rgba(26,115,232,.14)'; c.fill(); }
     if (names) {
       const size = cap ? 13 : ct.tier === 'metropolis' ? 12.5 : ct.tier === 'city' ? 12 : 11;
       c.font = `${cap || ct.tier === 'metropolis' ? 600 : 500} ${size}px ${FONT}`;
@@ -544,12 +619,9 @@
         c.strokeText(label, sx + dx, sy); c.fillStyle = cap ? '#14191e' : ct.tier === 'site' ? '#5a3f30' : '#2b343c'; c.fillText(label, sx + dx, sy); break;
       }
     }
-    c.beginPath();
-    if (ct.tier === 'site') { c.rect(sx - r, sy - r, 2 * r, 2 * r); c.fillStyle = '#fff'; c.fill(); c.lineWidth = 1.4; c.strokeStyle = '#6a3f2c'; c.stroke(); return; }
-    c.arc(sx, sy, r, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill(); c.lineWidth = cap ? 1.9 : 1.4; c.strokeStyle = '#2b333a'; c.stroke();
-    if (ct.holy && ct.holy.length) { const hx = sx - r - 4, hy = sy - r - 4, k = 6.5; c.beginPath(); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 - Math.PI / 2, rr = i % 2 ? k * 0.4 : k; c.lineTo(hx + rr * Math.cos(a), hy + rr * Math.sin(a)); } c.closePath(); c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = '#fff'; c.stroke(); c.fillStyle = '#7a3fc0'; c.fill(); c.beginPath(); } // 圣城：紫色四角星
-    if (cap) { c.beginPath(); c.arc(sx, sy, 2, 0, Math.PI * 2); c.fillStyle = '#c0392b'; c.fill(); }
-    else if (ct.tier === 'metropolis') { c.beginPath(); c.arc(sx, sy, 1.6, 0, Math.PI * 2); c.fillStyle = '#2b333a'; c.fill(); }
+    const kind = cap ? 'capital' : ct.tier === 'site' ? 'site' : ct.tier === 'metropolis' ? 'metro' : ct.tier === 'city' ? 'city' : 'town';
+    G.MapIcons.drawCity(c, sx, sy, kind, { r, sel: G.City && G.City.current !== null && id === 'city:' + G.City.current });
+    if (ct.holy && ct.holy.length) G.MapIcons.drawHoly(c, sx - r - 4, sy - r - 4); // 圣城：紫色四角星
   };
 
   // ---------- 相机手势（原版：滚轮累积、捏合、惯性、键盘） ----------
@@ -660,6 +732,11 @@
       c.fillStyle = 'rgba(255,245,235,.95)'; c.font = `700 ${nm.length > 2 ? 19 : 22}px ${SERIF}`; c.textAlign = 'center'; c.textBaseline = 'middle';
       const ch = [...nm]; if (ch.length <= 2) ch.forEach((t, k) => c.fillText(t, sx + sz / 2, sy + sz / 2 + (k - (ch.length - 1) / 2) * 22)); else ch.forEach((t, k) => c.fillText(t, sx + (k < 2 ? sz * 0.72 : sz * 0.28), sy + (k % 2 ? sz * 0.7 : sz * 0.3))); }
     else if (st === 'night') vignette('0,0,0', 0.45);
+    else if (st === 'political') { // 地图集式图例框：国界、部族边疆、经纬线
+      const bw = 132, bh = 74, bx = w - bw - 76, by = h - bh - 46; c.fillStyle = 'rgba(255,255,255,.92)'; c.fillRect(bx, by, bw, bh); c.strokeStyle = 'rgba(78,78,92,.7)'; c.lineWidth = 1; c.strokeRect(bx + 0.5, by + 0.5, bw, bh);
+      const row = (k, label, col, wd, dash) => { const y = by + 16 + k * 21; c.strokeStyle = col; c.lineWidth = wd; c.setLineDash(dash); c.beginPath(); c.moveTo(bx + 12, y); c.lineTo(bx + 48, y); c.stroke(); c.setLineDash([]);
+        c.fillStyle = 'rgba(50,50,62,.9)'; c.font = `12px ${FONT}`; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(label, bx + 58, y); };
+      row(0, '国界', 'rgba(78,78,92,.9)', 1.2, []); row(1, '部族边疆', 'rgba(96,96,110,.75)', 1, [3, 2.5]); row(2, '经纬线', 'rgba(70,140,200,.6)', 1, []); }
     c.restore();
   };
   // ---------- 城市建成区 ----------

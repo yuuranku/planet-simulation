@@ -1,5 +1,6 @@
 /* 文化库扩展：人名与世系、君主称谓、政府组织、起义名号、地名后缀、更多政体称号。
  * 内置的 32 个文化库按文化渊源归入“族系”，族系提供默认值；每个库可在 lib.x 里覆盖任一项（自定义库同理）。
+ * 改朝换代（succession）：house 国号不变、只换王朝（英格兰：诺曼 → 安茹/金雀花 → 都铎；拜占庭：马其顿 → 科穆宁 → 巴列奥略），state 新朝换国号（汉 → 唐）。
  * 政府组织的风格（gov.style）会影响历史推演：官僚制较能维系大国，封建制多附庸，部族制易分裂，商贸型善航海，神庙型易成神权。 */
 (function (G) {
   'use strict';
@@ -11,14 +12,14 @@
       gov: { style: 'bureaucratic', minister: '丞相', org: { chief: '部落议事', city: '国人会议与卿士', king: '世卿世禄的卿大夫', empire: '三公九卿与郡县', feudal: '分封诸侯与门阀世家', central: '三省六部与科举官僚', nomad: '左右贤王与部族会盟', republic: '共和执政与议院', theo: '天师治民与祭酒', vassal: '藩王府与王国相', colony: '都护府', rebel: '义军大帐与军师' } },
       rebel: { style: 'symbol', fmt: '{sym}军', symbols: ['赤眉', '黄巾', '绿林', '白莲', '红巾', '青犊', '铜马', '黑山', '白波', '赤旗', '青巾', '黄旗'] },
       places: { port: ['津', '港', '浦', '渡'], fort: ['关', '堡', '寨', '镇'], pass: ['关', '隘', '口'] },
-      titles: { vassal: '王国', colony: '都护府' } },
-    japanese: { label: '日本', regnal: 'plain', house: '{s}氏',
+      titles: { vassal: '国', colony: '都护府' } },
+    japanese: { label: '日本', regnal: 'plain', succession: 'house', house: '{s}氏',
       people: { surnames: ['源', '平', '藤原', '橘', '足利', '北条', '织田', '德川', '武田', '上杉', '毛利', '大内', '岛津', '伊达'], given: ['赖朝', '义经', '尊氏', '信长', '家康', '义满', '时宗', '政宗', '信玄', '谦信', '秀吉', '元就', '义政', '清盛', '道长', '赖光'] },
       ruler: { chief: '大人', city: '王', king: '大王', empire: '天皇', nomad: '首领', republic: '执政', vassal: '大名', colony: '奉行', rebel: '大将' },
       gov: { style: 'feudal', minister: '关白', org: { chief: '氏族长老', city: '豪族合议', king: '氏姓制度与大王', empire: '律令制与太政官', feudal: '幕府与守护大名', central: '幕藩体制', nomad: '部族合议', republic: '合议执政', theo: '神宫祭政', vassal: '大名领国', colony: '奉行所', rebel: '一揆众议' } },
       rebel: { style: 'symbol', fmt: '{sym}一揆', symbols: ['一向', '法华', '土', '国人', '山城', '白旗', '德政', '加贺'] },
       places: { port: ['津', '湊', '港'], fort: ['城', '砦', '馆'], pass: ['关', '越'] },
-      titles: { vassal: '国', colony: '奉行所' } },
+      titles: { vassal: '藩', colony: '奉行所' } },
     korean: { label: '朝鲜', regnal: 'temple', house: '{s}氏',
       people: { surnames: ['王', '李', '金', '朴', '崔', '郑', '高', '姜', '尹', '洪', '柳', '徐'], given: ['建', '桂', '芳', '远', '祹', '琇', '昉', '顼', '琠', '昖', '倧', '焞', '昑', '玜', '勋', '昌'], twoChar: 0.3 },
       ruler: { chief: '渠帅', city: '君', king: '王', empire: '皇帝', nomad: '可汗', republic: '执政', vassal: '君', colony: '都护', rebel: '大将' },
@@ -26,41 +27,41 @@
       rebel: { style: 'symbol', fmt: '{sym}军', symbols: ['东学', '万积', '明火', '活贫', '壬戌', '红巾', '洪景来', '白衣'] },
       places: { port: ['浦', '津', '港'], fort: ['山城', '城', '镇'], pass: ['岭', '关'] },
       titles: { vassal: '国', colony: '都护府' } },
-    germanic: { label: '日耳曼', regnal: 'number', house: '{s}家族',
+    germanic: { label: '日耳曼', regnal: 'number', succession: 'house', house: '{s}王朝',
       people: { surnames: ['加洛林', '奥托', '萨利安', '霍亨施陶芬', '哈布斯堡', '维特尔斯巴赫', '卢森堡', '韦尔夫', '霍亨索伦', '韦廷', '拿骚', '奥尔登堡', '阿斯坎尼', '巴本贝格'], given: ['卡尔', '奥托', '海因里希', '康拉德', '腓特烈', '路德维希', '鲁道夫', '阿尔布雷希特', '威廉', '马克西米利安', '西吉斯蒙德', '洛塔尔', '利奥波德', '约翰', '恩斯特', '阿道夫'] },
       ruler: { chief: '酋长', city: '市长', king: '国王', empire: '皇帝', nomad: '首领', republic: '执政', vassal: '公爵', colony: '总督', rebel: '首领' },
       gov: { style: 'feudal', minister: '宫相', org: { chief: '部族大会（庭）', city: '市议会与行会', king: '王室宫廷与伯爵', empire: '帝国议会与选帝侯', feudal: '采邑封建与诸侯', central: '枢密院与常备官僚', nomad: '部族大会', republic: '议会与执政', theo: '主教座堂与教会领地', vassal: '公爵宫廷', colony: '总督府', rebel: '农民联盟' } },
       rebel: { style: 'place', fmt: '{place}农民军', symbols: ['鞋会', '穷康拉德', '黑军', '农民联盟'] },
       places: { port: ['港', '湾'], fort: ['堡', '要塞'], pass: ['山口', '关'] },
       titles: { vassal: '公国', colony: '殖民地', theocracy: '主教国' } },
-    latin: { label: '古典拉丁', regnal: 'plain', house: '{s}王朝',
-      people: { surnames: ['尤利乌斯', '克劳狄乌斯', '弗拉维乌斯', '安敦宁', '塞维鲁', '君士坦丁', '瓦伦提尼安', '狄奥多西', '科尔内利乌斯', '法比乌斯'], given: ['盖乌斯', '马库斯', '提比略', '卢基乌斯', '昆图斯', '普布利乌斯', '格奈乌斯', '奥卢斯', '塞克斯图斯', '提图斯', '德奇姆斯', '阿庇乌斯'] },
+    latin: { label: '古典拉丁', regnal: 'plain', succession: 'house', house: '{s}王朝',
+      people: { surnames: ['尤利乌斯', '克劳狄乌斯', '弗拉维乌斯', '安敦宁', '塞维鲁', '君士坦丁', '瓦伦提尼安', '狄奥多西', '科尔内利乌斯', '法比乌斯', '查士丁尼', '希拉克略', '伊苏里亚', '马其顿', '杜卡斯', '科穆宁', '安格洛斯', '巴列奥略'], given: ['盖乌斯', '马库斯', '提比略', '卢基乌斯', '昆图斯', '普布利乌斯', '格奈乌斯', '奥卢斯', '塞克斯图斯', '提图斯', '德奇姆斯', '阿庇乌斯'] },
       ruler: { chief: '首领', city: '执政官', king: '王', empire: '皇帝', nomad: '首领', republic: '执政官', vassal: '附庸王', colony: '行省总督', rebel: '统帅' },
       gov: { style: 'bureaucratic', minister: '近卫军长官', org: { chief: '氏族会议', city: '公民大会与元老', king: '王政与元老院', empire: '元首制与行省总督', feudal: '庄园与军区', central: '专制君主与官僚', nomad: '部族会议', republic: '元老院与执政官', theo: '大祭司团', vassal: '附庸王廷', colony: '行省总督府', rebel: '起义军营' } },
       rebel: { style: 'place', fmt: '{place}起义军', symbols: ['斯巴达克', '角斗士', '奴隶', '同盟者'] },
       places: { port: ['港'], fort: ['堡', '营'], pass: ['关', '山口'] },
       titles: { vassal: '王国', colony: '行省' } },
-    romance: { label: '罗曼', regnal: 'number', house: '{s}家族',
-      people: { surnames: ['卡佩', '瓦卢瓦', '波旁', '安茹', '金雀花', '萨伏依', '美第奇', '斯福尔扎', '埃斯特', '阿拉贡', '特拉斯塔马拉', '贡扎加'], given: ['路易', '腓力', '查理', '亨利', '弗朗索瓦', '让', '罗贝尔', '阿方索', '费尔南多', '佩德罗', '洛伦佐', '科西莫', '乔万尼', '海梅'] },
+    romance: { label: '罗曼', regnal: 'number', succession: 'house', house: '{s}王朝',
+      people: { surnames: ['卡佩', '瓦卢瓦', '波旁', '安茹', '金雀花', '萨伏依', '美第奇', '斯福尔扎', '埃斯特', '阿拉贡', '特拉斯塔马拉', '贡扎加', '诺曼', '布卢瓦', '兰开斯特', '约克', '都铎', '斯图亚特', '汉诺威'], given: ['路易', '腓力', '查理', '亨利', '弗朗索瓦', '让', '罗贝尔', '阿方索', '费尔南多', '佩德罗', '洛伦佐', '科西莫', '乔万尼', '海梅'] },
       ruler: { chief: '首领', city: '总督', king: '国王', empire: '皇帝', nomad: '首领', republic: '总督', vassal: '公爵', colony: '总督', rebel: '首领' },
       gov: { style: 'feudal', minister: '宰相', org: { chief: '部族会议', city: '公社与执政官', king: '王廷与伯爵', empire: '帝国宫廷与公爵', feudal: '封建领主与三级会议', central: '御前会议与总督制', nomad: '部族会议', republic: '大议会与总督', theo: '教廷与枢机团', vassal: '公爵宫廷', colony: '总督府', rebel: '起义公社' } },
       rebel: { style: 'symbol', fmt: '{sym}起义军', symbols: ['扎克雷', '梳毛工', '红帽', '公社', '图钦', '赤脚'] },
       places: { port: ['港', '湾'], fort: ['堡', '要塞'], pass: ['山口'] },
       titles: { vassal: '公国', colony: '总督区', theocracy: '教皇国' } },
-    slavic: { label: '斯拉夫', regnal: 'number', house: '{s}家族',
+    slavic: { label: '斯拉夫', regnal: 'number', succession: 'house', house: '{s}王朝',
       people: { surnames: ['留里克', '皮雅斯特', '普热米斯尔', '雅盖隆', '罗曼诺夫', '内马尼亚', '阿尔帕德', '戈杜诺夫', '舒伊斯基'], given: ['弗拉基米尔', '雅罗斯拉夫', '斯维亚托斯拉夫', '波列斯瓦夫', '卡齐米日', '瓦茨拉夫', '奥托卡', '伊凡', '瓦西里', '德米特里', '斯捷潘', '米哈伊尔', '鲍里斯', '尤里'] },
       ruler: { chief: '族长', city: '公', king: '国王', empire: '沙皇', nomad: '首领', republic: '市长', vassal: '大公', colony: '总督', rebel: '首领' },
       gov: { style: 'feudal', minister: '大贵族', org: { chief: '族长会议', city: '市民大会（韦切）', king: '王公与波雅尔', empire: '沙皇与贵族杜马', feudal: '王公分封与波雅尔杜马', central: '沙皇专制与衙门', nomad: '部族会议', republic: '韦切与市长', theo: '都主教府', vassal: '大公宫廷', colony: '总督府', rebel: '哥萨克大会' } },
       rebel: { style: 'symbol', fmt: '{sym}起义军', symbols: ['哥萨克', '农奴', '顿河', '伏尔加', '射击军', '老信徒'] },
       places: { port: ['港'], fort: ['堡', '城', '要塞'], pass: ['山口'] },
-      titles: { vassal: '大公国', colony: '总督区' } },
+      titles: { vassal: '公国', colony: '总督区' } },
     steppe: { label: '草原', regnal: 'plain', house: '{s}氏',
       people: { surnames: ['阿史那', '孛儿只斤', '耶律', '完颜', '拓跋', '乞颜', '札剌亦儿', '克烈', '斡亦剌', '挛鞮', '药罗葛', '绰罗斯'], given: ['铁木真', '阿骨打', '阿保机', '冒顿', '也先', '俺答', '脱欢', '忽必烈', '拔都', '窝阔台', '蒙哥', '土门', '室点密', '颉利', '骨力裴罗', '达延'] },
       ruler: { chief: '首领', city: '伯克', king: '汗', empire: '大汗', nomad: '可汗', republic: '议长', vassal: '汗', colony: '达鲁花赤', rebel: '首领' },
       gov: { style: 'tribal', minister: '大那颜', org: { chief: '氏族议事', city: '伯克与商队首领', king: '汗廷与千户', empire: '大汗廷与行省', feudal: '兀鲁思分封', central: '中书省与达鲁花赤', nomad: '库里台大会与万户', republic: '部族议会', theo: '大萨满与汗廷', vassal: '汗帐', colony: '达鲁花赤', rebel: '部众大帐' } },
       rebel: { style: 'symbol', fmt: '{sym}部众', symbols: ['青旗', '白旗', '苍狼', '鹰旗', '黑帐', '红缨'] },
       places: { port: ['渡'], fort: ['城', '营', '寨'], pass: ['口', '达坂'] },
-      titles: { vassal: '汗国', colony: '达鲁花赤辖地' } },
+      titles: { vassal: '兀鲁思', colony: '达鲁花赤辖地', nomadEmpire: '大汗国' } },
     persian: { label: '伊朗', regnal: 'number', house: '{s}王朝',
       people: { surnames: ['阿契美尼德', '安息', '萨珊', '萨法维', '塞尔柱', '伽色尼', '白益', '萨曼', '恺加', '阿夫沙尔'], given: ['居鲁士', '大流士', '薛西斯', '沙普尔', '霍斯劳', '阿尔达希尔', '伊斯迈尔', '阿拔斯', '纳迪尔', '卡瓦德', '巴赫拉姆', '米特拉达梯', '塔赫马斯普', '亚兹德'] },
       ruler: { chief: '族长', city: '总督', king: '沙阿', empire: '万王之王', nomad: '汗', republic: '议长', vassal: '萨特拉普', colony: '总督', rebel: '首领' },
@@ -88,15 +89,15 @@
       gov: { style: 'mercantile', minister: '盘陀诃罗', org: { chief: '村社长老', city: '港主与商会', king: '王廷与港务长', empire: '朝贡港邦网络', feudal: '属邦朝贡', central: '宫廷与港务官', nomad: '部族会议', republic: '港邦商会', theo: '神庙祭司', vassal: '属邦王廷', colony: '商馆总督', rebel: '起义军营' } },
       rebel: { style: 'place', fmt: '{place}起义军', symbols: [] },
       places: { port: ['港', '湾', '浦'], fort: ['堡', '寨'], pass: ['山口'] },
-      titles: { vassal: '属邦', colony: '商馆领' } },
-    celtic: { label: '凯尔特', regnal: 'number', house: '{s}家族',
+      titles: { vassal: '属国', colony: '商馆领' } },
+    celtic: { label: '凯尔特', regnal: 'number', succession: 'house', house: '{s}王朝',
       people: { surnames: ['阿伯弗劳', '迪内弗', '奥尼尔', '奥布莱恩', '麦克唐纳', '斯图亚特', '坎莫尔', '都铎', '麦克默罗'], given: ['罗德里', '卢埃林', '欧文', '布莱恩', '康纳', '尼尔', '肯尼思', '马尔科姆', '邓肯', '罗伯特', '大卫', '卡德瓦拉德', '格鲁菲兹'] },
       ruler: { chief: '族长', city: '领主', king: '国王', empire: '高王', nomad: '族长', republic: '议长', vassal: '领主', colony: '总督', rebel: '首领' },
       gov: { style: 'tribal', minister: '王室总管', org: { chief: '氏族与布雷恩法官', city: '领主会议', king: '王与氏族议会', empire: '高王与诸王会盟', feudal: '领主与氏族', central: '王室议会', nomad: '氏族会议', republic: '议会', theo: '德鲁伊会议', vassal: '领主府', colony: '总督府', rebel: '氏族起事' } },
       rebel: { style: 'symbol', fmt: '{sym}起义军', symbols: ['高地', '氏族', '荒原', '绿林', '盟约', '白玫瑰'] },
       places: { port: ['港', '湾'], fort: ['堡', '要塞'], pass: ['山口'] },
       titles: { vassal: '领地', colony: '殖民地' } },
-    finnic: { label: '芬乌', regnal: 'number', house: '{s}家族',
+    finnic: { label: '芬乌', regnal: 'number', succession: 'house', house: '{s}王朝',
       people: { surnames: ['卡勒瓦', '卡累利', '汉密', '萨沃', '塔瓦斯', '尤格拉'], given: ['卡勒沃', '伊尔马里宁', '莱明凯宁', '乌科', '阿赫托', '塔皮奥', '库勒沃', '萨缪', '维克', '阿尔沃'] },
       ruler: { chief: '长老', city: '首领', king: '国王', empire: '大王', nomad: '首领', republic: '议长', vassal: '领主', colony: '总督', rebel: '首领' },
       gov: { style: 'tribal', minister: '长老', org: { chief: '长老议事会', city: '村社大会', king: '王与部族会议', empire: '大王与诸部会盟', feudal: '领主与部族', central: '王室议会', nomad: '部族会议', republic: '议会', theo: '萨满会', vassal: '领主府', colony: '总督府', rebel: '起事部众' } },
@@ -121,6 +122,72 @@
     'realistic-new-world-arctic': 'arctic', 'fantasy-new-world-arctic': 'arctic'
   };
   const CAT_FAMILY = { agrarian: 'sinitic', pastoral: 'steppe', maritime: 'malay', highland: 'celtic', tribal: 'finnic', 'new-world': 'arctic' };
+  // ---------- 国号后缀预设（写进内置文化库的 lib.t，文化库页里看到的就是这些，可以照常改） ----------
+  // 依据：汉文史书的习惯（华夏、日本、朝鲜、天竺、南洋诸国不分王国公国，一律称“国”；统一王朝称“朝”）；
+  // 欧洲按爵位分级（王国 / 公国 / 伯国 / 侯国，北欧的雅尔国）；草原称汗国，部落称部；伊斯兰世界苏丹国 / 埃米尔国 / 谢赫国。
+  // monarchy 第一项是“王国级”后缀，其余项只在现今地图上为大国换着用；duchy 是王国之下一级（空数组 = 不设这一级，大小都叫同一个后缀）；
+  // city 是早期城邦阶段（非海洋文明）；cityRepublic 是海洋文明的城邦 / 现今地图上的一城之国。
+  const TP_FAM = {
+    sinitic: { monarchy: ['国'], duchy: [], empire: ['朝'], chiefdom: ['方'], city: ['国'], cityRepublic: ['国'], league: ['部落联盟'], nomadic: ['部'] },
+    japanese: { monarchy: ['国'], duchy: [], empire: ['朝'], chiefdom: ['国'], city: ['国'], cityRepublic: ['国'] },
+    korean: { monarchy: ['国'], duchy: [], empire: ['帝国'], chiefdom: ['国'], city: ['国'], cityRepublic: ['国'] },
+    germanic: { monarchy: ['王国'], duchy: ['公国', '伯国'], empire: ['帝国'], chiefdom: ['部族'] },
+    latin: { monarchy: ['王国'], duchy: [], empire: ['帝国'], city: ['城邦'], cityRepublic: ['城邦'] },
+    romance: { monarchy: ['王国'], duchy: ['公国', '伯国'], empire: ['帝国'], cityRepublic: ['共和国'] },
+    slavic: { monarchy: ['王国', '大公国'], duchy: ['公国'], empire: ['沙皇国'] },
+    steppe: { monarchy: ['汗国'], duchy: [], empire: ['大汗国'], nomadic: ['汗国'], chiefdom: ['部'], league: ['部落联盟'] },
+    persian: { monarchy: ['王朝', '沙阿国'], duchy: ['埃米尔国'], empire: ['帝国'] },
+    arabic: { monarchy: ['苏丹国'], duchy: ['埃米尔国'], empire: ['帝国'], chiefdom: ['谢赫国'], nomadic: ['部落联盟'], cityRepublic: ['城邦'] },
+    indic: { monarchy: ['国'], duchy: [], empire: ['王朝'], chiefdom: ['部'], city: ['国'], cityRepublic: ['国'] },
+    malay: { monarchy: ['国', '苏丹国'], duchy: [], empire: ['帝国'], cityRepublic: ['国'] },
+    celtic: { monarchy: ['王国'], duchy: ['亲王国'], empire: ['高王国'], chiefdom: ['部族'] },
+    finnic: { monarchy: ['王国'], duchy: [], empire: ['帝国'], chiefdom: ['部'] },
+    arctic: { monarchy: ['国'], duchy: [], empire: ['帝国'], chiefdom: ['部'], league: ['部落联盟'] }
+  };
+  // 单个文化库在族系之上的特色
+  const TP_LIB = {
+    'historical-gaelic': { chiefdom: ['图阿'] },                                   // 爱尔兰的 túath：最小的部族王国
+    'realistic-11': { duchy: [], cityRepublic: ['城邦'], chiefdom: ['部'] },        // 斯瓦希里海岸：苏丹国与港口城邦
+    'fantasy-caravan-sultanates': { cityRepublic: ['绿洲城邦'] },
+    'fantasy-northern-fjords': { duchy: ['雅尔国'], cityRepublic: ['港邦'] },      // 北境：雅尔（jarl）治下的雅尔国
+    'fantasy-insular-shires': { duchy: ['伯国'] },                                 // 郡邦：伯爵（earl）的伯国
+    'fantasy-mountain-citadels': { duchy: ['侯国'], league: ['邦联'], cityRepublic: ['城邦'] }, // 山地侯国与州邦联
+    'fantasy-romance-marches': { duchy: ['侯国', '公国'] },                         // 边邦：边疆侯爵（marquis）的侯国
+    'fantasy-island-leagues': { monarchy: ['王国'], cityRepublic: ['港邦'], league: ['港邦联盟'] },
+    'fantasy-astral': { empire: ['天朝'] },
+    'fantasy-elder': { empire: ['皇朝'], chiefdom: ['氏'], nomadic: ['氏'] },       // 古国：有熊氏、有虞氏一类的氏族古国
+    'fantasy-sylvan': { chiefdom: ['部'], league: ['林盟'] },
+    'fantasy-eastern-highlands': { chiefdom: ['寨'] },
+    'fantasy-eastern-riverlands': { league: ['商盟'] },
+    'fantasy-new-world-arctic': { league: ['诸部会盟'] }
+  };
+  const famOfLib = lib => (lib.x && lib.x.family) || FAMILY_OF[lib.id] || CAT_FAMILY[lib.cat] || 'sinitic';
+  const presetOf = lib => { const fam = famOfLib(lib); return Object.assign({}, TP_FAM[fam] || {}, TP_LIB[lib.id] || {}); };
+  const RAW_T = {}; // 内置库原始的 t（打补丁之前）；改过的内置库只有没改过的项才换成预设
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // 给内置库（或改过的内置库）补上后缀预设：用户改过的项原样保留；自定义库（不在内置名单里）不动
+  function preset(lib) {
+    if (!lib || !RAW_T[lib.id]) return lib;
+    const P = presetOf(lib), raw = RAW_T[lib.id], t = Object.assign({}, lib.t || {}); let changed = false;
+    for (const k of Object.keys(P)) if (t[k] === undefined || same(t[k], raw[k])) { if (!same(t[k], P[k])) { t[k] = P[k].slice(); changed = true; } }
+    return changed ? Object.assign({}, lib, { t }) : lib;
+  }
+  function applyBuiltin() {
+    const L = G.CULTURE_LIBRARIES; if (!L || L._preset) return;
+    for (const l of L) { if (!RAW_T[l.id]) RAW_T[l.id] = JSON.parse(JSON.stringify(l.t || {})); const P = presetOf(l); l.t = Object.assign({}, l.t || {}); for (const k of Object.keys(P)) l.t[k] = P[k].slice(); }
+    try { Object.defineProperty(L, '_preset', { value: true, enumerable: false }); } catch (e) {}
+  }
+  // ---------- 国号前缀：后唐、东魏、北燕、西突厥……去掉方位与先后，只留本名 ----------
+  // 只在去掉后剩下的是一个真实存在的国名（文化库里有）时才去；西西里、北大年、新罗、南诏、大理这类整体是一个名字的不动
+  const PFX = /^(前|后|东|西|南|北|新|大|小)(.+)$/;
+  const BARE_DENY = new Set(['新罗', '南诏', '大理', '北山', '中山', '南山', '大宛', '大秦', '大食', '大夏', '大月氏', '小月氏']);
+  const BARE_OK = new Set(['凉', '哥特', '沃沮', '濊', '瓯']);
+  let KNOWN = null;
+  function bareName(s, extra) {
+    if (!s || BARE_DENY.has(s)) return s; const m = PFX.exec(s); if (!m) return s; const st = m[2];
+    if (!KNOWN) { KNOWN = new Set(); for (const l of G.CULTURE_LIBRARIES || []) for (const x of (l.n && l.n.states) || []) KNOWN.add(x); }
+    return KNOWN.has(st) || BARE_OK.has(st) || (extra && extra.has(st)) ? st : s;
+  }
   const clone = o => JSON.parse(JSON.stringify(o));
   // 合并：lib.x 覆盖族系默认（对象逐层合并，数组整体替换）
   function merge(a, b) { if (!b) return a; for (const k of Object.keys(b)) { const v = b[k]; if (v && typeof v === 'object' && !Array.isArray(v) && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) merge(a[k], v); else if (v !== undefined && v !== '' && !(Array.isArray(v) && !v.length)) a[k] = v; } return a; }
@@ -145,5 +212,6 @@
   }
   const NUM = ['', '一世', '二世', '三世', '四世', '五世', '六世', '七世', '八世', '九世', '十世', '十一世', '十二世', '十三世', '十四世', '十五世'];
   const TEMPLE = ['太祖', '太宗', '世宗', '高宗', '仁宗', '英宗', '神宗', '哲宗', '孝宗', '光宗', '宁宗', '理宗', '中宗', '睿宗', '玄宗', '肃宗', '代宗', '德宗', '顺宗', '宪宗', '穆宗', '敬宗', '文宗', '武宗', '宣宗', '懿宗', '僖宗', '昭宗', '景宗', '显宗', '成宗', '明宗'];
-  G.CultureExt = { FAMILIES: F, FAMILY_OF, ORG_KEYS, ext, extraTitle, personName, NUM, TEMPLE, GOV_STYLE: { bureaucratic: '官僚制', feudal: '封建制', tribal: '部族制', mercantile: '商贸型', temple: '神庙型' } };
+  applyBuiltin();
+  G.CultureExt = { FAMILIES: F, FAMILY_OF, ORG_KEYS, ext, extraTitle, preset, applyBuiltin, bareName, TITLE_PRESET: { family: TP_FAM, lib: TP_LIB }, personName, NUM, TEMPLE, GOV_STYLE: { bureaucratic: '官僚制', feudal: '封建制', tribal: '部族制', mercantile: '商贸型', temple: '神庙型' } };
 })(typeof self !== 'undefined' ? self : this);

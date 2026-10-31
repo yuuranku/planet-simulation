@@ -14,7 +14,7 @@
     const bigIn = r => { let b = -1, bp = -1; C.cities.forEach((c, i) => { if (c.r === r && !c.lost && !c.fort && c.final > bp) { bp = c.final; b = i; } }); return b; };
     const at = (r, ci) => ci >= 0 ? { x: C.cities[ci].x, y: C.cities[ci].y, city: C.cities[ci].idx } : { x: R.cx[r], y: R.cy[r], city: -1 };
     const cname = ci => ci >= 0 && C.cities[ci] ? C.cities[ci].name : '';
-    const short = q => q.finalName || q.short + ((q.peakN >= (Pol.EMPN || 20) && q.titles && q.titles.empire) || (q.titles && q.titles.kingdom) || '');
+    const short = q => q.finalName || q.short + (((q.emp ? q.emp.length > 0 : q.peakN >= (Pol.EMPN || 20)) && q.titles && q.titles.empire) || (q.titles && q.titles.kingdom) || '');
     const nearCity = r => { let b = bigIn(r); if (b >= 0) return b; let best = -1, bd = 1e9; for (let k = R.off[r]; k < R.off[r + 1]; k++) { const n = R.nbr[k], c = bigIn(n); if (c >= 0) { const d = km(r, n); if (d < bd) { bd = d; best = c; } } } return best; };
     const markHoly = (ci, f) => { if (ci < 0) return; const k = C.cities[ci].idx; if (k < 0 || !Cv.cities[k]) return; const c = Cv.cities[k]; (c.holy = c.holy || []).includes(f) || c.holy.push(f); };
 

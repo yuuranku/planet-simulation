@@ -128,6 +128,29 @@
     const hE = Math.max(18, Math.min(42, 30 + (cfg.day - 26) * 4 / 6)), fE = Math.max(44, Math.min(74, 60 + (cfg.day - 26)));
     const T0 = [], Ps = [], U = [], V = [], Pr = [];
     const T0ann = new Float32Array(N);
+    const itczN = G.Noise.simplex2(cfg.seed + 707);
+    const smoothstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    // 逐经度的赤道辐合带：跟随热赤道（夏季大陆把它拉向高纬 → 季风），沿经度平滑并带轻微摆动，
+    // 不再是一条按纬度画死的直线（否则雨林带、沙漠边缘、风带都会被横向切成直线）。
+    function itczOf(T, s) {
+      const base = 0.45 * decl[s], out = new Float32Array(cW), lim = Math.abs(decl[s]) * 1.05 + 4;
+      for (let x = 0; x < cW; x++) {
+        let tmax = -1e9;
+        for (let y = 0; y < cH; y++) if (Math.abs(C.lat[y]) <= 32) { const t = T[y * cW + x]; if (t > tmax) tmax = t; }
+        let sw = 0, sl = 0, lw = 0;
+        for (let y = 0; y < cH; y++) { const la = C.lat[y]; if (Math.abs(la) > 32) continue; const i = y * cW + x, w = Math.exp((T[i] - tmax) / 2.5) * C.cosLat[y]; sw += w; sl += w * la; lw += w * isLand[i]; }
+        const lt = sw > 0 ? sl / sw : base, land = sw > 0 ? lw / sw : 0;
+        // 海上辐合带贴近基准位置，陆上随热低压明显偏移
+        out[x] = base + (0.3 + 0.7 * land) * (lt - base);
+      }
+      let a = out;
+      const R = Math.max(2, Math.round(cW / 64));
+      for (let p = 0; p < 2; p++) { const b = new Float32Array(cW); let acc = 0; for (let k = -R; k <= R; k++) acc += a[(k + cW) % cW]; for (let x = 0; x < cW; x++) { b[x] = acc / (2 * R + 1); acc += a[(x + R + 1) % cW] - a[(x - R + cW) % cW]; } a = b; }
+      for (let x = 0; x < cW; x++) { const wig = 3.5 * itczN(x / cW * 6, s * 3.1) + 1.5 * itczN(x / cW * 17, 40 + s); a[x] = Math.max(-lim, Math.min(lim, a[x] + wig)) - base; }
+      a.base = base; return a; // 存的是相对基准纬度的偏移
+    }
+    // 某格所用的辐合带纬度：偏移只作用于热带与副热带，向高纬渐隐（否则极区格距极小，经向起伏会被放大成竖条纹）
+    const itczAt = (A, x, la) => A.base + A[x] * (1 - smoothstep(28, 62, Math.abs(la)));
     const contin = new Float32Array(N);
     for (let i = 0; i < N; i++) contin[i] = isLand[i] ? Math.min(1, distOcean[i] / 1800) : 0;
 
@@ -142,7 +165,7 @@
           let t;
           if (isLand[i]) { const k = 0.33 + 0.42 * contin[i]; t = ta + k * 0.213 * (qL - Qann[y]) + anomL[i]; }
           else { t = ta + 0.17 * 0.213 * (qO - Qann[y]) + anomaly[i]; t = Math.max(t, -2); }
-          if (ta < -12) t -= 2.5; // 冰雪反照率
+          t -= 2.5 * smoothstep(-9, -15, ta); // 冰雪反照率（平滑过渡，不在某一纬度突然降温）
           T[i] = t;
           if (s === 0) T0ann[i] = 0;
           T0ann[i] += t / 4;
@@ -151,32 +174,34 @@
       T0.push(T);
 
       // 气压：纬向带 + 热力异常（陆地夏低冬高 → 季风）
-      const itcz = 0.45 * decl[s];
+      const itczX = itczOf(T, s);
       const rowMean = new Float32Array(cH);
       for (let y = 0; y < cH; y++) { let a = 0; for (let x = 0; x < cW; x++) a += T[y * cW + x]; rowMean[y] = a / cW; }
       const th = new Float32Array(N);
       for (let i = 0; i < N; i++) { const y = (i / cW) | 0; th[i] = -0.75 * (T[i] - rowMean[y]); }
       const thB = blur(th, cW, cH, 5, 2);
       const Pp = new Float32Array(N);
-      for (let y = 0; y < cH; y++) {
-        const ph = C.lat[y] - itcz, ap = Math.abs(ph);
+      for (let y = 0; y < cH; y++) for (let x = 0; x < cW; x++) {
+        const ph = C.lat[y] - itczAt(itczX, x, C.lat[y]), ap = Math.abs(ph);
         const p0 = 1011 - 5 * Math.exp(-Math.pow(ph / 8, 2)) + 10 * Math.exp(-Math.pow((ap - hE) / 9, 2)) - 11 * Math.exp(-Math.pow((ap - fE) / 9, 2)) + 9 * Math.exp(-Math.pow((ap - 90) / 14, 2));
-        for (let x = 0; x < cW; x++) Pp[y * cW + x] = p0 + thB[y * cW + x];
+        Pp[y * cW + x] = p0 + thB[y * cW + x];
       }
       Pr.push(Pp);
       // 风：三圈环流 + 气压梯度风（科氏偏转）
       const u = new Float32Array(N), v = new Float32Array(N);
       for (let y = 0; y < cH; y++) {
-        const ph = C.lat[y] - itcz, ap = Math.abs(ph), sg = ph >= 0 ? 1 : -1;
-        let u0, v0;
-        if (ap < hE) { const t = ap / hE; u0 = -6 * (0.5 + 0.5 * Math.sin(Math.PI * t)); v0 = -sg * 3.2 * Math.sin(Math.PI * t); }
-        else if (ap < fE) { const t = (ap - hE) / (fE - hE); u0 = 9 * Math.sin(Math.PI * t); v0 = sg * 1.6 * Math.sin(Math.PI * t); }
-        else { const t = (ap - fE) / (90 - fE); u0 = -4 * Math.sin(Math.PI * t); v0 = -sg * 1.5 * Math.sin(Math.PI * t); }
-        u0 *= retro;
         const dxKm = cellKm * Math.max(0.08, C.cosLat[y]);
-        const hemi = C.lat[y] >= 0 ? 1 : -1, defl = -hemi * retro * 45 * D2R;
+        // 科氏偏转随纬度连续变化（赤道处为 0），不在赤道两侧突然翻转
+        const defl = -retro * 45 * D2R * Math.max(-1, Math.min(1, C.lat[y] / 12));
         const cd = Math.cos(defl), sd = Math.sin(defl);
         for (let x = 0; x < cW; x++) {
+          const ph = C.lat[y] - itczAt(itczX, x, C.lat[y]), ap = Math.abs(ph), sg = ph >= 0 ? 1 : -1;
+          let u0, v0;
+          // 三圈环流：各圈交界处风速连续（信风在副高处平滑减弱到 0，再接西风带）
+          if (ap < hE) { const t = ap / hE; u0 = -6 * (0.5 + 0.5 * Math.sin(Math.PI * t)) * (1 - smoothstep(0.62, 1, t)); v0 = -sg * 3.2 * Math.sin(Math.PI * t); }
+          else if (ap < fE) { const t = (ap - hE) / (fE - hE); u0 = 9 * Math.sin(Math.PI * t); v0 = sg * 1.6 * Math.sin(Math.PI * t); }
+          else { const t = Math.min(1, (ap - fE) / (90 - fE)); u0 = -4 * Math.sin(Math.PI * t); v0 = -sg * 1.5 * Math.sin(Math.PI * t); }
+          u0 *= retro;
           const i = y * cW + x;
           const gx = (Pp[y * cW + (x + 1) % cW] - Pp[y * cW + (x - 1 + cW) % cW]) / (2 * dxKm);
           const gy = y > 0 && y < cH - 1 ? (Pp[i - cW] - Pp[i + cW]) / (2 * cellKm) : 0; // 北向
@@ -191,20 +216,23 @@
       const M = new Float32Array(N), Mn = new Float32Array(N), rain = new Float32Array(N);
       const evap = new Float32Array(N), rateB = new Float32Array(N);
       for (let y = 0; y < cH; y++) {
-        const ph = C.lat[y] - itcz;
         for (let x = 0; x < cW; x++) {
-          const i = y * cW + x;
+          const i = y * cW + x, ph = C.lat[y] - itczAt(itczX, x, C.lat[y]);
           evap[i] = isLand[i] ? 0 : Math.max(0.03, Math.min(1.15, (T[i] + 4) / 31)) * cfg.moisture;
-          let r = 0.02 + 0.13 * Math.exp(-Math.pow(ph / 7, 2)) + 0.0045 * Math.max(0, 1011 - Pp[i]);
+          // 辐合带降水强度沿经度起伏（云团、对流簇），雨带不再是一条均匀的直带
+          const cl = 1 + 0.38 * itczN(x / cW * 11 + s * 5.3, y / cH * 5) + 0.15 * itczN(x / cW * 31, y / cH * 13 + 9);
+          let r = 0.02 + 0.13 * cl * Math.exp(-Math.pow(ph / (6 + 1.5 * itczN(x / cW * 7, 70 + s)), 2)) + 0.0045 * Math.max(0, 1011 - Pp[i]);
           r *= Math.max(0.22, Math.min(1, 1 - Math.max(0, Pp[i] - 1014) * 0.06));
           if (isLand[i] && T[i] > 12) r += 0.03 * Math.min(1, (T[i] - 12) / 14); // 夏季对流
-          if (T[i] < -10) r *= 0.6;
+          r *= 1 - 0.4 * smoothstep(-6, -14, T[i]);
           rateB[i] = r;
           M[i] = evap[i];
         }
       }
       const tau = 16000; // 秒/步
-      const IT = 44;
+      // 迭代步数要足以让水汽走完最宽的大陆（每步约 100 km）；步数过少时水汽前锋到不了内陆，
+      // 大陆腹地会被硬性判成零降水，形成成片沙漠和一条条“前锋断层”。
+      const IT = Math.max(44, Math.min(130, Math.round(11500 / Math.max(30, cellKm * 1.2))));
       for (let it = 0; it < IT; it++) {
         for (let y = 0; y < cH; y++) {
           const kx = tau / (cellKm * 1000 * Math.max(0.08, C.cosLat[y])), ky = tau / (cellKm * 1000);
@@ -219,7 +247,7 @@
             let r = rateB[i] + Math.max(0, eC[i] - Math.max(0, eu)) * 0.00042;
             if (r > 0.65) r = 0.65;
             let rn, m;
-            if (isLand[i]) { rn = mu * r; m = mu - rn + rn * (T[i] > 5 ? 0.6 : 0.25); }
+            if (isLand[i]) { rn = mu * r; m = mu - rn + rn * (0.25 + 0.45 * smoothstep(0, 20, T[i])); } // 陆面蒸散再循环：越暖越强（热带约 0.7）
             else { rn = mu * r * 0.55; m = mu - rn; m += (evap[i] - m) * 0.22; }
             Mn[i] = m; rain[i] = rn;
           }
@@ -267,7 +295,8 @@
     const north = 1; // 夏至为北半球夏季
     const sn2 = G.Noise.simplex2(cfg.seed + 818);
     for (let y = 0; y < H; y++) {
-      const nh = (90 - (y + 0.5) / H * 180) >= 0;
+      // 半球权重：赤道附近冬夏两季逐渐交换（±10° 内线性过渡），不再在赤道上硬翻转而切出一条直线
+      const latY = 90 - (y + 0.5) / H * 180, wN = Math.max(0, Math.min(1, 0.5 + latY / 20)), wS = 1 - wN;
       for (let x = 0; x < W; x++) {
         const i = y * W + x, h = e[i], land = h > 0;
         const lapse = land ? 0.0065 * h : 0;
@@ -276,7 +305,7 @@
         const p0 = Ps[0][i], p1 = Ps[1][i], p2 = Ps[2][i], p3 = Ps[3][i];
         const pa = p0 + p1 + p2 + p3;
         Tann[i] = ta; Pann[i] = pa;
-        const sumT = nh ? t1 : t3, winT = nh ? t3 : t1, sumP = nh ? p1 : p3, winP = nh ? p3 : p1;
+        const sumT = wN * t1 + wS * t3, winT = wN * t3 + wS * t1, sumP = wN * p1 + wS * p3, winP = wN * p3 + wS * p1;
         const tmax = Math.max(t0, t1, t2, t3) + 1.8, tmin = Math.min(t0, t1, t2, t3) - 1.8;
         if (!land) {
           const nz = sn2(x * 0.02, y * 0.02) * 3.5 + sn2(x * 0.07, y * 0.07) * 1.5;
@@ -287,7 +316,8 @@
         // 柯本
         let k;
         const summerShare = (sumP + (p0 + p2) * 0.5) / Math.max(1, pa);
-        const pth = 20 * ta + (summerShare >= 0.7 ? 280 : summerShare >= 0.3 ? 140 : 0);
+        // 干旱阈值：按夏雨占比连续取值（0.3→0、0.5→140、0.7→280），避免在占比跨档处出现断层
+        const pth = 20 * ta + 280 * Math.max(0, Math.min(1, (summerShare - 0.3) / 0.4));
         const pMinM = Math.min(p0, p1, p2, p3) / 3;
         const sumDryM = sumP / 3, winDryM = winP / 3, sumWetM = sumP / 3, winWetM = winP / 3;
         if (tmax < 10) k = tmax < 0 ? 21 : 20;

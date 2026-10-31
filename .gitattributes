@@ -1,4 +1,6 @@
 * text=auto
+# Preserve the packaged site byte for byte, including its existing line endings.
+site/** -text
 *.ttf binary
 *.png binary
 *.jpg binary

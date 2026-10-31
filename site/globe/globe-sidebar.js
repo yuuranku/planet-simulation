@@ -3,7 +3,7 @@
   'use strict';
   const panel = document.getElementById('globe-sidebar');
   const toggle = document.getElementById('globe-sidebar-toggle');
-  const media = matchMedia('(max-width:700px)');
+  const media = matchMedia('(max-width:700px), (orientation: landscape) and (max-height: 540px)');
   let returnFocus = toggle;
   function openPanel(open, focus = false) {
     panel.hidden = !open;
@@ -34,5 +34,7 @@
     if (event.key === 'Escape' && !panel.hidden) { event.preventDefault(); openPanel(false, true); }
   });
   media.addEventListener('change', () => openPanel(!media.matches));
+  // 手机上控制栏浮在球体上：点球体就收起
+  document.getElementById('globe').addEventListener('pointerdown', () => { if (media.matches && !panel.hidden) openPanel(false); });
   openPanel(!media.matches);
 })();

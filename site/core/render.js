@@ -37,7 +37,10 @@
     ink: { land: lut([[0, '#ece7dc'], [600, '#d9d3c6'], [1800, '#b8b0a2'], [3500, '#8f877b'], [5600, '#e9e6e0']], 0, 6000),
       sea: lut([[-7000, '#e2e2dc'], [0, '#efeeea']], -7000, 0), lake: '#e4e3dd', coast: '#3b3732', shade: 1.15, bg: '#f2efe8', post: 'ink' },
     night: { land: lut([[0, '#2c3a2e'], [500, '#344030'], [1500, '#4a4535'], [3000, '#5a4e42'], [4500, '#6e6a66'], [5600, '#a7a7ab']], 0, 6000),
-      sea: lut([[-7000, '#0b1422'], [-2000, '#0f1c2e'], [0, '#16283d']], -7000, 0), lake: '#16283d', coast: '#5e7d99', shade: 0.7, bg: '#0b1422', post: 'night' }
+      sea: lut([[-7000, '#0b1422'], [-2000, '#0f1c2e'], [0, '#16283d']], -7000, 0), lake: '#16283d', coast: '#5e7d99', shade: 0.7, bg: '#0b1422', post: 'night' },
+    // 政区图：陆地按国家平涂粉彩（相邻国错色），海洋浅青蓝分深浅带，几乎不晕渲
+    political: { political: true, sea: lut([[-7000, '#9ccbe8'], [-3000, '#a9d4ee'], [-900, '#b6dcf1'], [-150, '#c4e4f4'], [0, '#cfe9f6']], -7000, 0),
+      lake: '#a9d4ee', coast: '#5b8db3', shade: 0.06, bg: '#cfe9f6' }
   };
   function hsl(h, s, l) {
     const a = s * Math.min(l, 1 - l), f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
@@ -71,9 +74,17 @@
       const HUES = [8, 32, 52, 88, 128, 160, 188, 212, 238, 268, 292, 320], LIT = [0.74, 0.68, 0.79], col = new Int16Array(nK).fill(-1), ord = [...Array(nK).keys()].sort((a, b) => adj[b].size - adj[a].size);
       for (const k of ord) { const used = new Set(); for (const o of adj[k]) if (col[o] >= 0) { used.add(col[o] % 12); }
         let best = -1; for (let t = 0; t < 36; t++) { const h = (k * 5 + t) % 12; if (!used.has(h)) { best = h + 12 * ((k + t) % 3); break; } } if (best < 0) best = k % 36; col[k] = best;
-        const c = hsl(HUES[best % 12] + ((k * 37) % 9) - 4, 0.5, LIT[(best / 12) | 0]); pal.country[k * 3] = c[0]; pal.country[k * 3 + 1] = c[1]; pal.country[k * 3 + 2] = c[2]; } }
+        const c = hsl(HUES[best % 12] + ((k * 37) % 9) - 4, 0.5, LIT[(best / 12) | 0]); pal.country[k * 3] = c[0]; pal.country[k * 3 + 1] = c[1]; pal.country[k * 3 + 2] = c[2]; }
+      // 政区图配色：学校地图集式粉彩（奶黄、浅粉、淡紫、薄荷、蜜桃……），按邻接贪心着色，相邻国必不同色
+      const ATLAS = ['#f8efa2', '#f7c8d8', '#dacfee', '#cde8b6', '#fbd5b0', '#fde2a2', '#e3e9a6', '#f2d3ea', '#c6e3d6', '#f5dcc4'].map(hex), nA = ATLAS.length, ac = new Int8Array(nK).fill(-1);
+      pal.atlas = new Uint8Array(Math.max(1, nK) * 3);
+      for (const k of ord) { const used = new Set(); for (const o of adj[k]) if (ac[o] >= 0) used.add(ac[o]); let best = -1; for (let t = 0; t < nA; t++) { const h = (k * 3 + t) % nA; if (!used.has(h)) { best = h; break; } } if (best < 0) best = k % nA; ac[k] = best;
+        pal.atlas[k * 3] = ATLAS[best][0]; pal.atlas[k * 3 + 1] = ATLAS[best][1]; pal.atlas[k * 3 + 2] = ATLAS[best][2]; } }
     Cv.religions.forEach((f, i) => { if (f.color) for (let c = 0; c < 3; c++) pal.religion[i * 3 + c] = Math.round(f.color[c] * 0.6 + 255 * 0.4); }); // 宗教的象征色（来自宗教库），调淡作地图底色
     Cv.countries.forEach((k, i) => { if (k.color) { pal.country[i * 3] = k.color[0]; pal.country[i * 3 + 1] = k.color[1]; pal.country[i * 3 + 2] = k.color[2]; } }); // 现在的国家来自历史终局：沿用历史时间线里的配色
+    // 行政制度：每个国家按制度类着色（行政制 / 封建制 / 游牧制……），同一制度的相邻国家靠国界区分
+    pal.system = new Uint8Array(Math.max(1, Cv.countries.length) * 3);
+    if (G.AdminSys) Cv.countries.forEach((k, i) => { const cl = G.AdminSys.classOfCountry(k), c = G.AdminSys.COL[cl], t = ((i * 2654435761) >>> 0) % 3, f = [0, 0.1, -0.08][t]; for (let j = 0; j < 3; j++) pal.system[i * 3 + j] = Math.max(0, Math.min(255, Math.round((c[j] * 0.62 + 255 * 0.38) * (1 + f)))); k.sys = cl; });
     const provCountry = Int16Array.from(Cv.provinces.map(p => p.country));
     // 省份配色：同一国家的省用该国色相的深浅与微小色相偏移，相邻省按贪心着色错开
     { const nP = Cv.provinces.length, adj = Array.from({ length: nP }, () => new Set()), PV = Cv.province;
@@ -84,7 +95,9 @@
       const cH0 = Cv.countries.map((c, k) => { const r = pal.country[k * 3] / 255, g = pal.country[k * 3 + 1] / 255, b = pal.country[k * 3 + 2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
         let h = 0; if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; return [(h * 60 + 360) % 360, d ? d / (1 - Math.abs(2 * l - 1)) : 0, l]; });
       for (let p = 0; p < nP; p++) { const c = cH0[provCountry[p]] || [0, 0, 0.8], v = SH[shade[p]], col = hsl((c[0] + v[1] + 360) % 360, Math.max(0.15, Math.min(0.8, c[1] + v[2])), Math.max(0.5, Math.min(0.88, c[2] + v[0]))); pal.province[p * 3] = col[0]; pal.province[p * 3 + 1] = col[1]; pal.province[p * 3 + 2] = col[2]; } }
-    const cellKm = 2 * Math.PI * world.cfg.radius / W;
+    const cellKm = 2 * Math.PI * world.cfg.radius / W; G.Noise.setCoastScale(cellKm);
+    // 陆地等高线层（与 worker 中 23 层 hypsometry 相同：档界按平方递增，低地加密）
+    const CLV = []; for (let k = 1; k <= 23; k++) CLV.push(Math.max(5, Math.round((P.maxE || 6000) * (k / 24) * (k / 24))));
     const TRIBAL = hex('#efe6d2'), WILD = hex('#f3efe6'), LAKE = hex('#a7d3ea'), COAST = hex('#3d5a73'), SEAFLAT = hex('#b9dcec'), LANDFLAT = hex('#e9e4d2');
 
     // 分类数据的颜色：四邻格按双线性权重混合 → 自然渐变（不出现方块）
@@ -92,6 +105,7 @@
     const civCol = (topic, vi, out) => {
       let id = -1, arr = null;
       if (topic === 'country' || topic === 'govern' || topic === 'heritage') { id = Cv.country[vi]; arr = pal.country; }
+      else if (topic === 'system') { id = Cv.country[vi]; arr = pal.system; }
       else if (topic === 'province') { id = Cv.province[vi]; arr = pal.province; }
       else if (topic === 'culture') { id = Cv.culture[vi]; arr = pal.culture; }
       else if (topic === 'language') { id = Cv.language[vi]; arr = pal.language; }
@@ -103,12 +117,12 @@
     };
     const tmpC = [0, 0, 0], acc = [0, 0, 0];
     // 国家 / 实际治理 / 省份：使用全分辨率细化疆界（与矢量国界、省界完全一致）
-    const FULL = { country: 1, govern: 1, province: 1, heritage: 1 };
+    const FULL = { country: 1, govern: 1, province: 1, heritage: 1, atlas: 1, system: 1 };
     const fullCol = (topic, f, out) => {
       const y = (f / W) | 0, x = f - y * W, vi = Math.min(vH - 1, y >> 1) * vW + Math.min(vW - 1, x >> 1);
       const k = Cv.countryF[f];
       if (k >= 0) {
-        let arr = pal.country, id = k;
+        let arr = topic === 'atlas' ? pal.atlas : topic === 'system' ? pal.system : pal.country, id = k;
         if (topic === 'province') { const p = Cv.provinceF[f]; if (p >= 0) { arr = pal.province; id = p; } }
         out[0] = arr[id * 3]; out[1] = arr[id * 3 + 1]; out[2] = arr[id * 3 + 2];
         if (topic === 'govern') { const g = Cv.gov[vi] / 255; out[0] = 246 + (out[0] - 246) * g; out[1] = 241 + (out[1] - 241) * g; out[2] = 230 + (out[2] - 230) * g; }
@@ -251,7 +265,8 @@
           const xi = sx | 0, tx = sx - xi, xj = xi + 1 === W ? 0 : xi + 1;
           let e = octs ? G.Noise.surfaceRaw(elev, W, H, gx, gy) : (elev[r0 + xi] * (1 - tx) + elev[r0 + xj] * tx) * (1 - ty) + (elev[r1 + xi] * (1 - tx) + elev[r1 + xj] * tx) * ty;
           const cv = octs ? G.Noise.coastSurface(elev, W, H, gx, gy) : e; cs[py * w + px] = cv; // 海陆判断
-          if (cv > 0 && e <= 0) e = 0.5; else if (cv <= 0 && e > 0) e = -0.5; // 设色高程与海陆判断一致
+          if (octs) e = G.Noise.coastElev(e, cv, elev, W, H, gx, gy); // 近岸高程收口：海岸线处归零、向内沿岸坡平滑回升（不再按海陆硬裁）
+          else if (cv > 0 && e <= 0) e = 0.5; else if (cv <= 0 && e > 0) e = -0.5;
           er[py * w + px] = e;
           if (octs) {
             const amp = (e > 0 ? 16 + Math.min(200, e * 0.04) : Math.min(60, 16 + (-e) * 0.02)) * (e > 0 ? (aux.detail || 1) : 1);
@@ -259,6 +274,7 @@
             for (let o = 0; o < octs; o++) { d += n2(gx * f, gy * f) * a; f *= 2.1; a *= 0.5; }
             // 细节只改变起伏，不改变海陆：近岸按 |高程| 收敛，海岸线与河口始终落在同一连续地表上
             e += d * Math.min(1, Math.abs(e) / (amp * 2.2));
+            if (cv > 0 ? e < 0.5 : e > -0.5) e = cv > 0 ? 0.5 : -0.5;
           }
           const o = py * w + px; eb[o] = e;
           const L = lakeVis; const lv = octs ? G.Noise.surfaceRaw(L, W, H, gx, gy) : (L[r0 + xi] * (1 - tx) + L[r0 + xj] * tx) * (1 - ty) + (L[r1 + xi] * (1 - tx) + L[r1 + xj] * tx) * ty;
@@ -267,8 +283,9 @@
       }
       const out = new Uint8ClampedArray(w * h * 4);
       const lx = -0.5, ly = -0.5, lz = 0.7071, Z = 12 * Math.pow(Math.min(1, Math.max(0.04, s)), 0.6) * (aux.relief || 1);
-      const isHuman = { country: 1, province: 1, culture: 1, language: 1, religion: 1, govern: 1, heritage: 1 }[topic];
-      const zoomR = W / (s * 1400), lfOn = aux.landform !== false && zoomR >= 2.2 && topic !== 'plates';
+      const isHuman = { country: 1, province: 1, culture: 1, language: 1, religion: 1, govern: 1, heritage: 1, system: 1 }[topic];
+      const zoomR = W / (s * 1400), lfOn = aux.landform !== false && zoomR >= 2.2 && topic !== 'plates' && !ST.political;
+      const polT = ST.political && topic === 'terrain' && Cv.countryF ? table('atlas') : null; // 政区图：底图陆地改用国家粉彩
       // 原版地貌面状图式：8×8 短线纹（屏幕像素对齐，跨瓦片连续）
       const dash = (X, Y, k) => { const u = ((X % 10) + 10) % 10, v = ((Y % 10) + 10) % 10; return k === 0 ? ((v === 2 && u >= 1 && u <= 3) || (v === 6 && u >= 5 && u <= 8) || (v === 3 && u >= 2 && u <= 3)) : ((v === 2 && u >= 1 && u <= 4) || (v === 6 && u >= 5 && u <= 8)); };
       const jit = FULL[topic] && Cv.countryF ? 0 : 0.35, catTopic = isHuman || topic === 'koppen' || topic === 'biome' || topic === 'basin' || topic === 'plates', catT = catTopic ? table(topic) : null;
@@ -285,7 +302,8 @@
           let jx = gx, jy = gy; if (catTopic) { jx = gx + j2(gx * 0.21, gy * 0.21) * jit * (W / vW); jy = gy + j2(gy * 0.21 + 50, gx * 0.21) * jit * (H / vH); }
           let r, g, b;
           if (land && !isLake) {
-            if (topic === 'terrain') {
+            if (polT) { const c = crisp(polT, gx, gy); r = c[0]; g = c[1]; b = c[2]; }
+            else if (topic === 'terrain') {
               if (aux.elev !== false) { const k = Math.max(0, Math.min(255, (e / 6000 * 255) | 0)) * 3; r = LANDR.out[k]; g = LANDR.out[k + 1]; b = LANDR.out[k + 2]; }
               else { r = LANDFLAT[0]; g = LANDFLAT[1]; b = LANDFLAT[2]; }
             } else if (topic === 'koppen' || topic === 'biome' || topic === 'basin') {
@@ -354,13 +372,31 @@
         if (cross && gm > 1e-6) { const d = Math.abs(e) / gm; if (d < 1.1) { const a = 0.9 * (1.1 - d) / 1.1; out[oo] += (COASTC[0] - out[oo]) * a; out[oo + 1] += (COASTC[1] - out[oo + 1]) * a; out[oo + 2] += (COASTC[2] - out[oo + 2]) * a; } }
         if (aux.lakes !== false && e > 0) { const l = lb[o] - 0.5, lg = Math.hypot((lb[o + 1] - lb[o - 1]) * 0.5, (lb[o + w] - lb[o - w]) * 0.5); if (lg > 1e-6) { const d = Math.abs(l) / lg; if (d < 1) { const a = 0.75 * (1 - d); out[oo] += (92 - out[oo]) * a; out[oo + 1] += (140 - out[oo + 1]) * a; out[oo + 2] += (176 - out[oo + 2]) * a; } } }
       }
+      // 3) 陆地等高线：直接在设色所用的同一张连续地表（er，已与海岸线对齐、海岸线即 0 m 线）上逐像素描出，
+      //    因而等高线与色带、晕渲、海岸线处处一致：沿海岸绕行、在半岛与海湾处自然折返，不会在岸边断开。
+      if (aux.coast !== false && !ST.political) {
+        const lv0 = W / (s * 1400) < 2.5, aR = lv0 ? 0.2 : 0.3, aI = lv0 ? 0.32 : 0.46, CC = [118, 105, 79], NL = CLV.length;
+        for (let py = 1; py < h - 1; py++) for (let px = 1; px < w - 1; px++) {
+          const o = py * w + px; if (!(cs[o] > 0)) continue; if (aux.lakes !== false && lb[o] > 0.5) continue;
+          const E = er[o]; if (E < CLV[0] * 0.3) continue;
+          const gm = Math.hypot((er[o + 1] - er[o - 1]) * 0.5, (er[o + w] - er[o - w]) * 0.5); if (gm < 1e-4) continue;
+          let k = 0; while (k < NL && CLV[k] <= E) k++; // CLV[k-1] ≤ E < CLV[k]
+          let best = Infinity, bk = -1;
+          if (k > 0) { const d = (E - CLV[k - 1]) / gm; if (d < best) { best = d; bk = k - 1; } }
+          if (k < NL) { const d = (CLV[k] - E) / gm; if (d < best) { best = d; bk = k; } }
+          if (bk < 0) continue;
+          const idx = (bk + 1) % 4 === 0, hw = idx ? 0.7 : 0.42, cov = Math.min(1, hw + 0.5 - best); if (cov <= 0) continue;
+          const a = cov * (idx ? aI : aR), oo = o * 4;
+          out[oo] += (CC[0] - out[oo]) * a; out[oo + 1] += (CC[1] - out[oo + 1]) * a; out[oo + 2] += (CC[2] - out[oo + 2]) * a;
+        }
+      }
       if (!pad) return out;
       const crop = new Uint8ClampedArray(req.w * req.h * 4);
       for (let y = 0; y < req.h; y++) crop.set(out.subarray(((y + pad) * w + pad) * 4, ((y + pad) * w + pad + req.w) * 4), y * req.w * 4);
       return crop;
     }
     // 与 render 相同的带细节起伏的地表高程（城市图等高线用，保证与晕渲一致）
-    function sampleElev(gx, gy, s, detail) { let e = G.Noise.surfaceRaw(elev, W, H, gx, gy); const octs = Math.min(5, Math.ceil(Math.log2(1 / s)) + 1);
+    function sampleElev(gx, gy, s, detail) { let e = G.Noise.coastElev(G.Noise.surfaceRaw(elev, W, H, gx, gy), G.Noise.coastSurface(elev, W, H, gx, gy), elev, W, H, gx, gy); const octs = Math.min(5, Math.ceil(Math.log2(1 / s)) + 1);
       const amp = (e > 0 ? 16 + Math.min(200, e * 0.04) : Math.min(60, 16 + (-e) * 0.02)) * (e > 0 ? (detail || 1) : 1); let f = 0.9, a = amp, d = 0; for (let o = 0; o < octs; o++) { d += n2(gx * f, gy * f) * a; f *= 2.1; a *= 0.5; } return e + d * Math.min(1, Math.abs(e) / (amp * 2.2)); }
     return { render, pal, sampleElev };
   }

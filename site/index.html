@@ -2,11 +2,12 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>星球推演 · 世界生成器</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="app/timeline.css">
-<link rel="stylesheet" href="fonts/fonts.css">
+  <link rel="stylesheet" href="app/mobile.css">
+  <script src="app/mobile.js"></script>
 </head>
 <body>
   <main id="stage">
@@ -101,9 +102,13 @@
     <button data-act="reseed">同样设定，换一颗星球</button>
     <button data-act="png">导出当前地图 PNG</button>
     <button data-act="share">复制分享链接</button>
-    <button data-act="export">导出当前世界文件</button>
+    <button data-act="export">保存到世界文件<small id="menuFile">设置 + 改名 + 标记，打开时重新推演</small></button>
+    <button data-act="saveAs">世界文件另存为…<small>自选保存位置</small></button>
     <button data-act="import">导入世界文件…</button>
   </div>
+
+  <!-- 旧版本世界文件：重新推演后写回 -->
+  <div class="card upgrade-bar" id="upgradeBar" hidden></div>
 
   <!-- 推演进度 -->
   <div class="overlay" id="progress" hidden>
@@ -112,6 +117,7 @@
       <h3 id="progTitle">正在构思一颗新的星球</h3>
       <div class="bar"><i id="progBar"></i></div>
       <p id="progStage" class="prog-small">准备推演</p>
+      <p id="progNote" class="prog-note" hidden></p>
     </div>
   </div>
 
@@ -147,7 +153,7 @@
       <div class="home-sep"></div></div>
       <h2>已保存的世界</h2><div class="home-sub"><span>打开地图，继续探索。双击世界名称可改名。</span><span><button class="link" id="homeImport">导入世界文件</button> · <span id="homeCount"></span></span></div>
       <div class="wgrid" id="homeSaved"></div>
-      <footer class="home-foot"><span>世界生成器 · 规则移植自 1.4.0.dev164 <a href="#" id="homeNotes" class="home-notes">更新说明</a></span><span>你的世界保存在本机浏览器中，可导出为文件。</span></footer>
+      <footer class="home-foot"><span>世界生成器 1.4.1 · 规则移植自 1.4.0.dev164 <a href="#" id="homeNotes" class="home-notes">更新说明</a></span><span>你的世界保存在本机浏览器中，可导出为文件。存档只记录设置、种子、改名与标记，打开时按同样设置重新推演；读到旧版本文件会用新版本重新推演。</span></footer>
     </div>
   </section>
 
@@ -215,8 +221,10 @@
   <div class="card city-card" id="cityCard" hidden></div>
   <div class="toast" id="toast" hidden></div>
 
+  <script src="core/admin.js"></script>
   <script src="app/config.js"></script>
   <script src="app/wizard.js"></script>
+  <script src="app/icons.js"></script>
   <script src="app/map.js"></script>
   <script src="app/home.js"></script>
   <script src="app/religion-lib.js"></script>

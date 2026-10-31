@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const inWorker = typeof document === 'undefined' && typeof importScripts === 'function';
-  if (inWorker) importScripts('noise.js', 'libraries.js', 'culture-ext.js', 'religions.js', 'planet.js', 'climate.js', 'hydro.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js', 'history/regions.js', 'history/dawn.js', 'history/cities.js', 'history/polity.js', 'history/outline.js', 'history/heritage.js', 'history/apply.js', 'history/index.js');
+  if (inWorker) importScripts('noise.js', 'libraries.js', 'culture-ext.js', 'admin.js', 'religions.js', 'planet.js', 'climate.js', 'hydro.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js', 'history/regions.js', 'history/dawn.js', 'history/cities.js', 'history/polity.js', 'history/outline.js', 'history/heritage.js', 'history/apply.js', 'history/index.js');
   const G = self;
   let world = null, R = null;
 
@@ -57,6 +57,42 @@
     void wrap;
     return out;
   }
+  // 等高线按海岸地表裁剪：陆上等高线只留在陆上、海深线只留在海里。
+  // 设色海岸用 coastSurface（带格下小岬、小湾），等高线取自格网高程，二者在近岸会错开——不裁剪时低等高线会伸出海岸、漂在海面上。
+  function clipCoast(list, A, W, H, STEP) {
+    const out = [], cs = (x, y) => G.Noise.coastSurface(A, W, H, x, y);
+    for (const c of list) {
+      // 陆上等高线还要落在近岸收口后的地表上（与设色、晕渲的岸坡一致），不再一头扒到海岸线上
+      const a = c.pts, want = c.level > 0, L = c.level, ok = want ? (v, x, y) => G.Noise.coastKeeps(L, v, A, W, H, x, y) : v => v <= 0;
+      let run = null;
+      const flush = () => { if (run && run.length >= 4) out.push(Object.assign({}, c, { pts: Float32Array.from(run) })); run = null; };
+      let px = a[0], py = a[1], pv = cs(px, py);
+      if (ok(pv, px, py)) run = [px, py];
+      for (let k = 2; k < a.length; k += 2) {
+        const qx = a[k], qy = a[k + 1], qv = cs(qx, qy);
+        if (run && (want ? pv > 90 && qv > 90 && ok(qv, qx, qy) : pv < -90 && qv < -90)) run.push(qx, qy); // 两端都远离海岸：整段保留
+        else {
+          const n = Math.max(1, Math.ceil(Math.hypot(qx - px, qy - py) / STEP));
+          let lx = px, ly = py, lok = ok(pv, px, py);
+          for (let j = 1; j <= n; j++) {
+            const t = j / n, x = px + (qx - px) * t, y = py + (qy - py) * t, o = ok(j === n ? qv : cs(x, y), x, y);
+            if (o !== lok) { // 二分求与海岸线的交点，线段恰好止于海岸
+              let ax = lx, ay = ly, bx = x, by = y;
+              for (let it = 0; it < 10; it++) { const mx = (ax + bx) / 2, my = (ay + by) / 2; if (ok(cs(mx, my), mx, my) === lok) { ax = mx; ay = my; } else { bx = mx; by = my; } }
+              const cx = lok ? ax : bx, cy = lok ? ay : by;
+              if (lok) { run.push(cx, cy); flush(); } else run = [cx, cy];
+              lok = o;
+            }
+            lx = x; ly = y;
+          }
+          if (lok) run.push(qx, qy);
+        }
+        px = qx; py = qy; pv = qv;
+      }
+      flush();
+    }
+    return out;
+  }
 
 
   // ---------- 边界折线：标签格边 → 连线 → 抽稀 + Chaikin 平滑 ----------
@@ -86,6 +122,66 @@
     return out;
   }
 
+
+  // ---------- 专题注记：每个专题图把自己的类别（文明、语言、宗教、制度、气候带、群系、流域、分级区间）直接写在地图对应的区域里 ----------
+  // 同类相连成片：每片取离边缘最远处为锚点（可容纳注记的最大内切圆半径 d，单位为半分辨率格），并给出主轴方向与长短轴比
+  function zoneLabels(cls, cw, ch, minN, cap) {
+    const N = cw * ch, dist = new Int16Array(N).fill(-1), q = new Int32Array(N), lab = new Uint8Array(N);
+    const nb4 = (i, k) => { const y = (i / cw) | 0, x = i - y * cw; if (k === 0) return y * cw + (x + 1) % cw; if (k === 1) return y * cw + (x - 1 + cw) % cw; if (k === 2) return y > 0 ? i - cw : -1; return y < ch - 1 ? i + cw : -1; };
+    let t = 0;
+    for (let i = 0; i < N; i++) { const c = cls[i]; if (c < 0) continue; for (let k = 0; k < 4; k++) { const j = nb4(i, k); if (j < 0 || cls[j] !== c) { dist[i] = 0; q[t++] = i; break; } } }
+    for (let h = 0; h < t; h++) { const i = q[h]; for (let k = 0; k < 4; k++) { const j = nb4(i, k); if (j >= 0 && dist[j] < 0 && cls[j] === cls[i]) { dist[j] = dist[i] + 1; q[t++] = j; } } }
+    const out = [], extra = []; let gid = 0;
+    for (let s0 = 0; s0 < N; s0++) {
+      const c = cls[s0]; if (c < 0 || lab[s0]) continue;
+      let n = 0, h = 0, e = 0; q[e++] = s0; lab[s0] = 1; const x0 = s0 % cw; let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, best = s0;
+      while (h < e) { const i = q[h++]; n++; const y = (i / cw) | 0; let x = i - y * cw; if (x - x0 > cw / 2) x -= cw; if (x0 - x > cw / 2) x += cw; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; if (dist[i] > dist[best]) best = i;
+        for (let k = 0; k < 4; k++) { const j = nb4(i, k); if (j >= 0 && !lab[j] && cls[j] === c) { lab[j] = 1; q[e++] = j; } } }
+      if (n < minN) continue;
+      const mx = sx / n, my = sy / n, cxx = sxx / n - mx * mx, cyy = syy / n - my * my, cxy = sxy / n - mx * my;
+      const tr = (cxx + cyy) / 2, df = Math.sqrt(((cxx - cyy) / 2) ** 2 + cxy * cxy), l1 = tr + df, l2 = Math.max(0.25, tr - df);
+      const by = (best / cw) | 0, bx = best - by * cw;
+      const g = gid++, z0 = { c, g, x: (bx + 0.5) * 2, y: (by + 0.5) * 2, d: Math.max(0.5, dist[best]), n, a: Math.round(0.5 * Math.atan2(2 * cxy, cxx - cyy) * 1000) / 1000, el: Math.round(Math.sqrt(l1 / l2) * 100) / 100 };
+      out.push(z0);
+      // 大片区域再按 24 格分块各取一个内部锚点：放大后主锚点移出视野，区域里仍有注记（页面按同类间距去重）
+      if (n >= 300) { const B = 24, blk = new Map();
+        for (let h2 = 0; h2 < e; h2++) { const i = q[h2]; if (dist[i] < 4) continue; const y = (i / cw) | 0, x = i - y * cw, key = ((y / B) | 0) * 4096 + ((x / B) | 0), o = blk.get(key); if (o === undefined || dist[i] > dist[o]) blk.set(key, i); }
+        for (const i of blk.values()) { const y = (i / cw) | 0, x = i - y * cw; let dx = Math.abs(x - bx); dx = Math.min(dx, cw - dx); if (Math.hypot(dx, y - by) < B * 0.8) continue;
+          extra.push({ c, g, x: (x + 0.5) * 2, y: (y + 0.5) * 2, d: dist[i], n, a: 0, el: 1, sub: 1 }); } }
+    }
+    out.sort((a, b) => b.n - a.n); const main = out.slice(0, cap);
+    extra.sort((a, b) => b.d - a.d); return main.concat(extra.slice(0, 2500));
+  }
+  function topicZones(P, Cl, Hy, Cv, riverNames) {
+    const cw = Cv.W, ch = Cv.H, N = cw * ch, FW = P.W, land = Cv.land, ice = Cv.ice, Z = {};
+    const full = (A, none) => { const o = new Int16Array(N); for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const v = A[(2 * y) * FW + 2 * x]; o[y * cw + x] = v === none || !land[y * cw + x] ? -1 : v; } return o; };
+    const blur = (F) => { let A = Float32Array.from(F); const T = new Float32Array(N), r = 2; for (let it = 0; it < 2; it++) {
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { let s = 0; for (let k = -r; k <= r; k++) s += A[y * cw + (x + k + cw) % cw]; T[y * cw + x] = s / (2 * r + 1); }
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { let s = 0, n = 0; for (let k = -r; k <= r; k++) { const yy = y + k; if (yy < 0 || yy >= ch) continue; s += T[yy * cw + x]; n++; } A[y * cw + x] = s / n; } } return A; };
+    const binned = (F, th, mask) => { const B = blur(F), o = new Int16Array(N); for (let i = 0; i < N; i++) { if (!mask(i)) { o[i] = -1; continue; } let c = 0; while (c < th.length && B[i] >= th[c]) c++; o[i] = c; } return o; };
+    const cat = (A) => { const o = new Int16Array(N); for (let i = 0; i < N; i++) o[i] = land[i] && A[i] >= 0 ? A[i] : -1; return o; };
+    const MIN = Math.max(6, Math.round(N / 90000));
+    Z.culture = zoneLabels(cat(Cv.culture), cw, ch, MIN, 160);
+    Z.language = zoneLabels(cat(Cv.language), cw, ch, MIN, 200);
+    Z.religion = zoneLabels(cat(Cv.religion), cw, ch, MIN, 160);
+    if (G.AdminSys) { const ord = G.AdminSys.ORDER, sysOf = Cv.countries.map(k => ord.indexOf(k.sys || G.AdminSys.classOfCountry(k))), o = new Int16Array(N);
+      for (let i = 0; i < N; i++) { const k = Cv.country[i]; o[i] = k >= 0 ? sysOf[k] : -1; } Z.system = zoneLabels(o, cw, ch, MIN, 200); }
+    { const o = new Int16Array(N); for (let i = 0; i < N; i++) { const k = Cv.country[i]; o[i] = k < 0 ? -1 : Cv.gov[i] >= 171 ? 0 : Cv.gov[i] >= 87 ? 1 : 2; } Z.govern = zoneLabels(o, cw, ch, MIN * 2, 160); }
+    const dry = i => land[i] && !ice[i];
+    Z.pop = zoneLabels(binned(Cv.popDensity, [1, 10, 50, 200], dry), cw, ch, MIN * 2, 160);
+    Z.agri = zoneLabels(binned(Cv.agri, [0.2, 0.45, 0.7], dry), cw, ch, MIN * 2, 160);
+    Z.habit = zoneLabels(binned(Cv.hab, [0.2, 0.45, 0.7], dry), cw, ch, MIN * 2, 160);
+    { const v = new Float32Array(N); for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) v[y * cw + x] = Cl.veg[(2 * y) * FW + 2 * x] / 255; Z.veg = zoneLabels(binned(v, [0.25, 0.5, 0.75], dry), cw, ch, MIN * 2, 160); }
+    Z.koppen = zoneLabels(full(Cl.koppen, 255), cw, ch, MIN, 200);
+    Z.biome = zoneLabels(full(Cl.biome, 255), cw, ch, MIN, 200);
+    { // 流域：以流经该流域最长的已命名干流命名
+      const bas = full(Hy.basinId, 0), named = new Map(), RV = Hy.rivers;
+      (riverNames || []).forEach((rn, ri) => { const st = RV.stems && rn.stem !== undefined ? RV.stems[rn.stem] : null; if (!st) return; const r = st.r[0], k = Math.max(RV.offs[r], RV.offs[r + 1] - 3);
+        const x = RV.pts[k * 7], y = RV.pts[k * 7 + 1], id = Hy.basinId[Math.min(P.H - 1, y | 0) * FW + ((x | 0) % FW + FW) % FW]; if (id && !named.has(id)) named.set(id, ri); });
+      for (let i = 0; i < N; i++) if (bas[i] >= 0 && !named.has(bas[i])) bas[i] = -1;
+      Z.basin = zoneLabels(bas, cw, ch, MIN, 160).map(z => Object.assign(z, { ri: named.get(z.c) })); }
+    return Z;
+  }
   function generate(cfg, post) {
     const t0 = Date.now();
     const progress = (stage, f) => post({ type: 'progress', stage, f });
@@ -98,11 +194,11 @@
     let Hc = null;
     try { Hc = G.History.core({ P, Hy, Cl, Cv, cfg }, progress); G.HistoryApply.apply({ P, Hy, Cl, Cv, cfg }, Hc); }
     catch (err) { console.warn('历史推演失败，退回原有国界', err); Hc = null; }
-    if (!Hc) { progress('国界与省界', 0.975);
+    if (!Hc) { progress('疆界兜底', 0.975);
       const BF = G.Borders.run(P, Hy, Cv, cfg.seed, Cv.cities, Cl); Cv.countryF = BF.countryF; Cv.provinceF = BF.provinceF;
       Cv.provinces.forEach((p, k) => { const a = BF.provAnchor[k]; if (a) { p.lx = a.x; p.ly = a.y; p.lsize = a.size; } }); }
     Cl.Ts = null; Cl.Ps = null; // 释放全分辨率四季场
-    progress('等高线与气象场', 0.96);
+    progress('等高线与气象场', 0.978);
     world = { P, K, Cl, Hy, Cv, cfg, Hc }; navGraph = null; roadNet = null;
     R = G.Render.create(world);
     // 等高线（半分辨率）
@@ -111,7 +207,7 @@
     // 等高线地表：湖面范围取湖水位（湖内不画等高线）
     const eC = Float32Array.from(P.elev); for (let i = 0; i < eC.length; i++) if (Hy.lake[i]) eC[i] = Math.max(1, Hy.filled[i]);
     const eH = P.downsample(eC, P.W, P.H, P.W / 2, P.H / 2);
-    const cont = contours(eH, P.W / 2, P.H / 2, [-5000, -3000, -1000, -200].concat(landLevels), 2).map(c => ({ level: c.level, pts: c.pts, k: landLevels.indexOf(c.level) + 1 }));
+    const cont = clipCoast(contours(eH, P.W / 2, P.H / 2, [-5000, -3000, -1000, -200].concat(landLevels), 2).map(c => ({ level: c.level, pts: c.pts, k: landLevels.indexOf(c.level) + 1 })), P.elev, P.W, P.H, 0.3); // 全图级只用半分辨率线，粗步长足够
 
     // 风场 / 洋流 / 等压线
     const cW = P.cW, cH = P.cH, f = P.W / cW;
@@ -129,7 +225,7 @@
       }
       return { lines, ext: Float32Array.from(ext) };
     });
-    progress('国界与省界', 0.97);
+    progress('国界与省界', 0.988);
     const cw = Cv.W, chh = Cv.H, st = Cv.country, pv = Cv.province, nm = Cv.nominal;
     const cF = Cv.countryF, pF = Cv.provinceF, FW = P.W, iceAt = f => { const y = (f / FW) | 0, x = f - y * FW; return Cv.ice[(y >> 1) * cw + (x >> 1)]; };
     const borders = {
@@ -174,10 +270,12 @@
       labels: Cv.labels, symbols: Cv.symbols, roads: Cv.roads, borders,
       travel: travelProfile(Cv.era, cfg),
       koppenUsed: [...koppenUsed].sort((a, b) => a - b), biomeUsed: [...biomeUsed].sort((a, b) => a - b),
-      decl: K.decl
+      decl: K.decl,
+      zones: topicZones(P, Cl, Hy, Cv, Cv.riverNames)
     });
     // 全精度 23 层等高线在后台补算，完成后单独送达（地图先可用）
-    setTimeout(() => { const fine = contours(eC, P.W, P.H, landLevels, 1, false, true).map(c => ({ level: c.level, pts: c.pts, k: landLevels.indexOf(c.level) + 1 })); post({ type: 'contoursFine', contours: fine }); }, 0);
+    // 陆地全精度等高线已改由栅格按设色地表逐像素描出（render.js），不再在此补算矢量线
+    setTimeout(() => G.Noise.coastElev(1, 50, P.elev, P.W, P.H, 1, P.H / 2), 0); // 预热海岸距离场
   }
 
 

@@ -14,7 +14,7 @@
   let ideaSel = -1; // 思潮图层：选中一条思潮时，只看它的传播（接纳 / 未接纳）
   const ideaAt = (k, r) => H.ideaA ? H.ideaA[k * (H.nR + 1) + r] : 1e9;
   const ideasOf = (r, y) => { const out = []; if (!H.ideas) return out; H.ideas.forEach((I, k) => { if (I.born !== null && ideaAt(k, r) <= y) out.push(k); }); return out; };
-  const KIND_COL = { idea: '#c08a00', adopt: '#b9a26a', settle: '#8a5a00', theocracy: '#6b3fa0', vassal: '#8a6d2f', vassalFree: '#5d7d3a', vassalAnnex: '#7b3b2a', colonyCity: '#1f6f8b', cradle: '#2f7d4f', city: '#e0a030', kingdom: '#d54e3a', empire: '#9e2c7a', fall: '#555', civ: '#3b6ea8', stage: '#9aa3ab', religion: '#7a4fa0', found: '#b07a3a', ruin: '#7a6a58', plague: '#3d3d3d', milestone: '#c08a00', leader: '#c08a00', unify: '#d54e3a', annex: '#7b3b2a', sack: '#b03030', nomad: '#8a5a00', split: '#6a4c93', dynasty: '#4a6fa5', restore: '#2e8b57', capital: '#888', secede: '#3b6ea8', rise: '#3b6ea8', revolt: '#c0392b', suppress: '#7f8c8d', rebelState: '#d35400', overthrow: '#8e1b1b', coup: '#5d6d7e', revolution: '#b03a2e', disaster: '#9a7d0a', migrate: '#8a5a00', convert: '#7a4fa0', organize: '#4a6fa5', fromState: '#4a6fa5', provSecede: '#d35400' };
+  const KIND_COL = { idea: '#c08a00', adopt: '#b9a26a', settle: '#8a5a00', theocracy: '#6b3fa0', vassal: '#8a6d2f', vassalFree: '#5d7d3a', vassalAnnex: '#7b3b2a', colonyCity: '#1f6f8b', cradle: '#2f7d4f', city: '#e0a030', kingdom: '#d54e3a', empire: '#9e2c7a', fall: '#555', civ: '#3b6ea8', stage: '#9aa3ab', religion: '#7a4fa0', found: '#b07a3a', ruin: '#7a6a58', plague: '#3d3d3d', milestone: '#c08a00', leader: '#c08a00', unify: '#d54e3a', annex: '#7b3b2a', sack: '#b03030', nomad: '#8a5a00', split: '#6a4c93', dynasty: '#4a6fa5', house: '#4a6fa5', restore: '#2e8b57', capital: '#888', secede: '#3b6ea8', rise: '#3b6ea8', revolt: '#c0392b', suppress: '#7f8c8d', rebelState: '#d35400', overthrow: '#8e1b1b', coup: '#5d6d7e', revolution: '#b03a2e', disaster: '#9a7d0a', migrate: '#8a5a00', convert: '#7a4fa0', organize: '#4a6fa5', fromState: '#4a6fa5', provSecede: '#d35400', crown: '#9e2c7a', uncrown: '#6d4c63', regal: '#d54e3a', wane: '#7d6b5a', decay: '#8c6d46', defeat: '#a04030', perish: '#444' };
   const ROAD_STYLE = { trunk: ['rgba(112,72,44,.8)', 1.7], regional: ['rgba(124,88,58,.62)', 1.15], local: ['rgba(136,106,78,.45)', 0.8] };
   const SERIF = '"Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", "SimSun", serif';
   const PRE = 0.12; // 史前在时间轴上所占的宽度
@@ -33,6 +33,7 @@
   const eraIdx = y => H.eraAt[Math.min(H.eraAt.length - 1, Math.max(0, Math.floor(y / H.eraStep)))];
   const eraName = y => { const e = eraIdx(y); return e <= 2 ? '史前 · 部落时代' : H.eraNames[e] || ''; };
 
+  const UZ = el => (window.uiZoom ? window.uiZoom(el) : 1), rc0 = () => $('tlRowsCv');
   function init(a) {
     app = a;
     const bar = document.createElement('section');
@@ -42,7 +43,8 @@
       <div class="tl-year"><b id="tlYear">第 0 年</b><span id="tlEra"></span></div>
       <div class="tl-track" id="tlTrack"><canvas id="tlBand"></canvas><i class="tl-life" id="tlLife" hidden></i><div class="tl-ticks" id="tlTicks"></div><i class="tl-thumb" id="tlThumb"></i></div>
       <button class="tl-chip" id="tlSpeed" title="播放速度">1×</button>
-      <div class="tl-seg" id="tlLayer"><button data-l="state" class="on">国家</button><button data-l="prov">省份</button><button data-l="stage">思潮</button><button data-l="culture">文明</button><button data-l="religion">宗教</button><button data-l="unrest">民怨</button></div>
+      <button class="tl-chip tl-pre" id="tlPrefix" title="关闭国号前缀：后唐帝国显示为唐帝国、东法兰克王国显示为法兰克王国（人文图同步）">去前缀</button>
+      <div class="tl-seg" id="tlLayer"><button data-l="state" class="on">国家</button><button data-l="prov">省份</button><button data-l="sys">制度</button><button data-l="stage">思潮</button><button data-l="culture">文明</button><button data-l="religion">宗教</button><button data-l="unrest">民怨</button></div>
       <button class="tl-icon" id="tlRiverBtn" title="世系河流图：各国按时间排开，分裂处分叉、吞并处汇流"><svg viewBox="0 0 24 24"><path d="M3 6c5 0 6 4 9 4s4-3 9-3M3 12c4 0 6-2 9-2s5 4 9 4M3 18c5 0 6-3 9-3s4 2 9 2"/></svg></button>
       <button class="tl-icon" id="tlRows" title="文明脉络"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h13"/></svg></button>
       <button class="tl-icon" id="tlClose" title="关闭时间线"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
@@ -59,13 +61,14 @@
       if (b.dataset.focus !== undefined) return setFocus(+b.dataset.focus);
       if (b.dataset.year !== undefined) { setPlaying(false); setYear(+b.dataset.year); return; }
       const a = b.dataset.act; if (a === 'x') clearFocus(); else if (a === 'play') { setYear(q.born); setPlaying(true); } else if (a === 'peak') setYear(q.peakYear); else if (a === 'fly') { const c = capAt(focusP, Math.min(Math.max(year, q.born), lifeEnd(focusP))); if (c) app.map.flyTo(H.cx[c[2]], H.cy[c[2]], 2.5); } });
+    fc.addEventListener('scroll', e => { if (e.target.classList && e.target.classList.contains('tf-fade')) fadeEnd(e.target); }, true);
     fc.addEventListener('change', e => { if (e.target.id === 'tlLinOn') { focusLinOn = e.target.checked; focusLin = lineageOf(focusP); dirty = true; app.map.draw(); } });
     leg.addEventListener('click', e => { const id = e.target.closest('[data-idea]'); if (id) { const k = +id.dataset.idea; ideaSel = ideaSel === k ? -1 : k; dirty = true; renderLegend(); app.map.draw(); return; } const b = e.target.closest('[data-focus]'); if (b) setFocus(+b.dataset.focus); });
     document.addEventListener('keydown', ev => { if (on && ev.key === 'Escape' && focusP >= 0) clearFocus(); });
     cc.addEventListener('click', e => { const b = e.target.closest('[data-act],[data-focus]'); if (!b) return; const c = H.cities[cardCity]; if (!c) return;
       if (b.dataset.focus !== undefined) { setFocus(+b.dataset.focus); return; }
       if (b.dataset.act === 'x') { cc.hidden = true; cardCity = -1; app.map.draw(); } else if (b.dataset.act === 'found') setYear(c.founded); else if (b.dataset.act === 'peak') setYear(c.peakYear); else if (b.dataset.act === 'ruin') setYear(c.ruined); else if (b.dataset.act === 'fly') app.map.flyTo(c.x, c.y, 8); });
-    leg.addEventListener('change', e => { if (e.target.id === 'tlCityToggle') { showCities = e.target.checked; app.map.draw(); } });
+    leg.addEventListener('change', e => { if (e.target.id === 'tlCityToggle') { showCities = e.target.checked; renderLegend(); app.map.draw(); } });
 
     $('tlPlay').onclick = () => setPlaying(!playing);
     $('tlClose').onclick = close;
@@ -82,8 +85,12 @@
     new ResizeObserver(() => { if (!rv.hidden) { RIV.cache = null; drawRiver(); } }).observe(rv);
     $('tlDrawerX').onclick = () => toggleDrawer(false);
     $('tlLayer').onclick = e => { const b = e.target.closest('[data-l]'); if (!b) return; layer = b.dataset.l; $('tlLayer').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); dirty = true; renderLegend(); app.map.draw(); };
+    $('tlPrefix').onclick = () => app.setNoPrefix && app.setNoPrefix(!app.noPrefix);
     $('tlSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('tlSpeed').textContent = speed + '×'; };
-    cap.onclick = ev => { const b = ev.target.closest('[data-e]'); if (b) focusEvent(capEvents[+b.dataset.e]); };
+    cap.onclick = ev => { if (ev.target.closest('[data-all]')) return toggleFeedAll(true); const b = ev.target.closest('[data-e]'); if (b) focusEvent(capEvents[+b.dataset.e]); };
+    const fa = document.createElement('section'); fa.className = 'card tl-feedall'; fa.id = 'tlFeedAll'; fa.hidden = true; document.body.appendChild(fa);
+    fa.addEventListener('click', ev => { if (ev.target.closest('[data-x]')) return toggleFeedAll(false); const b = ev.target.closest('[data-e]'); if (b) { fa.querySelectorAll('li.on').forEach(x => x.classList.remove('on')); b.classList.add('on'); faLock = true; try { focusEvent(capEvents[+b.dataset.e]); } finally { faLock = false; } } });
+    document.addEventListener('keydown', ev => { if (on && feedAllOpen && ev.key === 'Escape') toggleFeedAll(false); });
     // 拖动时间轴（按非均匀刻度换算年份）
     const track = $('tlTrack');
     const seek = ev => { const r = track.getBoundingClientRect(); setYear(yOf(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)))); };
@@ -92,7 +99,7 @@
     $('tlTicks').addEventListener('click', ev => { const t = ev.target.closest('.tl-tick'); if (t) focusEvent(H.events[+t.dataset.i]); });
     const rc = $('tlRowsCv');
     rc.addEventListener('mousemove', ev => { const row = rowAt(ev); rc.title = row ? rowTitle(row) : ''; rc.style.cursor = row ? 'pointer' : ''; });
-    rc.addEventListener('click', ev => { const row = rowAt(ev); if (!row) return; const r = rc.getBoundingClientRect(), x = ev.clientX - r.left; setYear(x > NAME_W ? yOf((x - NAME_W) / (r.width - NAME_W - 8)) : (row.start || 0)); if (row.x) app.map.flyTo(row.x, row.y, 3); });
+    rc.addEventListener('click', ev => { const row = rowAt(ev); if (!row) return; const r = rc.getBoundingClientRect(), z = UZ(rc), x = (ev.clientX - r.left) / z; setYear(x > NAME_W ? yOf((x - NAME_W) / (r.width / z - NAME_W - 8)) : (row.start || 0)); if (row.x) app.map.flyTo(row.x, row.y, 3); });
     document.addEventListener('keydown', ev => { if (!on || !H || ev.target.closest('input,textarea')) return; if (ev.code === 'Space') { ev.preventDefault(); setPlaying(!playing); } if (ev.key === 'ArrowRight') setYear(yOf(Math.min(1, tOf(year) + 0.005))); if (ev.key === 'ArrowLeft') setYear(yOf(Math.max(0, tOf(year) - 0.005))); });
     const sync = () => { const root = document.documentElement.style; root.setProperty('--tlh', (bar.hidden ? 0 : bar.offsetHeight) + 'px'); root.setProperty('--tld', (dr.hidden ? 0 : dr.offsetHeight + 10) + 'px'); };
     const ro = new ResizeObserver(() => { sync(); if (on) { drawBand(); drawRows(); } }); ro.observe(bar); ro.observe(dr);
@@ -104,6 +111,7 @@
   // ---------- 打开 / 关闭 ----------
   async function open() {
     if (!app.data) return;
+    if (!on && app.onHistory) app.onHistory(true);
     on = true; $('timeline').hidden = false; document.body.classList.add('tl-on');
     const btn = document.querySelector('[data-tool=history]'); if (btn) btn.classList.add('on');
     // 时间线期间：底图换成地形，隐藏现代国界、城市与道路（它们属于“现在”）
@@ -119,12 +127,14 @@
       H = m.data; hFor = d; prepare(); year = 0;
     }
     $('tlLoading').hidden = true; $('tlLegend').hidden = false;
+    prefixChanged();
     renderLegend(); drawBand(); setYear(year);
   }
   function close() {
     on = false; setPlaying(false);
-    for (const id of ['timeline', 'tlTicker', 'tlLegend', 'tlDrawer', 'tlCity', 'tlFocus']) $(id).hidden = true; $('tlRiver').hidden = true; cardCity = -1; focusP = -1; ghostPath = null;
+    for (const id of ['timeline', 'tlTicker', 'tlLegend', 'tlDrawer', 'tlCity', 'tlFocus', 'tlFeedAll']) $(id).hidden = true; feedAllOpen = false; pulses = []; $('tlRiver').hidden = true; cardCity = -1; focusP = -1; ghostPath = null;
     document.body.classList.remove('tl-on');
+    app.onHistory && app.onHistory(false);
     const root = document.documentElement.style; root.setProperty('--tlh', '0px'); root.setProperty('--tld', '0px');
     const b = document.querySelector('[data-tool=history]'); if (b) b.classList.remove('on');
     if (saved) { app.tab = saved.tab; app.topics.geo = saved.geo; Object.assign(app.aux, saved.aux); saved = null; app.ui && app.ui.refresh(); }
@@ -182,7 +192,7 @@
     Y0 = H.E * 0.4; for (let k = 0; k < H.eraAt.length; k++) if (H.eraAt[k] >= 3) { Y0 = k * H.eraStep; break; } Y0 = Math.max(200, Math.min(H.E * 0.6, Y0));
     buildPalettes();
     roadPaths = (H.roads || []).map(rd => { const p = new Path2D(); for (const L of rd.lines) { p.moveTo(L[0], L[1]); for (let i = 2; i < L.length; i += 2) p.lineTo(L[i], L[i + 1]); } return { year: rd.year, imp: rd.imp, p }; });
-    roadCache = { n: -1 }; cityOrder = null; cityOrderYear = -1;
+    roadCache = { n: -1 }; cityOrder = null; cityOrderYear = -1; holySet = null;
     cityByRegion = new Map(); (H.cities || []).forEach((c, i) => { if (c.fort || !c.r) return; if (!cityByRegion.has(c.r)) cityByRegion.set(c.r, []); cityByRegion.get(c.r).push(i); });
     rows = [];
     H.ancient.forEach((a, i) => { const cr = H.cradles[a.cradle]; rows.push({ kind: 'ancient', i, name: a.name, type: a.typeLabel, lib: a.lib, ages: a.ages, end: a.fall, start: a.ages[1] || 0, x: cr.x, y: cr.y, color: ancColor(i), stageNames: a.stageNames, succ: a.successor }); });
@@ -191,7 +201,7 @@
     const isMajor = e => e.major !== undefined ? e.major : e.kind !== 'stage' || (e.stage >= 4 && e.stage <= 5);
     capEvents = H.events.filter(isMajor);
     polN = new Int32Array(H.polities.length); polCap = new Int32Array(H.polities.length);
-    $('tlTicks').innerHTML = H.events.map((e, i) => !isMajor(e) ? '' : `<i class="tl-tick k-${e.kind}" data-i="${i}" style="left:${(tOf(e.year) * 100).toFixed(2)}%;background:${KIND_COL[e.kind] || '#888'}" title="第 ${e.year} 年 · ${esc(e.text)}"></i>`).join('');
+    $('tlTicks').innerHTML = H.events.map((e, i) => !isMajor(e) ? '' : `<i class="tl-tick k-${e.kind}" data-i="${i}" style="left:${(tOf(e.year) * 100).toFixed(2)}%;background:${KIND_COL[e.kind] || '#888'}" title="第 ${e.year} 年 · ${esc(unpre(e.text))}"></i>`).join('');
     dirty = true;
   }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -200,6 +210,12 @@
   const overVeil = (rgb, a) => { const ao = a + VA * (1 - a); return pack([0, 1, 2].map(k => (rgb[k] * a + VC[k] * VA * (1 - a)) / ao), ao); };
   const pack = (rgb, a) => ((Math.round(a * 255) & 255) << 24 | (rgb[2] & 255) << 16 | (rgb[1] & 255) << 8 | (rgb[0] & 255)) >>> 0;
   const VEIL = pack(VC, VA);
+  const vassalTint = (L, id) => { // 附庸配色：与宗主同色系（色相相近），但深浅、色相明显不同——一眼看出是另一个国家；与现在地图同一公式
+    const r = L[0] / 255, g = L[1] / 255, b = L[2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn; let h = 0, s = 0;
+    if (d) { s = d / (1 - Math.abs(2 * l - 1)); h = 60 * (mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4); }
+    const a = ((id * 2654435761) >>> 0) % 6, dh = [-24, 18, -14, 26, 12, -20][a], dl = (l > 0.72 ? -1 : 1) * (0.1 + 0.04 * (a % 3));
+    h = (((h + dh) % 360) + 360) % 360 / 360; const s2 = Math.min(0.62, s * (l > 0.72 ? 1.08 : 0.86) + 0.04), l2 = Math.max(0.5, Math.min(0.88, l + dl));
+    const f = n => { const k = (n + h * 12) % 12, aa = s2 * Math.min(l2, 1 - l2); return Math.round(255 * (l2 - aa * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); }; return [f(0), f(8), f(4)]; };
   const mix = (c, w, t) => [c[0] + (w[0] - c[0]) * t, c[1] + (w[1] - c[1]) * t, c[2] + (w[2] - c[2]) * t];
 
   // ---------- 查表：某区块在某年的状态 ----------
@@ -223,9 +239,29 @@
   const orgAt = (p, y) => { const o = H.polities[p].org; return o !== null && o !== undefined && y >= o; };
   function liegeAt(p, y) { const V = H.polities[p].vas; if (!V || !V.length) return -1; let l = -1; for (let i = 0; i < V.length; i += 2) { if (V[i] > y) break; l = V[i + 1]; } return l; } // 某年的宗主（-1 为独立）
   function realmAt(p, y) { let x = p; for (let g = 0; g < 8; g++) { const l = liegeAt(x, y); if (l < 0 || l === x) break; x = l; } return x; }
+  // 行政制度：某国某年的统治方式（行政制 / 封建制 / 游牧制……），取自推演的政府组织沿革
+  function sysAt(p, y) { const q = H.polities[p], A = G.AdminSys; if (!A) return 'feudal'; if (isRebel(p, y)) return 'rebel'; const L = q.gov; if (!L || !L.length) return A.classOf('', q.govStyle); let k = L[0]; for (const g of L) { if (g[0] > y) break; k = g; } return A.classOf(k[2], q.govStyle); }
+  function govLabelAt(p, y) { const L = H.polities[p].gov; if (!L || !L.length) return ''; let k = L[0]; for (const g of L) { if (g[0] > y) break; k = g; } return k[1]; }
+  const sysColor = (cl, p) => { const c = G.AdminSys.COL[cl], t = ((p * 2654435761) >>> 0) % 4; return mix(c, [255, 255, 255], [0.28, 0.4, 0.18, 0.34][t]); };
+  let sysTally = null;
   const isRebel = (p, y) => { const q = H.polities[p]; return !!q.rtype && y >= q.rebelSince && (q.rebelUntil === null || q.rebelUntil === undefined || y < q.rebelUntil); };
-  function polName(p, y, n) { const q = H.polities[p]; if (q.finalName && y >= H.E - 60) return q.finalName; if (isRebel(p, y)) return q.rebelName; if (q.republic) return q.short + (q.titles.republic || '共和国'); if (q.theo !== undefined && q.theo !== null && y >= q.theo) return q.short + (q.titles.theo || '教国'); const T = q.settled != null && y >= q.settled && q.titles2 ? q.titles2 : q.titles; const c = capAt(p, y), cs = c ? stageAt(c[2], y) : 3;
-    const f = q.type === 'pastoral' && !(q.settled !== undefined && q.settled !== null && y >= q.settled) ? (cs >= 3 ? 'nomad' : 'chief') : n <= 2 && cs <= 3 ? 'city' : liegeAt(p, y) >= 0 && cs >= 3 && n > 2 && T.vassal ? 'vassal' : n >= H.EMPN && cs >= 5 && liegeAt(p, y) < 0 ? 'empire' : cs <= 2 ? 'chief' : 'kingdom'; return q.short + (T[f] || q.titles[f]); } // 附庸不称帝；入主定居后用所入主之地的称号
+  const nomadQ = q => q.nomad !== undefined ? !!q.nomad : q.type === 'pastoral'; // 游牧是政权自身的生计（文明类型只是倾向）；旧存档无此字段时按文明类型
+  const FORM_OF_KEY = { city: 'cityRepublic', kingdom: 'monarchy', empire: 'empire', nomad: 'nomadic', chief: 'chiefdom', theo: 'theocracy', vassal: 'vassal' };
+  // 帝号是法理名分：称帝以后即为帝国，与当下疆土大小无关（旧存档没有帝统记录时，按旧规则看规模）
+  function empAt(q, y, n, cs, p) { const L = q.emp; if (L === undefined) return n >= H.EMPN && cs >= 5 && liegeAt(p, y) < 0; if (!L) return false; for (let i = 0; i < L.length; i += 2) if (y >= L[i] && (L[i + 1] === null || L[i + 1] === undefined || y < L[i + 1])) return true; return false; }
+  // 关闭前缀：后唐帝国 → 唐帝国、东法兰克王国 → 法兰克王国。国名、编年史、图例、世系图一并换；按国号本名整词替换
+  let preRe = null, preFor = null;
+  function buildPre() {
+    preFor = H; const m = new Map();
+    H.polities.forEach(q => { if (q.bare && q.bare !== q.short && q.short) m.set(q.short, q.bare); });
+    ((app.data && app.data.countries) || []).forEach(k => { const s0 = k._s0 || k.short; if (k.bare && s0 && k.bare !== s0) m.set(s0, k.bare); });
+    const keys = [...m.keys()].sort((a, b) => b.length - a.length).map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    preRe = keys.length ? { re: new RegExp(keys.join('|'), 'g'), map: m } : null;
+  }
+  function unpre(s) { if (!s || !app.noPrefix || !H) return s; if (preFor !== H) buildPre(); return preRe ? String(s).replace(preRe.re, x => preRe.map.get(x) || x) : s; }
+  function polName(p, y, n) { return unpre(polName0(p, y, n)); }
+  function polName0(p, y, n) { const q = H.polities[p]; const fin = q.finalName && y >= H.E - 60; if (fin && !q.finalForm) return q.finalName; if (!fin && isRebel(p, y)) return q.rebelName; if (q.republic) return fin && q.finalForm === 'republic' ? q.finalName : q.short + (q.titles.republic || '共和国'); if (q.theo !== undefined && q.theo !== null && y >= q.theo) return fin && q.finalForm === 'theocracy' ? q.finalName : q.short + (q.titles.theo || '教国'); const T = q.settled != null && y >= q.settled && q.titles2 ? q.titles2 : q.titles; const c = capAt(p, y), cs = c ? stageAt(c[2], y) : 3;
+    const f = empAt(q, y, n, cs, p) ? 'empire' : nomadQ(q) && !(q.settled !== undefined && q.settled !== null && y >= q.settled) ? (cs >= 3 ? 'nomad' : 'chief') : n <= 2 && cs <= 3 ? 'city' : liegeAt(p, y) >= 0 && cs >= 3 && n > 2 && T.vassal ? 'vassal' : cs <= 2 ? 'chief' : 'kingdom'; if (fin && q.finalForm === (q.republic ? 'republic' : q.theo != null && y >= q.theo ? 'theocracy' : FORM_OF_KEY[f])) return q.finalName; if (f === 'kingdom' && T.duchy && !(q.king !== undefined && q.king !== null && y >= q.king)) return q.short + T.duchy; if (f === 'empire' && T.nomadEmpire && nomadQ(q) && !(q.settled !== undefined && q.settled !== null && y >= q.settled)) return q.short + T.nomadEmpire; return q.short + (T[f] || q.titles[f]); } // 附庸不称帝；现在的国名在政体一致时沿用；入主定居后用所入主之地的称号
 
   // ---------- 城市 ----------
   function popAt(i, y) { const n = H.popN, t = y / H.popStep, j = Math.min(n - 2, Math.max(0, Math.floor(t))), f = Math.min(1, t - j); return H.cityPop[i * n + j] * (1 - f) + H.cityPop[i * n + j + 1] * f; }
@@ -240,6 +276,9 @@
     if (roadCache.n !== lo) { const out = { trunk: new Path2D(), regional: new Path2D(), local: new Path2D() }; for (let k = 0; k < lo; k++) (out[roadPaths[k].imp] || out.local).addPath(roadPaths[k].p); roadCache = { n: lo, paths: out }; }
     return roadCache.paths;
   }
+  const METRO = 3e5; // 大都会：与现在的地图同一个门槛量级
+  let holySet = null; // 圣城（与现在的地图同一批）：宗教创立以后才标
+  function holyAt(i) { if (!holySet) { holySet = new Map(); const D = app.data; (H.cities || []).forEach((c, k) => { const cc = c.idx >= 0 && D && D.cities ? D.cities[c.idx] : null; if (cc && cc.holy && cc.holy.length) holySet.set(k, Math.min(...cc.holy.map(f => H.religions[f] ? H.religions[f].founded : 0))); }); } const y0 = holySet.get(i); return y0 !== undefined && year >= y0; }
   function drawCities(c, map, ks, free) {
     const v = map.view, dpr = map.dpr, W = map.W, s = v.s, zr = map.zoomRel(), lv = zr < 2.5 ? 0 : zr < 7 ? 1 : 2;
     // 道路
@@ -250,7 +289,7 @@
     // 废墟
     dots = [];
     H.cities.forEach((ct, i) => { if (!ct.ruined || year < ct.ruined) return; for (const k of ks) { const sx = v.x + (k * W + ct.x) * s, sy = v.y + ct.y * s; if (sx < -30 || sx > map.vw + 30 || sy < -30 || sy > map.vh + 30) continue;
-      c.strokeStyle = '#6f6150'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(sx - 6, sy + 4); c.lineTo(sx + 6, sy + 4); for (const [dx, hh] of [[-4, 7], [0, 4], [4, 6]]) { c.moveTo(sx + dx, sy + 4); c.lineTo(sx + dx, sy + 4 - hh); } c.stroke();
+      G.MapIcons.drawRuin(c, sx, sy, 14);
       free(sx - 7, sy - 5, sx + 7, sy + 6); dots.push({ i, x: sx, y: sy, r: 8 });
       if (lv >= 1 || i === cardCity) { c.font = `italic 11px ${SERIF}`; c.textAlign = 'left'; const t = ct.name + '遗址', w = c.measureText(t).width; if (free(sx + 8, sy - 6, sx + 10 + w, sy + 7)) { c.strokeStyle = 'rgba(255,253,246,.9)'; c.lineWidth = 3; c.strokeText(t, sx + 9, sy); c.fillStyle = '#6f6150'; c.fillText(t, sx + 9, sy); } c.textAlign = 'center'; } } });
     // 城市：按人口画圆点，新建的城市闪一圈
@@ -260,17 +299,14 @@
     const drawList = list.slice(0, topN); const inList = new Set(drawList.map(x => x[0])); for (const ci of capOf.keys()) if (!inList.has(ci)) drawList.push([ci, popAt(ci, year)]);
     const named = [];
     for (let n = 0; n < drawList.length; n++) { const [i, p] = drawList[n], ct = H.cities[i], capP = layer === 'state' ? capOf.get(i) : undefined;
-      const rad = Math.max(1.8, Math.min(7, 1.4 + Math.sqrt(p) / 150));
+      const rad = Math.max(2.4, Math.min(6, 1.6 + Math.sqrt(p) / 160));
       for (const k of ks) { const sx = v.x + (k * W + ct.x) * s, sy = v.y + ct.y * s; if (sx < -20 || sx > map.vw + 20 || sy < -20 || sy > map.vh + 20) continue;
-        const age = year - ct.founded; if (age < 80) { c.beginPath(); c.arc(sx, sy, rad + 3 + age / 8, 0, 7); c.strokeStyle = `rgba(176,122,58,${0.7 * (1 - age / 80)})`; c.lineWidth = 2; c.stroke(); }
-        if (capP !== undefined) { // 都城：五角星
-          const R5 = Math.max(4.5, rad + 2.5); c.beginPath(); for (let t = 0; t < 10; t++) { const ang = -Math.PI / 2 + t * Math.PI / 5, rr = t % 2 ? R5 * 0.45 : R5; t ? c.lineTo(sx + rr * Math.cos(ang), sy + rr * Math.sin(ang)) : c.moveTo(sx + rr * Math.cos(ang), sy + rr * Math.sin(ang)); } c.closePath();
-          c.fillStyle = '#c0392b'; c.fill(); c.lineWidth = i === cardCity ? 2.2 : 1.2; c.strokeStyle = i === cardCity ? '#1a73e8' : '#fff'; c.stroke();
-        } else {
-          c.beginPath(); c.arc(sx, sy, rad, 0, 7); c.fillStyle = ct.lost ? '#efe2c8' : '#fff'; c.fill(); c.lineWidth = i === cardCity ? 2.4 : 1.3; c.strokeStyle = i === cardCity ? '#1a73e8' : ct.lost ? '#7a5a36' : '#3a302a'; c.stroke();
-          if (rad >= 4) { c.beginPath(); c.arc(sx, sy, rad * 0.38, 0, 7); c.fillStyle = ct.lost ? '#7a5a36' : '#3a302a'; c.fill(); } }
-        free(sx - rad, sy - rad, sx + rad, sy + rad); dots.push({ i, x: sx, y: sy, r: rad + 3 });
-        if (n < nameN || i === cardCity || (capP !== undefined && polN[capP] >= (lv ? 1 : 3))) named.push([i, sx, sy, rad, p]); } }
+        let rr = rad; // 与现在的地图同一套符号：都城（圆中红星）、大都会（圆中黑点）、城市、古城（赭色）、要塞
+        if (ct.fort) rr = G.MapIcons.drawFort(c, sx, sy, ct.type, 4); 
+        else rr = G.MapIcons.drawCity(c, sx, sy, capP !== undefined ? 'capital' : ct.lost ? 'ancient' : p >= ((H.tiers && H.tiers.metropolis) || METRO) ? 'metro' : p >= ((H.tiers && H.tiers.city) || 2e4) ? 'city' : 'town', { r: capP !== undefined ? Math.max(G.MapIcons.R0.capital, rad + 1) : rad, sel: i === cardCity });
+        if (holyAt(i)) G.MapIcons.drawHoly(c, sx - rr - 4, sy - rr - 4, null, 5.5);
+        free(sx - rr, sy - rr, sx + rr, sy + rr); dots.push({ i, x: sx, y: sy, r: rr + 3 });
+        if (n < nameN || i === cardCity || (capP !== undefined && polN[capP] >= (lv ? 1 : 3))) named.push([i, sx, sy, rr, p]); } }
     return named;
   }
   function drawCityNames(c, named, free) {
@@ -283,7 +319,7 @@
   function click(sx, sy) {
     if (!H || !showCities) return false; let best = -1, bd = 1e9; for (const d of dots) { const dd = Math.hypot(d.x - sx, d.y - sy); if (dd < d.r + 4 && dd < bd) { bd = dd; best = d.i; } }
     if (best < 0) { $('tlCity').hidden = true; cardCity = -1;
-      if (layer === 'state' || layer === 'prov' || layer === 'unrest') { const g = app.map.toGrid(sx, sy), gx = ((Math.floor(g[0] / 2) % H.W) + H.W) % H.W, gy = Math.floor(g[1] / 2); const r = gy >= 0 && gy < H.H ? H.regionOf[gy * H.W + gx] : 0; const o = r ? ownerAt(r, year) : -1; if (o >= 0) setFocus(o); else clearFocus(); }
+      if (layer === 'state' || layer === 'prov' || layer === 'unrest' || layer === 'sys') { const g = app.map.toGrid(sx, sy), gx = ((Math.floor(g[0] / 2) % H.W) + H.W) % H.W, gy = Math.floor(g[1] / 2); const r = gy >= 0 && gy < H.H ? H.regionOf[gy * H.W + gx] : 0; const o = r ? ownerAt(r, year) : -1; if (o >= 0) setFocus(o); else clearFocus(); }
       app.map.draw(); return false; }
     cardCity = best; renderCityCard(); app.map.draw(); return true;
   }
@@ -300,7 +336,7 @@
       <dl><div><dt>第 ${Math.round(year)} 年</dt><dd>${state}</dd></div>${(() => { if (!c.r || !alive(c, year)) return ''; const p = ownerAt(c.r, year); if (p < 0) return '<div><dt>归属</dt><dd>部族地带</dd></div>'; let n = 0; for (let k = 1; k <= H.nR; k++) if (ownerAt(k, year) === p) n++; const cp = capAt(p, year); return `<div><dt>归属</dt><dd><a class="tl-link" data-focus="${p}" title="单独看这个国家">${esc(polName(p, year, n))}</a>${cp && cp[1] === i ? ' · 都城' : ''}</dd></div>`; })()}<div><dt>建城</dt><dd>第 ${c.founded} 年${fc ? ' · ' + esc(fc.name) : ''}</dd></div>
       <div><dt>鼎盛</dt><dd>第 ${c.peakYear} 年 · ${fmtPop(c.peakPop)} 人</dd></div>${c.lost ? `<div><dt>结局</dt><dd>第 ${c.ruined} 年${c.cause}</dd></div>` : `<div><dt>如今</dt><dd>${fmtPop(c.final)} 人</dd></div>`}</dl>
       <canvas id="tlCityCurve"></canvas>
-      ${evs.length ? `<ul>${evs.map(e => `<li><b>${e.year}</b>${esc(e.text)}</li>`).join('')}</ul>` : ''}
+      ${evs.length ? `<ul>${evs.map(e => `<li><b>${e.year}</b>${esc(unpre(e.text))}</li>`).join('')}</ul>` : ''}
       <div class="tl-city-acts"><button data-act="found">跳到建城</button><button data-act="peak">跳到鼎盛</button>${c.ruined ? '<button data-act="ruin">跳到毁弃</button>' : ''}<button data-act="fly">放大</button></div>`;
     el.hidden = false; drawCityCurve();
   }
@@ -314,6 +350,46 @@
 
   // ---------- 单国视角 ----------
   const lifeEnd = p => { const q = H.polities[p]; return q.died === null || q.died === undefined ? H.E : q.died; };
+
+  // ---------- 人口：区块的城乡总人口曲线（历史推演给出）+ 城市人口；某国某年的人口与构成按疆土现查 ----------
+  const popH = n => n >= 1e8 ? (n / 1e8).toFixed(2).replace(/\.?0+$/, '') + '<em>亿</em>' : n >= 1e4 ? (n / 1e4).toFixed(n >= 1e6 ? 0 : 1).replace(/\.0$/, '') + '<em>万</em>' : Math.round(n) + '<em>人</em>';
+  const popT = n => popH(n).replace(/<\/?em>/g, ' ').trim();
+  const pct = (a, b) => { const v = b > 0 ? a / b * 100 : 0; return v >= 10 || v === 0 ? Math.round(v) + '%' : v >= 1 ? v.toFixed(1).replace(/\.0$/, '') + '%' : '<1%'; };
+  function rPopAt(r, y) { const R = H.regionPop; if (!R) return 0; const n = H.popN, t = y / H.popStep, j = Math.min(n - 2, Math.max(0, Math.floor(t))), f = Math.min(1, t - j); return R[r * n + j] * (1 - f) + R[r * n + j + 1] * f; }
+  let popSnap = null, popSer = null;
+  function popSnapAt(y) { // 当年全世界：各政权疆土上的人口（排名、占比与附庸用）
+    const yy = Math.round(y); if (popSnap && popSnap.y === yy && popSnap.H === H) return popSnap;
+    const by = new Map(); let world = 0;
+    for (let r = 1; r <= H.nR; r++) { const v = rPopAt(r, yy); if (!(v > 0)) continue; world += v; const o = ownerAt(r, yy); if (o >= 0) by.set(o, (by.get(o) || 0) + v); }
+    popSnap = { y: yy, H, world, by }; return popSnap;
+  }
+  const LIVE = [['城市 · 工商', [74, 86, 104]], ['农耕', [196, 160, 72]], ['游牧', [150, 176, 92]], ['渔猎采集', [120, 162, 178]]];
+  function popOf(p, y) { // 某国某年的人口与构成
+    const q = H.polities[p], nomad = nomadQ(q) && !(q.settled !== null && q.settled !== undefined && y >= q.settled);
+    const cu = new Map(), re = new Map(), live = [0, 0, 0, 0], cs = []; let total = 0, urban = 0, regions = 0;
+    for (let r = 1; r <= H.nR; r++) { if (ownerAt(r, y) !== p) continue; regions++; const v = rPopAt(r, y);
+      const ci = cityByRegion.get(r); if (ci) for (const i of ci) { const c = H.cities[i]; if (!alive(c, y)) continue; const pp = popAt(i, y); if (pp > 0) { urban += pp; cs.push([i, pp]); } }
+      if (!(v > 0)) continue; total += v;
+      const st = stageAt(r, y), c = cultureAt(r, y, st), f = religionAt(r, y, c), ck = c === null ? 'x' : c, fk = f === null ? 'x' : f;
+      cu.set(ck, (cu.get(ck) || 0) + v); re.set(fk, (re.get(fk) || 0) + v);
+      const fo = st <= 0 ? 1 : st === 1 ? 0.3 : st === 2 ? 0.14 : st <= 4 ? 0.06 : 0.03, he = (1 - fo) * Math.min(0.9, (H.pasture ? H.pasture[r] : 0) * (nomad ? 1.3 : 0.55));
+      live[1] += v * (1 - fo - he); live[2] += v * he; live[3] += v * fo; }
+    // 城市人口是总人口的一部分：乡村按生计分，城市单列；城市过于集中时按时代的城市化上限补足乡村（前现代城里住不下三成以上的人）
+    const c0 = capAt(p, y), cst = c0 ? stageAt(c0[2], y) : 3, ucap = cst >= 8 ? 0.75 : cst >= 7 ? 0.45 : 0.3;
+    const T = Math.max(total, urban / ucap), k = total > 0 ? T / total : 1, rk = total > 0 ? (T - urban) / total : 0;
+    for (const m of [cu, re]) for (const [a, v] of m) m.set(a, v * k);
+    live[0] = urban; for (let i = 1; i < 4; i++) live[i] *= rk;
+    cs.sort((a, b) => b[1] - a[1]);
+    return { total: T, urban, regions, cu, re, live, cities: cs };
+  }
+  function buildPopSeries(set) { // 单国视角：同一国统各王朝的人口曲线（按人口采样间隔）
+    const n = H.popN, ser = new Map(); for (const i of set) ser.set(i, new Float64Array(n));
+    for (let j = 0; j < n; j++) { const y = Math.min(H.E, j * H.popStep); for (let r = 1; r <= H.nR; r++) { const v = H.regionPop[r * n + j]; if (!(v > 0)) continue; const o = ownerAt(r, y); const a = ser.get(o); if (a) a[j] += v; }
+      const ub = new Map(); H.cities.forEach((c, i) => { if (c.fort || !c.r || !alive(c, y)) return; const o = ownerAt(c.r, y); if (ser.has(o)) ub.set(o, (ub.get(o) || 0) + H.cityPop[i * n + j]); });
+      for (const [o, u] of ub) { const c0 = capAt(o, y), cst = c0 ? stageAt(c0[2], y) : 3, ucap = cst >= 8 ? 0.75 : cst >= 7 ? 0.45 : 0.3, a = ser.get(o); a[j] = Math.max(a[j], u / ucap); } } // 与 popOf 同一套城市化上限
+    const peak = new Map(); for (const [i, a] of ser) { const q = H.polities[i]; let mx = 0, my = q.born; for (let j = 0; j < n; j++) { const y = Math.min(H.E, j * H.popStep); if (y < q.born || y > lifeEnd(i)) continue; if (a[j] > mx) { mx = a[j]; my = y; } } peak.set(i, [mx, my]); }
+    return { ser, peak, set };
+  }
   function countAt(p, y) { let n = 0; for (let r = 1; r <= H.nR; r++) if (ownerAt(r, y) === p) n++; return n; }
   const nameWhen = (p, y) => polName(p, y, countAt(p, y) || H.polities[p].peakN);
   function lineageOf(p) { // 同一国统：改朝换代、起义建立的新朝共享国统；复国把前后两段国统连起来
@@ -343,48 +419,129 @@
     const orig = q.parents.map(x => (ORIG[x.kind] || (i => `承${nm(i, q.born - 1)}`))(x.id)).join('；') || (q.rtype ? '起义' : '自立建国');
     const ENDK = { conquer: i => `为${nm(i, end)}所灭`, dynasty: i => `被${nm(i, end)}取代`, overthrow: i => `被起义推翻，${nm(i, end)}代之`, restore: i => `后由${nm(i, P[i].born)}复国` };
     const endTxt = q.died === null || q.died === undefined ? '延续至今' : (q.children.filter(x => ENDK[x.kind]).map(x => ENDK[x.kind](x.id)).join('；') || '消亡');
+    // 帝号：法理上的最高名分，称帝以后国势再衰也还在，亡国或称臣才废
+    const EL = q.emp || [], empTxt = EL.length ? Array.from({ length: EL.length / 2 }, (_, k) => { const a = EL[2 * k], b = EL[2 * k + 1]; return `第 ${a} 年称帝 — ${b === null || b === undefined ? (q.died === null || q.died === undefined ? '至今' : '第 ' + end + ' 年') : '第 ' + b + ' 年'}`; }).join('；') : '';
     // 历代辖省
     const pv = []; H.provinces.forEach((X, v) => { const hh = X.hist; for (let i = 0; i < hh.length; i += 3) if (hh[i + 1] === p) { const a = hh[i], b = i + 3 < hh.length ? hh[i + 3] : (X.abolished !== null && X.abolished !== undefined ? Math.min(X.abolished, end) : end); pv.push([a, b, X.name, PV_KIND[hh[i + 2]] || '']); } });
     pv.sort((a, b) => a[0] - b[0]);
     const revs = H.events.filter(e => e.kind === 'revolt' && e.q === p), OUT = { suppress: '被镇压', state: '割据成国', overthrow: '推翻王朝' };
-    const evs = H.events.filter(e => e.kind !== 'revolt' && e.kind !== 'suppress' && (e.p === p || e.q === p || (e.kids && e.kids.includes(p)))).slice(0, 40);
+    const evAll = H.events.filter(e => e.kind !== 'revolt' && e.kind !== 'suppress' && (e.p === p || e.q === p || (e.kids && e.kids.includes(p))));
+    // 从兴起到衰亡都要看得到：事件多时先略去改隶、析置之类的琐事，再多就只保留开头、结尾各 30 件与中间的大事
+    const MINOR = new Set(['transfer', 'provSplit', 'migrate', 'hordeJoin', 'disaster']);
+    let evs = evAll.length > 40 ? evAll.filter(e => !MINOR.has(e.kind)) : evAll;
+    if (evs.length > 90) evs = evs.filter((e, i) => i < 30 || i >= evs.length - 30 || e.major);
     const lin = [...focusLin].sort((a, b) => P[a].born - P[b].born);
+    const pc = Array.isArray(q.color) ? q.color.join(',') : String(q.color), alive0 = q.died === null || q.died === undefined;
+    const sec = (title, extra, body, cls = '') => `<section class="tf-sec ${cls}"><h4><span>${title}</span>${extra ? `<small>${extra}</small>` : ''}</h4>${body}</section>`;
+    const ord = i => String(i + 1).padStart(2, '0');
+
+    // 思潮与国力：两条国力刻度 + 思潮标签
+    const ideasHtml = q.ideaAdopt && q.ideaAdopt.length && H.ideas ? (() => { const MIL = { iron: 1, feudal: 0.5, gunpowder: 1.5, manufactory: 0.5 }, ADM = { bureau: 1, law: 0.5, coin: 0.5, academy: 0.5, print: 0.5 }; let m = 0, a = 0; for (const [k] of q.ideaAdopt) { const id = H.ideas[k].id; m += MIL[id] || 0; a += ADM[id] || 0; }
+      const meter = (cls, label, v, mx, desc) => { const k = Math.round(Math.min(1, v / mx) * 12); return `<div class="tf-meter ${cls}"><b>${label}</b><i>${Array.from({ length: 12 }, (_, j) => `<s${j < k ? ' class="on"' : ''}></s>`).join('')}</i><em>${Math.round(Math.min(1, v / mx) * 100)}</em><small>${v ? desc : '尚无'}</small></div>`; };
+      const KIND = { mil: '军事', adm: '治理', sea: '可远洋殖民' }, seen = new Set();
+      const tags = q.ideaAdopt.map(([k, t]) => { const I = H.ideas[k], kc = MIL[I.id] ? 'mil' : ADM[I.id] ? 'adm' : I.opt ? 'sea' : ''; if (kc) seen.add(kc); return `<li class="${kc}" data-year="${t}"${kc ? ` title="${KIND[kc]}"` : ''}><b>${t}</b>${esc(I.name)}</li>`; }).join('');
+      return sec('思潮与国力', `${q.ideaAdopt.length} 条`, `<div class="tf-meters">${meter('mil', '军事', m, 3.5, '冶铁、骑士、火器……带来的战场优势')}${meter('adm', '治理', a, 3, '官僚、律法、货币……带来的赋税、管辖与稳定')}</div><ul class="tf-tags tf-fade">${tags}</ul>${seen.size ? `<p class="tf-key">${[...seen].map(k => `<span class="${k}">${KIND[k]}</span>`).join('')}</p>` : ''}`); })() : '';
+    // 政府组织：分阶段的制度演进
+    const govHtml = q.gov && q.gov.length ? sec('政府组织', esc(GOVS[q.govStyle] || ''), `<ol class="tf-steps">${q.gov.map((g, i) => `<li data-year="${g[0]}" data-end="${i + 1 < q.gov.length ? q.gov[i + 1][0] : end + 1}"><i>${ord(i)}</i><span>${esc(g[1])}</span><b>${g[0]}</b></li>`).join('')}</ol>`) : '';
+    // 君主世系：族谱竖线 + 在位长短
+    const R = q.rulers || [], RS = R.slice(0, 160), rEnd = i => i + 1 < R.length ? R[i + 1][0] : end, maxReign = Math.max(1, ...RS.map((r, i) => rEnd(i) - r[0]));
+    const rName = s => { const t = String(s).split(' '); return t.length === 2 ? `<em>${esc(t[0])}</em>${esc(t[1])}` : esc(s); };
+    const HS = q.houses || null; // 西方式：一个国家，历代王朝
+    const rulersHtml = R.length ? sec('君主世系', `${HS ? HS.length + ' 个王朝' : esc(q.houseName || '')} · ${R.length} 位`, `${HS ? `<ol class="tf-houses">${HS.map((x, k) => `<li data-year="${x[0]}" data-end="${k + 1 < HS.length ? HS[k + 1][0] : end + 1}"><b>${x[0]}</b><span>${esc(x[1])}</span>${k && x[2] ? '<em>政变夺位</em>' : ''}</li>`).join('')}</ol>` : ''}<ul class="tf-rulers tf-fade">${RS.map((r, i) => { const last = i + 1 >= R.length, len = rEnd(i) - r[0];
+      const hd = HS && r[3] !== undefined && (i === 0 || RS[i - 1][3] !== r[3]) && HS[r[3]] ? `<li class="tf-house-sep">${esc(HS[r[3]][1])}</li>` : '';
+      return `${hd}<li data-year="${r[0]}" data-end="${last ? end + 1 : R[i + 1][0]}"><b>${r[0]}</b><span>${rName(r[1])}<small>${esc(r[2])}${last ? (alive0 ? ' · 在位至今' : ' · 末代') : ' · 在位 ' + len + ' 年'}</small></span><u style="width:${Math.max(4, len / maxReign * 100)}%"></u></li>`; }).join('')}${R.length > 160 ? `<li class="none">……另有 ${R.length - 160} 位</li>` : ''}</ul>`) : '';
+    // 历代都城：迁都链
+    const capName = c => c[1] >= 0 && H.cities[c[1]] ? esc(H.cities[c[1]].name) : nomadQ(q) && !(q.settled != null && c[0] >= q.settled) ? '王庭<small>逐水草而居</small>' : stageAt(c[2], c[0]) <= 2 ? '部落中心' : '<small>尚无城邑</small>';
+    const capsHtml = sec('历代都城', q.caps.length > 1 ? `迁都 ${q.caps.length - 1} 次` : '', `<ol class="tf-chain">${q.caps.map((c, i) => `<li data-year="${c[0]}" data-end="${i + 1 < q.caps.length ? q.caps[i + 1][0] : end + 1}"><b>${c[0]}</b><span>${capName(c)}</span>${q.settled != null && c[0] === q.settled && q.settled > q.born ? '<em>入主定居</em>' : ''}</li>`).join('')}</ol>`);
+    // 历代辖省：行省格子
+    const pvHtml = sec('历代辖省', String(pv.length), pv.length ? `<ul class="tf-grid tf-fade">${pv.slice(0, 40).map(x => `<li data-year="${x[0]}" data-end="${x[1]}"><span>${esc(x[2])}</span><b>${x[0]}–${x[1]}</b>${x[3] ? `<small>${x[3]}</small>` : ''}</li>`).join('')}</ul>` : '<p class="tf-none">未设行省（城邦或王国时代以都城直辖）</p>');
+    // 起义与民变：结局徽记
+    const revHtml = sec('起义与民变', String(revs.length), revs.length ? `<ul class="tf-revs tf-fade">${revs.map(e => { const o = P[e.p].outcome; return `<li data-year="${e.year}"><b>${e.year}</b><span>${esc(P[e.p].rebelName || '起义')}</span>${OUT[o] ? `<em class="o-${o}">${OUT[o]}</em>` : ''}</li>`; }).join('')}</ul>` : '<p class="tf-none">境内未发生起义</p>');
+    // 大事：编年竖轴
+    const evHtml = sec('大事', evs.length ? String(evs.length) : '', `<ul class="tf-annals tf-fade">${evs.map(e => `<li data-year="${e.year}"><b>${e.year}</b><span>${esc(unpre(e.text))}</span></li>`).join('') || '<li class="none">—</li>'}</ul>`);
+    const linHtml = `<section class="tf-sec"><h4><span>国统</span><small>${lin.length} 朝</small><label class="tl-lin"><input type="checkbox" id="tlLinOn"${focusLinOn ? ' checked' : ''}>一并高亮</label></h4><div class="tl-linlist">${lin.map(i => `<a class="tl-chipl${i === p ? ' on' : ''}" data-focus="${i}"><i style="background:rgb(${P[i].color})"></i>${esc(nameWhen(i, Math.min(P[i].peakYear, lifeEnd(i))))}${P[i].houseName && lin.some(j => j !== i && P[j].short === P[i].short) ? `<small>${esc(P[i].houseName)}</small>` : ''}<small>${P[i].born}</small></a>`).join('')}</div></section>`;
+    const kindTxt = (civ ? esc(civ.name) + ' · ' : '') + (q.rtype ? '起义政权' : ({ pastoral: '游牧', maritime: '海洋', highland: '山地', tribal: '部族', agrarian: '农耕', 'new-world': '新大陆' }[q.type] || '') + '国家');
+    el.style.setProperty('--pc', pc);
     el.innerHTML = `<button class="tl-icon tl-city-x" data-act="x" title="退出单国视角（Esc）"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-      <p class="tl-city-eyebrow">${civ ? esc(civ.name) + ' · ' : ''}${q.rtype ? '起义政权' : ({ pastoral: '游牧', maritime: '海洋', highland: '山地', tribal: '部族', agrarian: '农耕', 'new-world': '新大陆' }[q.type] || '') + '国家'}</p>
-      <h3 id="tlFocusName"></h3>
-      <p class="tl-focus-life">第 ${q.born} 年 — ${q.died === null || q.died === undefined ? '至今' : '第 ' + q.died + ' 年'} · 国祚 ${end - q.born} 年</p>
-      <p class="tl-focus-line"><b>来历</b>${orig}</p><p class="tl-focus-line"><b>结局</b>${endTxt}</p>
-      <canvas id="tlFocusCurve"></canvas>
-      <dl id="tlFocusNow"></dl>
-      ${q.ideaAdopt && q.ideaAdopt.length && H.ideas ? (() => { const MIL = { iron: 1, feudal: 0.5, gunpowder: 1.5, manufactory: 0.5 }, ADM = { bureau: 1, law: 0.5, coin: 0.5, academy: 0.5, print: 0.5 }; let m = 0, a = 0; for (const [k] of q.ideaAdopt) { const id = H.ideas[k].id; m += MIL[id] || 0; a += ADM[id] || 0; }
-        const bar = (v, mx) => `<i style="display:inline-block;width:60px;height:6px;border-radius:3px;background:linear-gradient(90deg,#c08a00 ${v / mx * 100}%,#e8e2d6 0);vertical-align:1px;margin:0 6px"></i>`;
-        return `<h4>思潮与国力 <small>${q.ideaAdopt.length} 条</small></h4><p class="tl-focus-line" style="font-size:12px"><b>军事</b>${bar(m, 3.5)}${m ? '冶铁、骑士、火器……带来的战场优势' : '尚无'}</p><p class="tl-focus-line" style="font-size:12px"><b>治理</b>${bar(a, 3)}${a ? '官僚、律法、货币……带来的赋税、管辖与稳定' : '尚无'}</p><ul class="tl-mini">${q.ideaAdopt.map(([k, t]) => `<li data-year="${t}"><b>${t}</b>${esc(H.ideas[k].name)}<small>${MIL[H.ideas[k].id] ? '军事' : ADM[H.ideas[k].id] ? '治理' : H.ideas[k].opt ? '可远洋殖民' : ''}</small></li>`).join('')}</ul>`; })() : ''}
-      ${q.gov && q.gov.length ? `<h4>政府组织 <small>${esc(GOVS[q.govStyle] || '')}</small></h4><ul class="tl-mini">${q.gov.map(g => `<li data-year="${g[0]}"><b>${g[0]}</b>${esc(g[1])}</li>`).join('')}</ul>` : ''}
-      ${q.rulers && q.rulers.length ? `<h4>君主世系 <small>${esc(q.houseName || '')} · ${q.rulers.length} 位</small></h4><ul class="tl-mini tl-rulers">${q.rulers.slice(0, 80).map((r, i) => `<li data-year="${r[0]}"><b>${r[0]}</b>${esc(r[1])}<small>${esc(r[2])}${i + 1 < q.rulers.length ? ' · 在位 ' + (q.rulers[i + 1][0] - r[0]) + ' 年' : ''}</small></li>`).join('')}${q.rulers.length > 80 ? `<li class="none">……另有 ${q.rulers.length - 80} 位</li>` : ''}</ul>` : ''}
-      <h4>历代都城</h4><ul class="tl-mini">${q.caps.map(c => `<li data-year="${c[0]}"><b>${c[0]}</b>${c[1] >= 0 && H.cities[c[1]] ? esc(H.cities[c[1]].name) : q.type === 'pastoral' && !(q.settled != null && c[0] >= q.settled) ? '王庭（逐水草而居）' : stageAt(c[2], c[0]) <= 2 ? '部落中心' : '（尚无城邑）'}${q.settled != null && c[0] === q.settled ? '<small>入主定居</small>' : ''}</li>`).join('')}</ul>
-      <h4>历代辖省 <small>${pv.length}</small></h4><ul class="tl-mini">${pv.length ? pv.slice(0, 40).map(x => `<li data-year="${x[0]}"><b>${x[0]}–${x[1]}</b>${esc(x[2])}<small>${x[3]}</small></li>`).join('') : '<li class="none">未设行省（城邦或王国时代以都城直辖）</li>'}</ul>
-      <h4>起义与民变 <small>${revs.length}</small></h4><ul class="tl-mini">${revs.length ? revs.map(e => `<li data-year="${e.year}"><b>${e.year}</b>${esc(P[e.p].rebelName || '起义')}<small>${OUT[P[e.p].outcome] || ''}</small></li>`).join('') : '<li class="none">境内未发生起义</li>'}</ul>
-      <h4>大事</h4><ul class="tl-mini">${evs.map(e => `<li data-year="${e.year}"><b>${e.year}</b>${esc(e.text)}</li>`).join('') || '<li class="none">—</li>'}</ul>
-      <h4>国统 <label class="tl-lin"><input type="checkbox" id="tlLinOn"${focusLinOn ? ' checked' : ''}>一并高亮同一国统</label></h4>
-      <div class="tl-linlist">${lin.map(i => `<a class="tl-chipl${i === p ? ' on' : ''}" data-focus="${i}"><i style="background:rgb(${P[i].color})"></i>${esc(nameWhen(i, Math.min(P[i].peakYear, lifeEnd(i))))}<small>${P[i].born}</small></a>`).join('')}</div>
-      <div class="tl-city-acts"><button data-act="play">从建国播放</button><button data-act="peak">跳到鼎盛</button><button data-act="fly">定位</button></div>`;
-    el.hidden = false; renderFocusLive();
+      <header class="tf-head"><p class="tf-eyebrow"><i></i>${kindTxt}</p><h3 id="tlFocusName"></h3><p class="tf-sub">第 ${q.born} 年 — ${alive0 ? '至今' : '第 ' + q.died + ' 年'}</p></header>
+      <div class="tf-kpis" id="tlFocusNow"></div>
+      <div class="tf-span" title="在整部历史中的位置"><em style="left:${tOf(q.born) * 100}%;width:${Math.max(0.6, (tOf(end) - tOf(q.born)) * 100)}%"></em><u id="tlFocusMark"></u></div>
+      <dl class="tf-fate"><div><dt>来历</dt><dd>${orig}</dd></div><div><dt>结局</dt><dd>${endTxt}</dd></div><div><dt>都城</dt><dd id="tlFocusCap">—</dd></div>${empTxt ? `<div><dt>帝号</dt><dd>${empTxt}</dd></div>` : ''}</dl>
+      <div class="tf-chart"><canvas id="tlFocusCurve"></canvas></div>
+      ${H.regionPop ? `<section class="tf-sec tf-popsec"><h4><span>人口</span><small id="tlPopWhen"></small></h4><div id="tlPop"></div><div class="tf-chart tf-popcurve"><canvas id="tlPopCurve"></canvas></div></section>` : ''}
+      ${ideasHtml}${govHtml}${rulersHtml}${capsHtml}${pvHtml}${revHtml}${evHtml}${linHtml}
+      <div class="tl-city-acts tf-acts"><button data-act="play" class="pri"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>从建国播放</button><button data-act="peak">跳到鼎盛</button><button data-act="fly">定位</button></div>`;
+    el.hidden = false; el.querySelectorAll('.tf-fade').forEach(fadeEnd); renderFocusLive();
   }
+  const fadeEnd = u => u.classList.toggle('end', u.scrollHeight - u.clientHeight - u.scrollTop < 2);
   function renderFocusLive() {
     if (focusP < 0 || $('tlFocus').hidden) return; const p = focusP, q = H.polities[p], end = lifeEnd(p), alive = year >= q.born && year <= end;
     const n = alive ? countAt(p, year) : 0, c = alive ? capAt(p, year) : null;
-    $('tlFocusName').textContent = alive ? polName(p, year, n || 1) : nameWhen(p, q.peakYear);
-    $('tlFocusNow').innerHTML = `<div><dt>第 ${Math.round(year)} 年</dt><dd>${year < q.born ? '尚未建国' : year > end ? '已亡' : `${n} 块疆土${c && c[1] >= 0 && H.cities[c[1]] ? ' · 都城' + esc(H.cities[c[1]].name) : ''}`}</dd></div><div><dt>鼎盛</dt><dd>第 ${q.peakYear} 年 · ${q.peakN} 块疆土</dd></div>`;
+    const nm0 = alive ? polName(p, year, n || 1) : nameWhen(p, q.peakYear); $('tlFocusName').textContent = nm0;
+    const mk = $('tlFocusMark'); if (mk) mk.style.left = (tOf(year) * 100) + '%';
+    const capTxt = c && c[1] >= 0 && H.cities[c[1]] ? '都城 ' + esc(H.cities[c[1]].name) : '';
+    $('tlFocusNow').innerHTML = `<div><small>国祚</small><b>${end - q.born}<em>年</em></b></div><div><small>第 ${Math.round(year)} 年</small><b>${alive ? n + '<em>块疆土</em>' : `<span>${year < q.born ? '尚未建国' : '已亡'}</span>`}</b></div><div class="${Math.round(year) === q.peakYear ? 'hot' : ''}"><small>鼎盛 · ${q.peakYear}</small><b>${q.peakN}<em>块疆土</em></b></div>`;
+    $('tlFocusCap').innerHTML = alive ? (capTxt ? capTxt.replace('都城 ', '') : '<span class="mute">无定都</span>') : '<span class="mute">—</span>';
+    $('tlFocus').querySelectorAll('li[data-end]').forEach(li => li.classList.toggle('cur', year >= +li.dataset.year && year < +li.dataset.end));
     // 疆域曲线：本国实线，同一国统的其他王朝淡色
     const cv = $('tlFocusCurve'); const [x, w] = fitCanvas(cv, 74), Hh = 74; x.clearRect(0, 0, w, Hh);
     const lin = [...focusLin], a0 = Math.min(...lin.map(i => H.polities[i].born)), a1 = Math.max(...lin.map(i => lifeEnd(i))), span = Math.max(50, a1 - a0);
     let mx = 1; for (const i of lin) for (let k = 1; k < H.polities[i].ext.length; k += 2) mx = Math.max(mx, H.polities[i].ext[k]);
     const X = yy => (yy - a0) / span * (w - 4) + 2, Yv = nn => Hh - 12 - nn / mx * (Hh - 18);
     for (const i of lin) { const Q = H.polities[i], ex = Q.ext; if (!ex.length) continue; x.beginPath(); x.moveTo(X(Q.born), Yv(0)); for (let k = 0; k < ex.length; k += 2) x.lineTo(X(ex[k]), Yv(ex[k + 1])); x.lineTo(X(lifeEnd(i)), Yv(0)); x.closePath();
-      x.fillStyle = `rgba(${Q.color},${i === p ? 0.55 : 0.2})`; x.fill(); if (i === p) { x.strokeStyle = `rgb(${Q.color})`; x.lineWidth = 1.5; x.stroke(); } }
+      x.fillStyle = `rgba(${Q.color},${i === p ? 0.28 : 0.1})`; x.fill(); if (i === p) { x.strokeStyle = `rgb(${Q.color})`; x.lineWidth = 1.5; x.stroke(); } }
     x.fillStyle = '#8b96a0'; x.font = '10px sans-serif'; x.textBaseline = 'bottom'; x.textAlign = 'left'; x.fillText(String(a0), 2, Hh); x.textAlign = 'right'; x.fillText(a1 >= H.E ? '今' : String(a1), w - 2, Hh);
-    x.fillStyle = 'rgba(192,57,43,.9)'; x.beginPath(); x.arc(X(q.peakYear), Yv(q.peakN), 3, 0, 7); x.fill();
-    if (year >= a0 && year <= a1) { x.fillStyle = '#1a73e8'; x.fillRect(X(year) - 0.75, 0, 1.5, Hh - 12); }
+    x.beginPath(); x.arc(X(q.peakYear), Yv(q.peakN), 4.5, 0, 7); x.fillStyle = '#fff'; x.fill(); x.beginPath(); x.arc(X(q.peakYear), Yv(q.peakN), 3, 0, 7); x.fillStyle = '#0f1114'; x.fill();
+    x.fillStyle = 'rgba(15,17,20,.1)'; x.fillRect(0, Hh - 12, w, 1); if (year >= a0 && year <= a1) { x.fillStyle = '#0f1114'; x.fillRect(X(year) - 0.5, 0, 1, Hh - 12); }
+    renderPopLive();
+  }
+  function renderPopLive() {
+    const el = $('tlPop'); if (!el || !H.regionPop) return; const p = focusP, q = H.polities[p], end = lifeEnd(p);
+    const yy = Math.round(Math.max(q.born, Math.min(end, year))), alive = year >= q.born && year <= end;
+    $('tlPopWhen').textContent = alive ? `第 ${yy} 年` : year < q.born ? `尚未建国 · 看建国时（第 ${yy} 年）` : `已亡 · 看亡国前（第 ${yy} 年）`;
+    if (!popSer || popSer.set !== focusLin || popSer.H !== H) { popSer = buildPopSeries(focusLin); popSer.H = H; }
+    const S = popOf(p, yy), W = popSnapAt(yy), mine = S.total, world = W.world + Math.max(0, S.total - (W.by.get(p) || 0));
+    let rank = 1; for (const [o, v] of W.by) if (o !== p && v > mine) rank++;
+    let vasN = 0, vasP = 0; for (const [o, v] of W.by) if (o !== p && realmAt(o, yy) === p) { vasN++; vasP += v; }
+    const [pk, pky] = popSer.peak.get(p) || [0, q.born];
+    const bar = (rows, tot) => `<div class="tp-bar">${rows.map(r => `<i style="width:${(r[2] / tot * 100).toFixed(2)}%;background:rgb(${r[1]})" title="${esc(r[0])} ${popT(r[2])}"></i>`).join('')}</div>`;
+    const list = (rows, tot) => `<ul class="tp-list">${rows.map(r => `<li><i style="background:rgb(${r[1]})"></i><span>${esc(r[0])}${r[3] ? `<small>${r[3]}</small>` : ''}</span><b>${pct(r[2], tot)}</b><em>${popT(r[2])}</em></li>`).join('')}</ul>`;
+    const top = (m, name, color, n = 5) => { const a = [...m].filter(x => x[1] > 0).sort((x, y) => y[1] - x[1]), out = a.slice(0, n).map(([key, v]) => [name(key), color(key), v]); const rest = a.slice(n).reduce((s, x) => s + x[1], 0); if (rest > 0) out.push([`其他 ${a.length - n} 种`, [208, 210, 214], rest]); return out; };
+    const block = (title, extra, rows, tot) => rows.length ? `<div class="tp-block"><h5>${title}${extra ? `<small>${extra}</small>` : ''}</h5>${bar(rows, tot)}${list(rows, tot)}</div>` : '';
+    const T = S.total;
+    if (!(T > 0)) { el.innerHTML = '<p class="tf-none">这一年境内没有定居人口</p>'; drawPopCurve(); return; }
+    const cuName = k => k === 'x' ? '采集游群' : k >= 0 ? (H.civs[k] ? H.civs[k].name : '—') : k <= -2 ? (H.ancient[-2 - k] ? H.ancient[-2 - k].name + '（古）' : '古民') : '早期农人';
+    const cuCol = k => k === 'x' ? [200, 196, 184] : cuColor(k);
+    const reName = k => k === 'x' ? '无' : k >= 0 ? (H.religions[k] ? H.religions[k].name : '—') : '原始信仰';
+    const reCol = k => k === 'x' ? [214, 214, 214] : k >= 0 ? relColor(k) : [196, 186, 168];
+    const cuRows = top(S.cu, cuName, cuCol), reRows = top(S.re, reName, reCol);
+    const mainCu = cuRows[0], mainRe = reRows[0];
+    const liveRows = LIVE.map((L, i) => [L[0], L[1], S.live[i]]).filter(r => r[2] > T * 0.001);
+    const capC = alive ? capAt(p, yy) : null, capI = capC && capC[1] >= 0 ? capC[1] : -1;
+    const cityRows = S.cities.slice(0, 5);
+    el.innerHTML = `<div class="tp-head"><div class="tp-big"><small>总人口</small><b>${popH(T)}</b></div><dl class="tp-kv">
+        <div><dt>占世界</dt><dd>${pct(mine, world)}</dd></div><div><dt>世界排名</dt><dd>第 ${rank}<small> / ${W.by.size}</small></dd></div>
+        <div><dt>城市化</dt><dd>${pct(S.urban, T)}</dd></div><div><dt>鼎盛 · ${pky}</dt><dd>${popT(pk)}</dd></div></dl></div>
+      ${vasN ? `<p class="tp-note">连同 ${vasN} 个附庸，天下共 <b>${popT(T + vasP)}</b></p>` : ''}
+      <p class="tp-note">${mainCu ? `主体民族为<b>${esc(mainCu[0])}</b>（${pct(mainCu[2], T)}）` : ''}${mainRe ? `，${mainRe[0] === '无' ? '尚无成形的信仰' : `多数信奉<b>${esc(mainRe[0])}</b>（${pct(mainRe[2], T)}）`}` : ''}；平均每块疆土 ${popT(T / Math.max(1, S.regions))}。</p>
+      ${block('民族构成', cuRows.length > 1 ? `${S.cu.size} 个族群` : '单一族群', cuRows, T)}
+      ${block('信仰构成', reRows.length > 1 ? `${S.re.size} 种信仰` : '', reRows, T)}
+      ${block('城乡与生计', '', liveRows, T)}
+      ${cityRows.length ? `<div class="tp-block"><h5>主要城市<small>城市人口 ${popT(S.urban)} · ${S.cities.length} 座</small></h5><ol class="tp-cities">${cityRows.map(([i, v]) => `<li><span>${esc(H.cities[i].name)}${i === capI ? '<small>都</small>' : ''}</span><u><s style="width:${(v / cityRows[0][1] * 100).toFixed(1)}%"></s></u><em>${popT(v)}</em></li>`).join('')}</ol></div>` : '<p class="tp-note">境内尚无城市，人口散居于村落与营地。</p>'}`;
+    drawPopCurve();
+  }
+  function drawPopCurve() { // 人口曲线：本国实线，同一国统的其他王朝淡色
+    const cv = $('tlPopCurve'); if (!cv || !popSer) return; const p = focusP, q = H.polities[p]; const [x, w] = fitCanvas(cv, 64), Hh = 64; x.clearRect(0, 0, w, Hh);
+    const lin = [...focusLin], a0 = Math.min(...lin.map(i => H.polities[i].born)), a1 = Math.max(...lin.map(i => lifeEnd(i))), span = Math.max(50, a1 - a0), n = H.popN, st = H.popStep;
+    let mx = 1; for (const i of lin) { const pk = popSer.peak.get(i); if (pk && pk[0] > mx) mx = pk[0]; }
+    const X = yy => (yy - a0) / span * (w - 4) + 2, Yv = v => Hh - 12 - v / mx * (Hh - 18);
+    for (const i of lin) { const Q = H.polities[i], a = popSer.ser.get(i), b0 = Q.born, b1 = lifeEnd(i); if (!a) continue;
+      x.beginPath(); x.moveTo(X(b0), Yv(0)); for (let j = 0; j < n; j++) { const y = Math.min(H.E, j * st); if (y < b0 || y > b1) continue; x.lineTo(X(y), Yv(a[j])); } x.lineTo(X(b1), Yv(0)); x.closePath();
+      x.fillStyle = `rgba(${Q.color},${i === p ? 0.28 : 0.1})`; x.fill(); if (i === p) { x.strokeStyle = `rgb(${Q.color})`; x.lineWidth = 1.5; x.stroke(); } }
+    x.fillStyle = '#8b96a0'; x.font = '10px sans-serif'; x.textBaseline = 'bottom'; x.textAlign = 'left'; x.fillText(String(a0), 2, Hh); x.textAlign = 'right'; x.fillText(a1 >= H.E ? '今' : String(a1), w - 2, Hh);
+    x.textAlign = 'left'; x.textBaseline = 'top'; x.fillText('峰值 ' + popT(mx), 2, 0);
+    const pk = popSer.peak.get(p); if (pk && pk[0] > 0) { x.beginPath(); x.arc(X(pk[1]), Yv(pk[0]), 4.5, 0, 7); x.fillStyle = '#fff'; x.fill(); x.beginPath(); x.arc(X(pk[1]), Yv(pk[0]), 3, 0, 7); x.fillStyle = '#0f1114'; x.fill(); }
+    x.fillStyle = 'rgba(15,17,20,.1)'; x.fillRect(0, Hh - 12, w, 1); if (year >= a0 && year <= a1) { x.fillStyle = '#0f1114'; x.fillRect(X(year) - 0.5, 0, 1, Hh - 12); }
   }
 
   // ---------- 渐变层：先在粗网格上把各区块的颜色按面积加权平均（预乘透明度），再双线性插值回半分辨率 ----------
@@ -427,12 +584,13 @@
     const addLab = (k, name, r, w, s) => { let g = labG.get(k); if (!g) labG.set(k, g = { key: k, name, cs: 0, sn: 0, sy: 0, w: 0, st: new Float64Array(9) }); if (H.newW && H.newW[r] > 0.5) g.nw = true;
       const ang = H.cx[r] / (H.W * 2) * 2 * Math.PI; g.cs += Math.cos(ang) * w; g.sn += Math.sin(ang) * w; g.sy += H.cy[r] * w; g.w += w; if (s) g.st[s] += w; };
     col[0] = 0; key[0] = -9; crisp[0] = 0; gA[0] = 0; if (!rkey || rkey.length !== nR + 1) rkey = new Int32Array(nR + 1); rkey.fill(-9); vasN = {};
+    sysTally = { _w: 0, _tribal: 0 };
     for (let r = 1; r <= nR; r++) {
       const s = stageAt(r, y), cu = cultureAt(r, y, s), cuSince = LOG_SINCE; let rgb = null, a = 0, grad = false;
       key[r] = cu === null ? -9 : cu; // 发展阶段图层里，不同文明之间也画界线（国家图层按政权）
       let strp = 0; pkey[r] = -1;
       if (layer === 'state' || layer === 'prov') { const p = ownerAt(r, y); key[r] = p >= 0 ? p : -9; rkey[r] = p >= 0 ? realmAt(p, y) : -9;
-        if (p >= 0) { rgb = H.polities[p].color; if (rkey[r] !== p) { rgb = mix(rgb, H.polities[rkey[r]].color, 0.55); } /* 附庸：染上宗主的色调 */ if (layer === 'state' && (focusP < 0 || focusLin.has(p))) addLab('p' + p + ':' + H.landComp[r], '', r, H.area[r], s); polN[p]++;
+        if (p >= 0) { rgb = H.polities[p].color; if (rkey[r] !== p) { rgb = vassalTint(H.polities[rkey[r]].color, p); } /* 附庸：取宗主的色相 */ if (layer === 'state' && (focusP < 0 || focusLin.has(p))) addLab('p' + p + ':' + H.landComp[r], '', r, H.area[r], s); polN[p]++;
           const cp = capAt(p, y), cs = cp ? stageAt(cp[2], y) : 4;
           if (isRebel(p, y)) { rgb = mix(rgb, [200, 40, 32], 0.55); a = 0.8; strp = 1; pkey[r] = -2; } // 起义军控制：红色斜纹
           else if (cs <= 4) { grad = true; a = (layer === 'prov' ? 0.4 : 0.88) * Math.max(0.3, Math.min(1, 1.25 - kmR(cp ? cp[2] : r, r) / (cs <= 3 ? 320 : 900))); } // 城邦与王国时代：实际治理式的渐变
@@ -441,6 +599,10 @@
             else if (layer === 'prov' && v >= 0) { rgb = H.provinces[v].color; addLab('v' + v, H.provinces[v].name, r, H.area[r], 0); }
             else if (layer === 'prov') a = 0.35; } }
         else if (s >= 1) { rgb = FARMER; a = 0.2; grad = true; } }
+      else if (layer === 'sys') { const p = ownerAt(r, y); key[r] = p >= 0 ? p : -9;
+        if (p >= 0) { polN[p]++; const cl = sysAt(p, y); rgb = sysColor(cl, p); a = 0.8; if (cl === 'rebel') strp = 1; const T = sysTally[cl] || (sysTally[cl] = { w: 0, ps: new Map() }); T.w += H.weight[r]; T.ps.set(p, (T.ps.get(p) || 0) + 1); sysTally._w += H.weight[r];
+          if (focusP < 0 || focusLin.has(p)) addLab('p' + p + ':' + H.landComp[r], '', r, H.area[r], s); }
+        else if (s >= 1) { rgb = FARMER; a = 0.2; grad = true; sysTally._w += H.weight[r]; sysTally._tribal += H.weight[r]; } }
       else if (layer === 'stage') { if (ideaSel >= 0 && H.ideas) { const t = ideaAt(ideaSel, r); if (t <= y) { rgb = STAGE_COL[H.ideas[ideaSel].s]; a = 0.42 + 0.4 * Math.min(1, (y - t) / 200); key[r] = 1; } else if (s >= 1) { rgb = [176, 170, 160]; a = 0.5; key[r] = 0; } } else if (s >= 1) { rgb = STAGE_COL[s]; a = s >= 3 ? 0.74 : 0.5; } } /* 思潮：默认按接纳到的阶段着色；选中一条思潮则看它的传播 */
       else if (layer === 'unrest') { const p = ownerAt(r, y); key[r] = p >= 0 ? p : -9; if (p >= 0) { polN[p]++; if (isRebel(p, y)) addLab('p' + p, '', r, H.area[r], s); }
         const u = unrestAt(r, y); if (s >= 1 && u > 0.12) { rgb = u < 0.45 ? mix([250, 226, 140], [236, 130, 60], (u - 0.12) / 0.33) : mix([236, 130, 60], [160, 24, 24], Math.min(1, (u - 0.45) / 0.4)); a = 0.35 + 0.5 * Math.min(1, u); grad = true; } }
@@ -450,11 +612,11 @@
         if (f === null) {} else if (f >= 0) { rgb = relColor(f); a = 0.32 + 0.5 * Math.min(1, (y - fSince) / 500); addLab('r' + f, H.religions[f].name, r, H.area[r], 0); } else { rgb = mix(cuColor(cu), [250, 246, 236], 0.55); a = 0.32; }
         grad = f !== null;
       }
-      if (focusP >= 0 && (layer === 'state' || layer === 'prov' || layer === 'unrest')) { const o = ownerAt(r, y); if (!(o >= 0 && focusLin.has(o)) && rgb) { rgb = mix(rgb, [208, 203, 194], 0.82); a = Math.min(a, 0.32); strp = 0; } } // 单国视角：其他国家变灰
+      if (focusP >= 0 && (layer === 'state' || layer === 'prov' || layer === 'unrest' || layer === 'sys')) { const o = ownerAt(r, y); if (!(o >= 0 && focusLin.has(o)) && rgb) { rgb = mix(rgb, [208, 203, 194], 0.82); a = Math.min(a, 0.32); strp = 0; } } // 单国视角：其他国家变灰
       if (grad) { crisp[r] = 0; col[r] = VEIL; gR[r] = rgb[0]; gG[r] = rgb[1]; gB[r] = rgb[2]; gA[r] = Math.round(a * 16) / 16; }
       else { crisp[r] = rgb ? 1 : 0; col[r] = rgb ? overVeil(rgb, a) : VEIL; gA[r] = 0; }
       if (strp) col[r] = (col[r] & 0x00ffffff) | (((col[r] >>> 24) - 1) << 24) >>> 0; stripe[r] = strp; // 斜纹区块颜色略作区分以便增量重涂
-      if (layer !== 'religion' && layer !== 'state' && cu !== null && cu !== -1) addLab(cu >= 0 ? 'c' + cu : 'a' + (-2 - cu), cu >= 0 ? H.civs[cu].name : H.ancient[-2 - cu].name, r, H.area[r], s);
+      if (layer !== 'religion' && layer !== 'state' && layer !== 'sys' && cu !== null && cu !== -1) addLab(cu >= 0 ? 'c' + cu : 'a' + (-2 - cu), cu >= 0 ? H.civs[cu].name : H.ancient[-2 - cu].name, r, H.area[r], s);
     }
     // 清晰层：全分辨率区块编号图查色，只重涂变了颜色的区块
     { let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, first = prevCol[0] === 1;
@@ -468,20 +630,19 @@
     const O = H.outline; edgePath = new Path2D(); vasEdgePath = new Path2D();
     provEdgePath = new Path2D();
     for (let k = 0; k < O.segA.length; k++) { const a = O.segA[k], b = O.segB[k]; if (!crisp[a] && !crisp[b]) continue;
-      if ((layer === 'state' || layer === 'prov') && key[a] !== key[b] && key[a] >= 0 && key[b] >= 0 && rkey[a] === rkey[b]) vasEdgePath.addPath(segPath[k]); // 宗藩内部：虚线
-      else if (key[a] !== key[b] || (layer !== 'state' && layer !== 'prov' && col[a] !== col[b])) edgePath.addPath(segPath[k]);
+      if (key[a] !== key[b] || (layer !== 'state' && layer !== 'prov' && col[a] !== col[b])) edgePath.addPath(segPath[k]);
       else if ((layer === 'state' || layer === 'prov') && pkey[a] !== pkey[b] && pkey[a] !== -2 && pkey[b] !== -2) provEdgePath.addPath(segPath[k]); } // 国界粗线，国内省界细虚线
     labels = [];
     for (const g of labG.values()) { if (g.w <= 0) continue; let ang = Math.atan2(g.sn, g.cs); if (ang < 0) ang += 2 * Math.PI;
       let name = g.name;
       if (g.key[0] === 'p') { const [ps, lcs] = g.key.slice(1).split(':'), p = +ps; name = polName(p, y, polN[p]); if (isRebel(p, y)) g.rebel = true;
-        const cp = capAt(p, y); if (lcs !== undefined && cp && String(H.landComp[cp[2]]) !== lcs) { if (g.w < 40000) continue; if (g.nw && !(H.newW[cp[2]] > 0.5)) name = H.polities[p].short + (H.polities[p].titles.colony || '殖民地'); } } // 跨海的部分：另标“某国殖民地”
+        const cp = capAt(p, y); if (lcs !== undefined && cp && String(H.landComp[cp[2]]) !== lcs) { if (g.w < 40000) continue; if (g.nw && !(H.newW[cp[2]] > 0.5)) name = unpre(H.polities[p].short + (H.polities[p].titles.colony || '殖民地')); } } // 跨海的部分：另标“某国殖民地”
       else if (layer === 'stage' && g.key[0] !== 'r') { let bs = 0, bw = 0; for (let s = 1; s <= 8; s++) if (g.st[s] > bw) { bw = g.st[s]; bs = s; } const names = g.key[0] === 'c' ? H.civs[+g.key.slice(1)].stageNames : H.ancient[+g.key.slice(1)].stageNames; if (bs) name = name.replace(/文明$/, '') + ' · ' + names[bs]; }
       const isV = g.key[0] === 'v'; if (isV && Math.sqrt(g.w) < 260 && app.map.zoomRel() < 2.5) continue;
       labels.push({ name, x: ang / (2 * Math.PI) * H.W * 2, y: g.sy / g.w, size: isV ? Math.max(10.5, Math.min(14, 9 + Math.sqrt(g.w) / 260)) : Math.max(11, Math.min(22, 9 + Math.sqrt(g.w) / 160)), ancient: g.key[0] === 'a', state: g.key[0] === 'p', rebel: !!g.rebel }); }
     labels.sort((a, b) => b.size - a.size);
     shownYear = y; shownLayer = layer; dirty = false;
-    if (layer === 'state' || layer === 'prov' || layer === 'unrest') renderLegend();
+    if (layer === 'state' || layer === 'prov' || layer === 'unrest' || layer === 'sys') renderLegend();
   }
   function drawOverlay(c, map, ks) {
     if (!on || !H || !ov) return;
@@ -502,16 +663,15 @@
     const boxes = [], free = (x0, y0, x1, y1) => { for (const b of boxes) if (x0 < b[2] && x1 > b[0] && y0 < b[3] && y1 > b[1]) return false; boxes.push([x0, y0, x1, y1]); return true; };
     if (layer === 'stage' && H.ideas) H.ideas.forEach((I, k) => { if (I.born === null || year < I.born || (ideaSel !== k && year > I.born + 300)) return; /* 思潮兴起之地：兴起后三百年内标出；选中的思潮一直标出 */
       for (const [ox, oy, orr] of I.origins) { if (ideaAt(k, orr) > year) continue; for (const kk of ks) { const sx = v.x + (kk * W + ox) * s, sy = v.y + oy * s; if (sx < -60 || sx > map.vw + 60 || sy < -30 || sy > map.vh + 30) continue;
-        const col = `rgb(${STAGE_COL[I.s]})`; c.beginPath(); for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8, rr = i % 2 ? 4 : 9; c.lineTo(sx + rr * Math.cos(a), sy + rr * Math.sin(a)); } c.closePath(); c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = 'rgba(255,255,255,.95)'; c.stroke(); c.fillStyle = col; c.fill();
+        const col = `rgb(${STAGE_COL[I.s]})`; G.MapIcons.drawBadge(c, sx, sy, 'idea', col, 9, true);
         free(sx - 10, sy - 10, sx + 10, sy + 10); c.font = `600 12px ${SERIF}`; const t = I.name + ' · 兴起', w = c.measureText(t).width;
         if (free(sx + 12, sy - 9, sx + 16 + w, sy + 9)) { c.textAlign = 'left'; c.strokeStyle = 'rgba(255,255,255,.92)'; c.lineWidth = 3.5; c.strokeText(t, sx + 13, sy); c.fillStyle = col; c.fillText(t, sx + 13, sy); c.textAlign = 'center'; } } } });
     H.cradles.forEach(cr => { if (year < cr.year || eraIdx(year) > 3) return; /* 摇篮只在史前与城邦时代标出 */ for (const k of ks) { const sx = v.x + (k * W + cr.x) * s, sy = v.y + cr.y * s; if (sx < -60 || sx > map.vw + 60 || sy < -30 || sy > map.vh + 30) continue;
-      c.beginPath(); c.arc(sx, sy, 7, 0, 7); c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 4; c.stroke(); c.strokeStyle = '#2f7d4f'; c.lineWidth = 2; c.stroke();
-      c.beginPath(); c.arc(sx, sy, 2.6, 0, 7); c.fillStyle = '#2f7d4f'; c.fill();
+      G.MapIcons.drawBadge(c, sx, sy, 'cradle', G.MapView.HER_COL.culture, 9);
       c.font = `600 12px ${SERIF}`; const t = cr.name + ' · 摇篮', w = c.measureText(t).width; free(sx - 10, sy - 10, sx + 10, sy + 10);
-      if (free(sx + 10, sy - 9, sx + 14 + w, sy + 9)) { c.textAlign = 'left'; c.strokeStyle = 'rgba(255,255,255,.92)'; c.lineWidth = 3.5; c.strokeText(t, sx + 12, sy); c.fillStyle = '#245f3d'; c.fillText(t, sx + 12, sy); c.textAlign = 'center'; } } });
+      if (free(sx + 11, sy - 9, sx + 15 + w, sy + 9)) { c.textAlign = 'left'; c.strokeStyle = 'rgba(255,255,255,.92)'; c.lineWidth = 3.5; c.strokeText(t, sx + 13, sy); c.fillStyle = G.MapView.HER_COL.culture; c.fillText(t, sx + 12, sy); c.textAlign = 'center'; } } });
     if (layer === 'religion') H.religions.forEach((rg, f) => { if (year < rg.founded) return; for (const k of ks) { const sx = v.x + (k * W + rg.x) * s, sy = v.y + rg.y * s; if (sx < -20 || sx > map.vw + 20 || sy < -20 || sy > map.vh + 20) continue;
-      c.font = `13px ${SERIF}`; c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 3; c.strokeText(rg.symbol || '✦', sx, sy); c.fillStyle = rg.color ? `rgb(${rg.color})` : '#5b3a86'; c.fillText(rg.symbol || '✦', sx, sy); free(sx - 7, sy - 7, sx + 7, sy + 7); } });
+      G.MapIcons.drawBadge(c, sx, sy, 'holy', rg.color ? `rgb(${rg.color})` : G.MapView.HER_COL.religious, 8); free(sx - 9, sy - 9, sx + 9, sy + 9); } }); // 宗教发源地：与遗迹图的“圣地”同一枚徽章，取宗教自己的颜色
     drawPulses(c, map, ks);
     const named = showCities && H.cities ? drawCities(c, map, ks, free) : (dots = [], []);
     c.setTransform(dpr, 0, 0, dpr, 0, 0); c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -528,7 +688,7 @@
 
   // ---------- 时间 ----------
   function setYear(y) {
-    if (!H) return; year = Math.max(0, Math.min(H.E, y));
+    if (!H) return; const y0 = year; year = Math.max(0, Math.min(H.E, y)); spawnPulses(y0, year);
     $('tlYear').textContent = `第 ${Math.round(year)} 年`;
     $('tlEra').textContent = eraName(year);
     $('tlThumb').style.left = (tOf(year) * 100) + '%';
@@ -547,22 +707,55 @@
     for (let i = hi; i >= 0 && L[i].year > year - win; i--) { total++; const e = L[i], key = e.p !== undefined ? 'p' + e.p : 'r' + e.r; if (out.length < 4 && !seenP.has(key)) { seenP.add(key); out.push(i); } }
     return { idx: out.reverse(), more: total - out.length, win };
   }
-  let feedSig = '';
+  let feedSig = '', feedAllOpen = false, faLock = false;
+  const EV_CAT = (() => { const m = {}, put = (cat, ks) => ks.split(' ').forEach(k => m[k] = cat);
+    put('war', 'annex sack nomad fromState horde hordeFall defeat'); put('state', 'crown uncrown regal wane decay perish'); put('state', 'hordeJoin steppeHome steppeRevolt unify split dynasty house restore secede rise rebelState overthrow coup revolution independence vassal vassalFree vassalAnnex settle sedent theocracy organize provSecede capital');
+    put('revolt', 'revolt suppress'); put('idea', 'idea adopt'); put('faith', 'religion convert schism'); put('city', 'city found ruin milestone leader colonyCity colony discovery migrate');
+    put('woe', 'plague disaster'); put('civ', 'cradle civ stage kingdom empire fall'); return m; })();
+  const CAT_NAME = { war: '征战', state: '政权', revolt: '民变', idea: '思潮', faith: '宗教', city: '城市', woe: '灾异', civ: '文明' };
   function renderFeed() {
     const cap = $('tlTicker'), f = feedList(), sig = f.idx.join(',') + '|' + f.more;
+    if (feedAllOpen && !faLock) renderFeedAll();
     if (sig === feedSig) return; const prev = new Set(feedSig.split('|')[0].split(',')); feedSig = sig;
     if (!f.idx.length) { cap.hidden = true; cap.innerHTML = ''; return; }
-    cap.hidden = false;
-    cap.innerHTML = f.idx.map((i, k) => { const e = capEvents[i], age = (year - e.year) / f.win; return `<button class="tl-feed-row${prev.has(String(i)) ? '' : ' flash'}" data-e="${i}" title="跳到这件事" style="opacity:${(1 - 0.55 * Math.min(1, age)).toFixed(2)}"><small>第 ${e.year} 年</small>${esc(e.text)}</button>`; }).join('')
-      + (f.more > 0 ? `<span class="tl-feed-more">同期各地另有 ${f.more} 件事</span>` : '');
+    cap.hidden = feedAllOpen;
+    cap.innerHTML = f.idx.map((i, k) => { const e = capEvents[i], age = (year - e.year) / f.win; return `<button class="tl-feed-row${prev.has(String(i)) ? '' : ' flash'}" data-e="${i}" title="跳到这件事" style="opacity:${(1 - 0.55 * Math.min(1, age)).toFixed(2)}"><small>第 ${e.year} 年</small>${esc(unpre(e.text))}</button>`; }).join('')
+      + (f.idx.length + f.more > 2 ? `<button class="tl-feed-more${f.more > 0 ? '' : ' only-m'}" data-all="1" title="展开这段时间各地发生的全部大事">同期各地共 ${f.idx.length + f.more} 件事<b>查看全部</b><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>` : '');
   }
-  function drawPulses(c, map, ks) { /* 事件发生地的涟漪：越新越亮 */
-    if (!capEvents.length) return; const v = map.view, s = v.s, W = map.W, win = feedWindow(), L = capEvents;
-    for (let i = lastEventIdx(), n = 0; i >= 0 && L[i].year > year - win && n < 90; i--, n++) { const e = L[i]; if (!e.r || H.cx[e.r] === undefined) continue;
-      const a = (year - e.year) / win, col = KIND_COL[e.kind] || '#c0392b';
-      for (const k of ks) { const sx = v.x + (k * W + H.cx[e.r]) * s, sy = v.y + H.cy[e.r] * s; if (sx < -40 || sx > map.vw + 40 || sy < -40 || sy > map.vh + 40) continue;
-        c.globalAlpha = Math.max(0, 1 - a) * 0.9; c.beginPath(); c.arc(sx, sy, 5 + 20 * a, 0, 7); c.strokeStyle = col; c.lineWidth = 2.2; c.stroke();
-        c.globalAlpha = Math.max(0, 1 - a); c.beginPath(); c.arc(sx, sy, 3, 0, 7); c.fillStyle = col; c.fill(); c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 1.2; c.stroke(); } }
+  // 同期大事的完整列表：按时间倒序，带类别；点一条跳过去
+  function feedAllList() { const L = capEvents, win = feedWindow(), out = []; for (let i = lastEventIdx(); i >= 0 && L[i].year > year - win; i--) out.push(i); return { out, win }; }
+  let feedAllSig = '';
+  function renderFeedAll() {
+    const el = $('tlFeedAll'); if (!el) return; const { out, win } = feedAllList(), sig = out.length + ':' + (out[0] ?? -1) + ':' + Math.round(year);
+    if (sig === feedAllSig) return; feedAllSig = sig;
+    const n = {}; out.forEach(i => { const c = EV_CAT[capEvents[i].kind] || 'state'; n[c] = (n[c] || 0) + 1; });
+    const sum = Object.keys(CAT_NAME).filter(c => n[c]).map(c => `<span class="c-${c}">${CAT_NAME[c]} ${n[c]}</span>`).join('');
+    let lastY = null;
+    const rows = out.map(i => { const e = capEvents[i], c = EV_CAT[e.kind] || 'state', head = e.year !== lastY ? `<b>${e.year}</b>` : '<b class="same"></b>'; lastY = e.year;
+      return `<li data-e="${i}">${head}<i class="c-${c}">${CAT_NAME[c]}</i><span>${esc(unpre(e.text))}</span></li>`; }).join('');
+    el.innerHTML = `<header><div><b>第 ${Math.max(0, Math.round(year - win))}–${Math.round(year)} 年 · 各地大事</b><small>${out.length} 件 · 点一件事，地图飞到那里</small></div><button class="tl-icon" data-x="1" title="收起"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button></header><div class="tl-fa-sum">${sum}</div><ul>${rows || '<li class="none">这段时间各地无大事</li>'}</ul>`;
+  }
+  function toggleFeedAll(force) {
+    feedAllOpen = force === undefined ? !feedAllOpen : force; const el = $('tlFeedAll');
+    el.hidden = !feedAllOpen; $('tlTicker').hidden = feedAllOpen || !feedSig.split('|')[0];
+    if (feedAllOpen) { setPlaying(false); $('tlCity').hidden = true; cardCity = -1; feedAllSig = ''; renderFeedAll(); el.querySelector('ul').scrollTop = 0; }
+  }
+  /* 事件发生地的涟漪：时间走到一件事时在那里荡开一圈，一秒多就消失；暂停时不会停在地图上 */
+  let pulses = [], pulseRaf = 0; const PULSE_MS = 1500, PULSE_MAX = 28;
+  function spawnPulses(y0, y1) {
+    if (!H || !capEvents.length || !(y1 > y0)) return; const L = capEvents, now = performance.now(), fresh = [];
+    for (let i = lastEventIdx(); i >= 0 && L[i].year > y0 && fresh.length < 10; i--) { const e = L[i]; if (e.r && H.cx[e.r] !== undefined) fresh.push(e); } // 一次跳得很远：只荡开最近的几件
+    fresh.reverse().forEach((e, k) => pulses.push({ r: e.r, col: KIND_COL[e.kind] || '#c0392b', t0: now + k * 70 }));
+    if (pulses.length > PULSE_MAX) pulses.splice(0, pulses.length - PULSE_MAX);
+    if (!pulseRaf) pulseRaf = requestAnimationFrame(pulseLoop);
+  }
+  function pulseLoop() { pulseRaf = 0; const now = performance.now(); pulses = pulses.filter(p => now - p.t0 < PULSE_MS); if (!on) { pulses = []; return; } if (!playing) app.map.draw(); if (pulses.length) pulseRaf = requestAnimationFrame(pulseLoop); else if (!playing) app.map.draw(); }
+  function drawPulses(c, map, ks) {
+    if (!pulses.length) return; const v = map.view, s = v.s, W = map.W, now = performance.now();
+    for (const p of pulses) { const a = (now - p.t0) / PULSE_MS; if (a < 0 || a >= 1) continue; const ease = 1 - Math.pow(1 - a, 3);
+      for (const k of ks) { const sx = v.x + (k * W + H.cx[p.r]) * s, sy = v.y + H.cy[p.r] * s; if (sx < -40 || sx > map.vw + 40 || sy < -40 || sy > map.vh + 40) continue;
+        c.globalAlpha = 0.85 * Math.pow(1 - a, 1.4); c.beginPath(); c.arc(sx, sy, 4 + 18 * ease, 0, 7); c.strokeStyle = p.col; c.lineWidth = 2.2 * (1 - 0.5 * a); c.stroke();
+        if (a < 0.6) { c.globalAlpha = 1 - a / 0.6; c.beginPath(); c.arc(sx, sy, 3, 0, 7); c.fillStyle = p.col; c.fill(); c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 1.2; c.stroke(); } } }
     c.globalAlpha = 1;
   }
   function lastEventIdx() { const L = capEvents; let lo = 0, hi = L.length - 1, best = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (L[m].year <= year) { best = m; lo = m + 1; } else hi = m - 1; } return best; }
@@ -572,10 +765,11 @@
   function focusEvent(e) {
     setPlaying(false); setYear(e.year); const r = e.r; if (!r) return;
     let path = null, n = 0, x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-    if (e.p !== undefined && e.p >= 0) { const S = new Uint8Array(H.nR + 1); for (let k = 1; k <= H.nR; k++) if (ownerAt(k, e.year) === e.p) { S[k] = 1; n++; let dx = H.cx[k] - H.cx[r]; dx -= Math.round(dx / (H.W * 2)) * H.W * 2; x0 = Math.min(x0, dx); x1 = Math.max(x1, dx); y0 = Math.min(y0, H.cy[k]); y1 = Math.max(y1, H.cy[k]); }
+    const who = (e.kind === 'vassal' || e.kind === 'vassalFree') && e.q >= 0 ? e.q : e.p; // 称臣、脱离：圈出附庸自己，而不是宗主
+    if (who !== undefined && who >= 0) { const S = new Uint8Array(H.nR + 1); for (let k = 1; k <= H.nR; k++) if (ownerAt(k, e.year) === who) { S[k] = 1; n++; let dx = H.cx[k] - H.cx[r]; dx -= Math.round(dx / (H.W * 2)) * H.W * 2; x0 = Math.min(x0, dx); x1 = Math.max(x1, dx); y0 = Math.min(y0, H.cy[k]); y1 = Math.max(y1, H.cy[k]); }
       if (n) { const O = H.outline; path = new Path2D(); for (let k = 0; k < O.segA.length; k++) if (S[O.segA[k]] !== S[O.segB[k]]) path.addPath(segPath[k]); } }
     const ext = n ? Math.max(x1 - x0, y1 - y0) : 0, rel = Math.max(2.5, Math.min(8, 7 - ext / 45));
-    evHi = { r, year: e.year, text: e.text, path, col: KIND_COL[e.kind] || '#c0392b', t0: performance.now() };
+    evHi = { r, year: e.year, text: unpre(e.text), path, col: KIND_COL[e.kind] || '#c0392b', t0: performance.now() };
     app.map.flyTo(H.cx[r], H.cy[r], rel);
     cancelAnimationFrame(evRaf); const anim = () => { if (!evHi || performance.now() - evHi.t0 > 3200) { app.map.draw(); return; } app.map.draw(); evRaf = requestAnimationFrame(anim); }; evRaf = requestAnimationFrame(anim);
   }
@@ -595,6 +789,7 @@
   function setPlaying(p) {
     if (!H) return; playing = p;
     $('tlPlay').innerHTML = p ? '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    if (p && feedAllOpen) toggleFeedAll(false);
     if (p) { if (year >= H.E) year = 0; lastT = performance.now(); cancelAnimationFrame(raf); raf = requestAnimationFrame(tick); } else cancelAnimationFrame(raf);
   }
   function tick(t) {
@@ -608,8 +803,13 @@
   // ---------- 图例、时代色带、脉络 ----------
   function renderLegend() {
     if (!H) return; let h = '';
-    if (layer === 'state') { const top = [], nV = {}; let vs = 0; for (let p = 0; p < polN.length; p++) if (polN[p] > 0) { const L = realmAt(p, year); if (L !== p) { nV[L] = (nV[L] || 0) + 1; vs++; } else top.push(p); } top.sort((a, b) => polN[b] - polN[a] || a - b);
-      h = top.slice(0, 8).map(p => `<span class="tl-pick${p === focusP ? ' on' : ''}" data-focus="${p}" title="单独看这个国家"><i style="background:rgb(${H.polities[p].color})"></i>${esc(polName(p, year, polN[p]))}${nV[p] ? `<small>+${nV[p]} 附庸</small>` : ''}</span>`).join('') + `<span><i style="background:rgb(${FARMER})"></i>部族地带</span><em>当世 ${top.length + vs} 国${vs ? `（其中 ${vs} 个附庸）` : ''} · <b style="color:#c0392b">★</b> 都城 · 附庸染上宗主的色调，宗藩之间为虚线 · 城邦与王国时代按实际治理由都城向外渐淡 · 红色斜纹为起义军</em>`; }
+    if (layer === 'state') { const top = [], nV = {}, lg = {}; let vs = 0; for (let p = 0; p < polN.length; p++) if (polN[p] > 0) { top.push(p); const L = liegeAt(p, year); if (L >= 0 && L !== p) { lg[p] = L; nV[L] = (nV[L] || 0) + 1; vs++; } } top.sort((a, b) => polN[b] - polN[a] || a - b); // 附庸也是独立的国家：单独列出
+      const swatch = p => { const L = realmAt(p, year); return L !== p ? vassalTint(H.polities[L].color, p) : H.polities[p].color; };
+      h = top.slice(0, 8).map(p => `<span class="tl-pick${p === focusP ? ' on' : ''}" data-focus="${p}" title="${lg[p] !== undefined ? esc('附庸 · 奉' + polName(lg[p], year, Math.max(1, polN[lg[p]])) + '为宗主') : '单独看这个国家'}"><i style="background:rgb(${swatch(p)})"></i>${esc(polName(p, year, polN[p]))}${lg[p] !== undefined ? '<small>附庸</small>' : nV[p] ? `<small>${nV[p]} 附庸</small>` : ''}</span>`).join('') + `<span><i style="background:rgb(${FARMER})"></i>部族地带</span><em>当世 ${top.length} 国${vs ? `（其中 ${vs} 个附庸）` : ''} · <span style="display:inline-flex;align-items:center;gap:2px;white-space:nowrap">${G.MapIcons.svgCity('capital')}都城</span> · 附庸自成一国，与宗主同色系、深浅不同 · 城邦与王国时代按实际治理由都城向外渐淡 · 红色斜纹为起义军</em>`; }
+    else if (layer === 'sys') { if (!G.AdminSys || !sysTally) h = ''; else { const A = G.AdminSys, tot = Math.max(1e-9, sysTally._w);
+      h = A.ORDER.filter(c => sysTally[c]).sort((a, b) => sysTally[b].w - sysTally[a].w).map(c => { const T = sysTally[c], top = [...T.ps].sort((a, b) => b[1] - a[1]).slice(0, 2).map(x => polName(x[0], year, polN[x[0]])); const sw = A.COL[c].map(v => Math.round(v * 0.72 + 255 * 0.28)); return `<span class="tl-pick" data-focus="${[...T.ps].sort((a, b) => b[1] - a[1])[0][0]}" title="${esc(A.DESC[c] + (top.length ? ' · 如 ' + top.join('、') : ''))}"><i style="background:${c === 'rebel' ? `repeating-linear-gradient(45deg,rgb(${sw}) 0 3px,#f4efe6 3px 6px)` : `rgb(${sw})`}"></i>${A.NAME[c]}<small>${T.ps.size} 国 · ${pct(T.w, tot)}</small></span>`; }).join('')
+        + (sysTally._tribal ? `<span><i style="background:rgb(${FARMER})"></i>无国家的部族<small>${pct(sysTally._tribal, tot)}</small></span>` : '')
+        + `<em>按各国当年的统治方式着色：行政制为官僚郡县、封建制为分封世袭、游牧制为部族联盟。同一国家会随时代改制——拖动时间轴看郡县与分封此消彼长；百分比为所占有人地区的份额。点一项看其中最大的国家。</em>`; } }
     else if (layer === 'unrest') h = `<span><i style="background:rgb(250,226,140)"></i>不满</span><span><i style="background:rgb(236,130,60)"></i>怨声载道</span><span><i style="background:rgb(160,24,24)"></i>一触即发</span><span><i style="background:repeating-linear-gradient(45deg,#d06050 0 3px,#f4efe6 3px 6px)"></i>起义军控制</span><em>民怨来自赋役、灾荒、异族统治、信仰不合、王朝末年与遗民记忆</em>`;
     else if (layer === 'prov') h = `<span><i style="background:repeating-linear-gradient(45deg,#c9b8a0 0 3px,#f4efe6 3px 6px)"></i>新占领、尚未建制（军管）</span><span><i style="background:rgba(120,110,100,.25)"></i>尚未设省的国家</span><em>粗线为国界，细线为省界；同一个省跨越朝代保持同一色调</em>`;
     else if (layer === 'stage' && H.ideas) { let tot = 0; for (let r = 1; r <= H.nR; r++) if (H.weight[r] > 0) tot += H.weight[r]; const share = k => { let w = 0; for (let r = 1; r <= H.nR; r++) if (ideaAt(k, r) <= year) w += H.weight[r]; return Math.round(w / Math.max(1e-9, tot) * 100); };
@@ -617,9 +817,11 @@
     else if (layer === 'stage') h = `<span><i style="background:rgb(${STAGE_COL[2]})"></i>部落 · 酋邦</span>` + STAGE_GENERIC.slice(3, H.maxStage + 1).map((n, k) => `<span><i style="background:rgb(${STAGE_COL[k + 3]})"></i>${n}</span>`).join('');
     else if (layer === 'culture') h = H.ancient.map((a, i) => `<span><i style="background:rgb(${ancColor(i)})"></i>${esc(a.name)}<small>古</small></span>`).join('') + `<span><i style="background:rgb(${FARMER})"></i>早期农人</span><em>辐射圈：传入越久颜色越浓，文明之间是过渡地带</em>`;
     else h = H.religions.map((r, f) => year >= r.founded ? `<span title="${esc((RTYPE[r.type] || '') + (r.parent >= 0 ? ' · 自' + H.religions[r.parent].name + '分出' : '') + (r.holy ? ' · 圣地 ' + r.holy : ''))}"><i style="background:rgb(${relColor(f)})"></i>${esc((r.symbol || '') + ' ' + r.name)}${r.parent >= 0 ? '<small>派</small>' : ''}</span>` : '').join('') + '<span><i class="folk"></i>原始信仰</span><em>传教越久颜色越浓，宗教之间有过渡地带</em>';
-    $('tlLegend').innerHTML = h + `<label class="tl-toggle"><input type="checkbox" id="tlCityToggle"${showCities ? ' checked' : ''}>城市、道路与废墟</label>`;
+    const MI = G.MapIcons, sym = (svg, t) => `<span>${svg}${t}</span>`;
+    $('tlLegend').innerHTML = h + `<label class="tl-toggle"><input type="checkbox" id="tlCityToggle"${showCities ? ' checked' : ''}>城市、道路与废墟</label>`
+      + (showCities ? `<div class="tl-syms">${sym(MI.svgCity('capital'), '都城')}${sym(MI.svgCity('metro'), '大都会')}${sym(MI.svgCity('city'), '城市')}${sym(MI.svgCity('ancient'), '古城')}${sym(MI.svgRuin(), '废墟')}${sym(MI.svgHoly(), '圣城')}${layer === 'stage' ? sym(MI.svgBadge('idea', '#b8860b', 15, true), '思潮兴起') : ''}${layer === 'religion' ? sym(MI.svgBadge('holy', G.MapView.HER_COL.religious, 15), '宗教发源') : ''}${eraIdx(year) <= 3 ? sym(MI.svgBadge('cradle', G.MapView.HER_COL.culture, 15), '文明摇篮') : ''}</div>` : '');
   }
-  function fitCanvas(cv, h) { const r = cv.parentElement.getBoundingClientRect(), dpr = devicePixelRatio || 1; const w = Math.max(10, r.width); cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + 'px'; cv.style.height = h + 'px'; const x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); return [x, w]; }
+  function fitCanvas(cv, h) { const r = cv.parentElement.getBoundingClientRect(), dpr = (devicePixelRatio || 1) * UZ(cv); const w = Math.max(10, r.width / UZ(cv)); cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.width = w + 'px'; cv.style.height = h + 'px'; const x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); return [x, w]; }
   function drawBand() {
     if (!H) return; const BH = 38, [x, w] = fitCanvas($('tlBand'), BH);
     x.clearRect(0, 0, w, BH);
@@ -669,7 +871,7 @@
   function riverX(t, w) { const t0 = RIV.data ? RIV.data.t0 : 0; return 16 + Math.max(0, Math.min(1, (t - t0) / Math.max(1, H.E - t0))) * (w - 32); }
   function drawRiver() {
     const el = $('tlRiver'); if (el.hidden || !RIV.data) return; const D = RIV.data, cv = $('tlRiverCv');
-    const box = cv.parentElement.getBoundingClientRect(), dpr = devicePixelRatio || 1, w = Math.max(200, box.width), hh = Math.max(160, box.height);
+    const box = cv.parentElement.getBoundingClientRect(), z = UZ(cv), dpr = (devicePixelRatio || 1) * z, w = Math.max(200, box.width / z), hh = Math.max(160, box.height / z);
     if (!RIV.cache || RIV.cache.w !== w || RIV.cache.h !== hh) {
       const off = document.createElement('canvas'); off.width = Math.round(w * dpr); off.height = Math.round(hh * dpr); const x = off.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0);
       const top = 24, bot = hh - 20, plotH = bot - top, P = H.polities, gap = 0.8;
@@ -715,7 +917,7 @@
     const cx = riverX(year, w); x.fillStyle = 'rgba(26,115,232,.9)'; x.fillRect(cx - 0.75, RIV.cache.top, 1.5, RIV.cache.bot - RIV.cache.top);
     if (focusP >= 0 && RIV.data) { const li = RIV.data.linIdx.get(H.polities[focusP].lin), j = RIV.data.order.indexOf(li); if (j >= 0) { const c = RIV.cache; x.strokeStyle = '#1a73e8'; x.lineWidth = 2; x.beginPath(); for (let k = 0; k < RIV.data.nS; k++) { if (c.Y1[j][k] - c.Y0[j][k] <= 0) continue; x.rect(c.X[k] - 1, c.Y0[j][k], 2, c.Y1[j][k] - c.Y0[j][k]); } x.stroke(); } }
   }
-  function riverAt(ev) { const c = RIV.cache, D = RIV.data; if (!c || !D) return null; const r = $('tlRiverCv').getBoundingClientRect(), mx = ev.clientX - r.left, my = ev.clientY - r.top;
+  function riverAt(ev) { const c = RIV.cache, D = RIV.data; if (!c || !D) return null; const r = $('tlRiverCv').getBoundingClientRect(), z = UZ($('tlRiverCv')), mx = (ev.clientX - r.left) / z, my = (ev.clientY - r.top) / z;
     let k = 0, bd = 1e9; c.X.forEach((xx, i) => { const d = Math.abs(xx - mx); if (d < bd) { bd = d; k = i; } });
     for (let j = 0; j < D.order.length; j++) if (my >= c.Y0[j][k] && my <= c.Y1[j][k] && c.Y1[j][k] > c.Y0[j][k]) { const g = D.L[D.order[j]]; let m = -1, ma = 0; for (const p of g.members) if (D.A[p * D.nS + k] > ma) { ma = D.A[p * D.nS + k]; m = p; } return { k, t: D.S[k], m, share: ma / D.land, mx, my }; }
     return { k, t: D.S[k], m: -1, mx, my }; }
@@ -740,7 +942,7 @@
     });
     x.fillStyle = 'rgba(26,115,232,.9)'; x.fillRect(X(year) - 0.75, 0, 1.5, h);
   }
-  function rowAt(ev) { const r = $('tlRowsCv').getBoundingClientRect(); const i = Math.floor((ev.clientY - r.top - 3) / ROW_H); return rows[i] || null; }
+  function rowAt(ev) { const r = $('tlRowsCv').getBoundingClientRect(); const i = Math.floor(((ev.clientY - r.top) / UZ(rc0()) - 3) / ROW_H); return rows[i] || null; }
   function rowTitle(row) {
     const ages = []; for (let s = 1; s <= 8; s++) if (row.ages[s] != null && row.ages[s] < row.end) ages.push(`${row.stageNames[s]} ${row.ages[s]}`);
     return `${row.name}（${row.type}文明 · 文化库：${row.lib}）\n${ages.join(' → ')}${row.kind === 'ancient' ? `\n约第 ${row.end} 年衰亡，故地并入${row.succ >= 0 ? H.civs[row.succ].name : '后来者'}` : ''}${row.titles ? `\n政体称谓：${[row.titles[2], row.titles[3], row.titles[4], row.titles[5]].filter(Boolean).join(' → ')}` : ''}`;
@@ -755,7 +957,7 @@
     const names = civ ? civ.stageNames : STAGE_GENERIC;
     const title = civ ? civ.name : s >= 1 ? '早期农人' : (H.weight[r] > 0 ? '采集游群' : '无人荒野');
     const rows = [['年代', `第 ${Math.round(y)} 年 · ${eraName(y)}`]];
-    { const p = ownerAt(r, y); if (p >= 0) { let n = 0; for (let k = 1; k <= H.nR; k++) if (ownerAt(k, y) === p) n++; const c = capAt(p, y); rows.push(['国家', polName(p, y, n)]); { const L = liegeAt(p, y); if (L >= 0) rows.push(['宗主', polName(L, y, Math.max(1, countAt(L, y))) + ' · 附庸']); else { let nv = 0; for (let q = 0; q < H.polities.length; q++) if (polN[q] > 0 && q !== p && liegeAt(q, y) === p) nv++; if (nv) rows.push(['附庸', nv + ' 国']); } } if (c && c[1] >= 0) rows.push(['都城', H.cities[c[1]].name]); if (orgAt(p, y)) { const v = provAt(r, y); if (v >= 0) { const X = H.provinces[v]; let sr = X.seats[0][1]; for (const t of X.seats) if (t[0] <= y) sr = t[1]; const sc = (() => { let b = -1, bp = 0; for (const i of (cityByRegion.get(sr) || [])) { if (!alive(H.cities[i], y)) continue; const pp = popAt(i, y); if (pp > bp) { bp = pp; b = i; } } return b; })(); rows.push(['省份', X.name + (sc >= 0 ? ' · 治所' + H.cities[sc].name : '')]); } else rows.push(['省份', '军管（新占领，尚未建制）']); } } else if (s >= 1) rows.push(['国家', '无国家的部族地带']); }
+    { const p = ownerAt(r, y); if (p >= 0) { let n = 0; for (let k = 1; k <= H.nR; k++) if (ownerAt(k, y) === p) n++; const c = capAt(p, y); rows.push(['国家', polName(p, y, n)]); { const L = liegeAt(p, y); if (L >= 0) rows.push(['宗主', polName(L, y, Math.max(1, countAt(L, y))) + ' · 附庸']); else { let nv = 0; for (let q = 0; q < H.polities.length; q++) if (polN[q] > 0 && q !== p && liegeAt(q, y) === p) nv++; if (nv) rows.push(['附庸', nv + ' 国']); } } if (c && c[1] >= 0) rows.push(['都城', H.cities[c[1]].name]); if (G.AdminSys) { const gl = govLabelAt(p, y); rows.push(['制度', G.AdminSys.NAME[sysAt(p, y)] + (gl && !isRebel(p, y) ? ' · ' + gl : '')]); } if (orgAt(p, y)) { const v = provAt(r, y); if (v >= 0) { const X = H.provinces[v]; let sr = X.seats[0][1]; for (const t of X.seats) if (t[0] <= y) sr = t[1]; const sc = (() => { let b = -1, bp = 0; for (const i of (cityByRegion.get(sr) || [])) { if (!alive(H.cities[i], y)) continue; const pp = popAt(i, y); if (pp > bp) { bp = pp; b = i; } } return b; })(); rows.push(['省份', X.name + (sc >= 0 ? ' · 治所' + H.cities[sc].name : '')]); } else rows.push(['省份', '军管（新占领，尚未建制）']); } } else if (s >= 1) rows.push(['国家', '无国家的部族地带']); }
     rows.push(['发展阶段', names[s]]);
     if (H.ideas) { const got = ideasOf(r, y), nb = H.ideas.filter(I => I.born !== null && I.born <= y).length; if (got.length) rows.push(['思潮', `已接纳 ${got.length} / ${nb}：${got.slice(-3).map(k => H.ideas[k].name).reverse().join('、')}${got.length > 3 ? '……' : ''}`]);
       let nk = -1, nt = 1e9; H.ideas.forEach((I, k) => { const t = ideaAt(k, r); if (t > y && t < nt && I.born !== null) { nt = t; nk = k; } }); if (nk >= 0 && nt < 1e8) rows.push(['下一思潮', `${H.ideas[nk].name} · 第 ${Math.round(nt)} 年传到`]); }
@@ -768,5 +970,11 @@
     return { title, rows };
   }
 
-  G.Timeline = { setFocus: p => setFocus(p), clearFocus: () => clearFocus(), flyTo: r => app.map.flyTo(H.cx[r], H.cy[r], 3), dots: () => dots, click, tip, init, open, close, toggle, reset, progress, get on() { return on; }, get data() { return H; }, setYear: y => setYear(y), get year() { return year; }, setLayer: l => { const b = document.querySelector(`#tlLayer [data-l=${l}]`); if (b) b.click(); }, toggleDrawer };
+  // 前缀开关改变后：重画国名、图例、单国卡片、近事
+  function prefixChanged() {
+    const b = $('tlPrefix'); if (b) { b.classList.toggle('on', !!app.noPrefix); b.textContent = app.noPrefix ? '前缀已关' : '去前缀'; }
+    if (!H || !on) return; preFor = null; dirty = true; feedSig = ''; feedAllSig = ''; RIV.cache = null;
+    renderLegend(); renderFeed(); if (focusP >= 0) renderFocus(); if (cardCity >= 0) renderCityCard(); if (!$('tlRiver').hidden) drawRiver(); app.map.draw();
+  }
+  G.Timeline = { prefixChanged, setFocus: p => setFocus(p), clearFocus: () => clearFocus(), flyTo: r => app.map.flyTo(H.cx[r], H.cy[r], 3), dots: () => dots, click, tip, init, open, close, toggle, reset, progress, get on() { return on; }, get data() { return H; }, get pulses() { return pulses.length; }, setYear: y => setYear(y), get year() { return year; }, setLayer: l => { const b = document.querySelector(`#tlLayer [data-l=${l}]`); if (b) b.click(); }, toggleDrawer };
 })(window);

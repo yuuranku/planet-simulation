@@ -1,0 +1,185 @@
+/* ==========================================================================
+   手机横屏（安卓 App）适配 —— 整套界面按比例缩小
+   触发：横屏且可视高度 ≤ 540px（640×360 … 932×430 的手机横屏）。平板、桌面、竖屏不受影响。
+   做法：地图画布保持原分辨率；所有浮在地图上的界面统一按 --z 缩放（CSS zoom），
+        布局与桌面版一致，只是更紧凑。--z 由 app/mobile.js 按屏幕高度计算（约 0.68–0.85）。
+   注意：被 zoom 的元素里 vh/vw 也会被缩放，所以这里凡是按屏幕高度取值的都写成 calc(100vh / var(--z))。
+   ========================================================================== */
+@media (orientation: landscape) and (max-height: 540px) {
+  :root {
+    --z: .78;
+    --sal: env(safe-area-inset-left, 0px); --sar: env(safe-area-inset-right, 0px);
+    --salz: calc(var(--sal) / var(--z)); --sarz: calc(var(--sar) / var(--z));
+    --rail: 64px;              /* 缩放前的宽度；屏幕上约 50px */
+    --gap: 10px;
+    --vh: calc(100vh / var(--z));
+    --vw: calc(100vw / var(--z));
+  }
+  html, body { overscroll-behavior: none; }
+  body { -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  input, textarea, select, .lm-body .names { -webkit-user-select: text; user-select: text; }
+
+  /* ---- 统一缩放的界面层 ---- */
+  .rail, .topleft, .bottomleft, .bottomright, .panel, .drawer, .menu, .tip,
+  .progress-card, .wiz, .libmodal, .home-inner, .city-card, .style-panel, .name-editor, .toast,
+  .citygen-bar, .tl-bar, .tl-caption, .tl-feedall, .tl-legend, .tl-drawer, .tl-city, .tl-focus, .tl-river { zoom: var(--z); }
+
+  /* 地图不缩放：只让出（缩放后的）工具栏宽度 */
+  #stage { inset: 0 0 0 calc(var(--rail) * var(--z) + var(--sal)); }
+
+  /* 触屏没有悬停：去掉“点一下就粘住”的悬停底色 */
+  .rail-btn:hover, .zoom button:hover, .x:hover, .results button:hover, .menu button:hover, .list button:hover, .tl-icon:hover, .tl-chip:hover, .city-x:hover { background: transparent; }
+  .btn.ghost:hover { background: #f1f4f6; } .btn.primary:hover { background: var(--accent); }
+
+  /* ---------- 左侧工具栏 ---------- */
+  .rail { width: calc(var(--rail) + var(--salz)); padding: 6px 0 6px var(--salz); gap: 0; justify-content: space-between; }
+  .rail-cap, .rail-sep { display: none; }
+  .rail-sp { flex: 0 1 8px; }
+  .rail-btn { width: 56px; flex: 1 1 0; min-height: 0; max-height: 60px; padding: 0; gap: 3px; justify-content: center; font-size: 11px; line-height: 1.15; }
+  .rail-btn svg { width: 22px; height: 22px; flex: none; }
+  .rail-btn span { white-space: nowrap; }
+  .rail-btn[data-tool=hover]::after { top: 6px; right: 10px; }
+
+  /* ---------- 左上：搜索 + 世界卡（单行） ---------- */
+  .topleft { left: calc(var(--rail) + var(--salz) + var(--gap)); top: var(--gap); width: 340px; gap: 8px; max-height: calc(var(--vh) - 20px); }
+  .search { height: 42px; flex: none; }
+  .search input { font-size: 14px; padding-left: 18px; }
+  .search-ico { width: 20px; height: 20px; margin-right: 10px; }
+  .search-route { width: 42px; height: 42px; }
+  .results { top: 48px; max-height: calc(var(--vh) - 70px); }
+  .world-card { padding: 9px 16px; gap: 2px; border-radius: 14px; flex: none; }
+  .world-card b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .world-card span { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tool-card { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; min-height: 0; flex: 0 1 auto; }
+  .tool-card::-webkit-scrollbar { display: none; }
+  .topleft:has(#toolCard:not([hidden])) .world-card { display: none; }
+  .tool-card .row { flex-wrap: wrap; }
+  .nav-steps { max-height: calc(var(--vh) * .34); }
+
+  /* ---------- 左下：图层 + 图例 ---------- */
+  .bottomleft { left: calc(var(--rail) + var(--salz) + var(--gap)); bottom: var(--gap); }
+  .layer-btn { width: 64px; height: 64px; }
+  .legend-btn { height: 38px; }
+  .legend { width: 300px; max-height: calc(var(--vh) - 80px); overscroll-behavior: contain; }
+
+  /* ---------- 右下：缩放 + 比例尺 ---------- */
+  .bottomright { right: calc(var(--gap) + var(--sarz)); bottom: var(--gap); gap: 8px; }
+  .zoom { width: 44px; }
+  .zoom button { height: 42px; }
+  .zoom .zfit { height: 34px; }
+
+  /* ---------- 面板：贴边全高侧栏 ---------- */
+  .panel { left: calc(var(--rail) + var(--salz) + var(--gap)); top: var(--gap); bottom: var(--gap); width: 390px; z-index: 9; }
+  .drawer { right: calc(var(--gap) + var(--sarz)); top: var(--gap); bottom: var(--gap); width: 370px; z-index: 9; }
+  .saved { left: calc(var(--rail) + var(--salz) + var(--gap)); right: auto; width: 440px; }
+  .panel header, .drawer header { padding: 12px 14px 8px 20px; }
+  .panel h2, .drawer h2 { font-size: 18px; }
+  .panel-body { overscroll-behavior: contain; }
+
+  /* ---------- 菜单：两列，一屏放下 ---------- */
+  .menu { left: calc(var(--rail) + var(--salz) + 6px); top: 6px; width: 480px; max-height: calc(var(--vh) - 12px); overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; scrollbar-width: none; }
+
+  /* ---------- 地点信息卡：固定在右上，缩放按钮左边 ---------- */
+  .tip { left: auto !important; right: calc(64px + var(--sarz)) !important; top: var(--gap) !important; bottom: auto; width: 280px; min-width: 0; max-width: 280px; max-height: calc(var(--vh) - 20px); overflow-y: auto; overscroll-behavior: contain; pointer-events: auto; scrollbar-width: none; }
+
+  /* ---------- 推演进度：横排卡片 ---------- */
+  .progress-card { width: 560px; display: grid; grid-template-columns: 110px 1fr; column-gap: 22px; align-items: center; text-align: left; padding: 20px 26px; }
+  .progress-card canvas { grid-row: 1 / span 5; width: 110px; height: 110px; margin: 0; }
+  .progress-card h3 { margin: 0 0 12px; min-height: 0; }
+  .progress-card .prog-note { max-height: calc(var(--vh) * .3); overflow-y: auto; }
+
+  /* ---------- 21 题向导：全屏，步骤竖排在左 ---------- */
+  .wiz { width: var(--vw); height: var(--vh); max-width: none; border-radius: 0; display: grid; grid-template-columns: calc(170px + var(--salz)) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "head head" "steps body" "foot foot"; }
+  .wiz-head { grid-area: head; align-items: center; padding: 8px calc(12px + var(--sarz)) 8px calc(20px + var(--salz)); border-bottom: 1px solid var(--line); }
+  .wiz-head > div { display: flex; align-items: baseline; gap: 16px; min-width: 0; }
+  .wiz-head h2 { font-size: 19px; white-space: nowrap; }
+  .wiz-head p { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wiz-steps { grid-area: steps; flex-direction: column; overflow-x: hidden; overflow-y: auto; padding: 10px 10px 10px calc(10px + var(--salz)); gap: 6px; border-bottom: 0; border-right: 1px solid var(--line); overscroll-behavior: contain; }
+  .wiz-steps button { white-space: normal; text-align: left; border-radius: 10px; padding: 9px 12px; line-height: 1.3; flex: none; }
+  .wiz-body { grid-area: body; padding: 0 calc(20px + var(--sarz)) 16px 20px; overscroll-behavior: contain; }
+  .q { padding: 14px 0 4px; }
+  .q h4 { margin-bottom: 10px; }
+  .wiz-foot { grid-area: foot; padding: 8px calc(16px + var(--sarz)) 8px calc(16px + var(--salz)); }
+
+  /* ---------- 首页 / 文化库 / 宗教库 ---------- */
+  .home { overscroll-behavior: contain; }
+  .home-inner { max-width: none; padding: 0 calc(24px + var(--sarz)) 28px calc(24px + var(--salz)); }
+  .home-head { position: sticky; top: 0; z-index: 3; background: #f2f5f7; padding: 12px 0; margin-bottom: 16px; flex-wrap: nowrap; }
+  .home-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .home-actions .btn { white-space: nowrap; flex: none; }
+  .home h2 { font-size: 24px; }
+  .home-sub { flex-wrap: wrap; gap: 4px 12px; }
+  .home-sep { margin: 22px 0 14px; }
+  .wgrid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+  .lib-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .lib-tabs button { white-space: nowrap; flex: none; }
+  .libmodal { width: min(860px, calc(var(--vw) - 24px)); max-height: calc(var(--vh) - 20px); }
+  .lm-body { overscroll-behavior: contain; }
+  .lform { grid-template-columns: 1fr 1fr 1fr; }
+  .lform .lx-body { grid-template-columns: 1fr 1fr 1fr; }
+
+  /* ---------- 城市生成器（嵌入页）：全屏铺开 ---------- */
+  .citygen-box { top: 0; right: 0; bottom: 0; left: 0; width: auto; min-width: 0; border-radius: 0; z-index: 20; padding: 0 var(--sar) 0 var(--sal); }
+  .citygen-bar { flex-wrap: nowrap; padding: 5px 8px 5px 18px; }
+  .citygen-bar span:not(.sp) { order: 0; flex: 0 1 auto; flex-basis: auto; }
+
+  /* 旧版城市详情面板：全屏，左资料右地图（不缩放，地图要按原坐标拖动） */
+  .city-panel { top: 0; right: 0; bottom: 0; left: 0; width: auto; min-width: 0; border-radius: 0; z-index: 20; padding: 0 var(--sar) 0 var(--sal); display: grid; grid-template-columns: min(240px, 30vw) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; font-size: 12px; }
+  .city-head { grid-column: 1; grid-row: 1; padding: 8px 6px 2px 12px; }
+  .city-head h2 { font-size: 17px; }
+  .city-facts { grid-column: 1; grid-row: 2; grid-template-columns: 1fr 1fr; margin: 2px 12px 6px; gap: 4px 10px; overflow-y: auto; align-content: start; }
+  #city-map-section { grid-column: 2; grid-row: 1 / -1; border-top: 0; border-left: 1px solid var(--line); }
+  #city-map-viewport { min-height: 0; }
+  .city-map-caption { padding: 3px 10px; font-size: 10px; }
+  .city-map-caption .hint { display: none; }
+  .city-actions { grid-column: 1; grid-row: 4; flex-wrap: wrap; padding: 6px 10px; gap: 4px; align-self: end; }
+  .city-actions .sp { display: none; }
+  .city-actions .btn { height: 30px; padding: 0 10px; font-size: 12px; flex: 1 1 auto; }
+
+  .city-card { right: calc(var(--gap) + var(--sarz)); top: var(--gap); max-height: calc(var(--vh) - 20px); overflow-y: auto; }
+
+  /* ---------- 地图风格 ---------- */
+  .style-panel { left: calc(var(--rail) + var(--salz) + var(--gap)); bottom: var(--gap); max-height: calc(var(--vh) - 20px); overflow-y: auto; scrollbar-width: none; }
+
+  /* ---------- 球体：全屏，用它自己的（同样缩小的）工具栏 ---------- */
+  .globe-wrap { inset: 0; z-index: 20; }
+
+  /* ---------- 改名、提示 ---------- */
+  .name-editor { top: var(--gap) !important; left: calc(50% / var(--z) - 150px) !important; width: 300px; }
+  .toast { left: 50%; right: auto; transform: translateX(-50%); bottom: 14px; max-width: calc(var(--vw) - 260px); }
+
+  /* ---------- 历史时间线 ---------- */
+  body.tl-on .world-card { display: none; }
+  body.tl-on .bottomright { bottom: calc((var(--tlh) + var(--tld)) + 14px); }
+  body.tl-on .toast { bottom: calc(var(--tlh) + 18px); }
+  body.tl-on:has(#tlFeedAll:not([hidden])) .bottomright, body.tl-on:has(#tlFocus:not([hidden])) .bottomright, body.tl-on:has(#tlCity:not([hidden])) .bottomright, body.tl-on:has(#tlRiver:not([hidden])) .bottomright, body.tl-on:has(#tlDrawer:not([hidden])) .bottomright, body.tl-on:has(#tlDrawer:not([hidden])) .tl-legend { display: none; }
+  .tl-bar { left: calc(var(--rail) + var(--salz) + var(--gap)); right: calc(var(--gap) + var(--sarz)); bottom: 8px; height: 54px; gap: 10px; }
+  .tl-legend { left: calc(var(--rail) + var(--salz) + var(--gap)); bottom: calc((var(--tlh) + var(--tld)) + 14px); max-width: 250px; max-height: calc(var(--vh) - (var(--tlh) + var(--tld)) - 80px); overflow-y: auto; overscroll-behavior: contain; padding: 9px 11px; scrollbar-width: none; }
+  .tl-legend::-webkit-scrollbar { display: none; }
+  .tl-caption { left: calc(var(--rail) + var(--salz) + 276px); right: calc(66px + var(--sarz)); transform: none; max-width: none; bottom: calc((var(--tlh) + var(--tld)) + 14px); }
+  .tl-caption .tl-feed-row:nth-of-type(n+3) { display: none; }
+  .tl-caption .tl-feed-more.only-m { display: inline-flex; }
+  .tl-feedall { right: calc(var(--gap) + var(--sarz)); top: var(--gap); bottom: calc((var(--tlh) + var(--tld)) + 14px); width: 340px; max-height: none; animation: none; }
+  .tl-feedall li { font-size: 13px; padding: 6px; }
+  .tl-drawer { left: calc(var(--rail) + var(--salz) + var(--gap)); right: calc(var(--gap) + var(--sarz)); bottom: calc(var(--tlh) + 14px); }
+  .tl-rows { max-height: calc(var(--vh) * .42); }
+  .tl-city, .tl-focus { right: calc(var(--gap) + var(--sarz)); top: var(--gap); width: 300px; max-height: calc(var(--vh) - var(--tlh) - 30px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  .tl-city::-webkit-scrollbar { display: none; }
+  .tl-river, .tl-river.tall { left: calc(var(--rail) + var(--salz) + var(--gap)); right: calc(var(--gap) + var(--sarz)); top: var(--gap); bottom: calc(var(--tlh) + 14px); height: auto; min-height: 0; }
+  .tl-river header small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+}
+
+/* 更窄的横屏（≤ 820px 宽，例如 800×360、732×360） */
+@media (orientation: landscape) and (max-height: 540px) and (max-width: 820px) {
+  .topleft { width: 310px; }
+  .tl-year { width: 84px; }
+  .tl-year span { display: none; }
+  .tl-chip { display: none; }
+  .tl-seg button { padding: 5px 7px; }
+  .home-actions small { display: none; }
+  .wiz { grid-template-columns: calc(150px + var(--salz)) minmax(0, 1fr); }
+  .wiz-foot #wizSaved { display: none; }
+  .lform, .lform .lx-body { grid-template-columns: 1fr 1fr; }
+}
+/* App 内：分享链接没有意义（地址是本机的），隐藏 */
+html.m-app [data-act=share] { display: none; }

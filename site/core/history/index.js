@@ -2,7 +2,7 @@
  * 第一次打开时间线时，再把同一次推演的结果打包交给页面。 */
 (function (G) {
   'use strict';
-  const VERSION = 11;
+  const VERSION = 13;
   function hsl(h, s, l) { h = ((h % 360) + 360) % 360 / 360; const f = n => { const k = (n + h * 12) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); }; return [f(0), f(8), f(4)]; }
 
   // 核心推演：世界生成时运行（历史的终局写回现在的地图，见 apply.js）
@@ -13,7 +13,7 @@
     const R = G.HistoryRegions.build(h);
     const t1 = Date.now();
     progress && progress('历史 · 文明点亮', 0.964);
-    const D = G.HistoryDawn.run(h, R, { riverNames: Cv.riverNames, countries: Cv.countries, religions: Cv.religions, cultureNames: Cv.cultures.map(c => c.name) });
+    const D = G.HistoryDawn.run(h, R, { riverNames: (Cv.riverNames || []).filter(r => !r.minor), countries: Cv.countries, religions: Cv.religions, cultureNames: Cv.cultures.map(c => c.name) });
     const t2 = Date.now();
     progress && progress('历史 · 城市兴衰', 0.966);
     const C = G.HistoryCities.run(h, R, D, { cities: Cv.cities, labels: Cv.labels });
@@ -47,7 +47,7 @@
     const civs = Cv.cultures.map((c, k) => {
       const lib = h.civLib[k], type = D.civType[k], hr = D.hearthR[k];
       return { name: c.name, type, typeLabel: D.TYPE_LABEL[type], lib: lib.label, libId: lib.id, start: D.civStart[k] >= 1e8 ? null : Math.round(D.civStart[k]),
-        ages: ages(D.civAges[k]), stageNames: D.STAGE_NAME[type] || D.GENERIC, titles: D.titlesOf(lib, type), hx: hr ? R.cx[hr] : 0, hy: hr ? R.cy[hr] : 0, cradle: D.cradles.findIndex(cr => cr.civ === k && cr.ancient < 0) };
+        ages: ages(D.civAges[k]), stageNames: D.stageNamesOf ? D.stageNamesOf(k) : (D.STAGE_NAME[type] || D.GENERIC), titles: D.titlesOf(lib, type), hx: hr ? R.cx[hr] : 0, hy: hr ? R.cy[hr] : 0, cradle: D.cradles.findIndex(cr => cr.civ === k && cr.ancient < 0) };
     });
     const ancient = D.ancient.map((a, i) => ({ name: a.name, short: a.short, type: a.type, typeLabel: a.typeLabel, lib: a.lib, fall: Math.round(a.fall), cradle: a.cradle, successor: a.successor,
       ages: ages(a.ages), stageNames: D.STAGE_NAME[a.type] || D.GENERIC, titles: a.titles, color: hsl(28 + i * 71, 0.42, 0.5), zone: a.zone.length }));
@@ -65,7 +65,7 @@
       civs, ancient, cradles, religions, events, eraStep: D.eraStep, eraAt: D.eraAt, eraNames: D.ERA_NAME,
       outline: O, regionF, landF, FW, FH,
       polities: Pol.polities, own: Pol.own, cultLog: Pol.cultLog, relLog: Pol.relLog, provinces: Pol.provinces, provLog: Pol.provLog, unrest: Pol.unrest, Rkm: h.R, EMPN: Pol.EMPN, T0: Pol.T0,
-      cities: C.cities, cityPop: C.pop, popStep: C.popStep, popN: C.popN, roads: C.roads, plagues: C.plagues, tiers: C.tiers,
+      cities: C.cities, cityPop: C.pop, popStep: C.popStep, popN: C.popN, regionPop: C.regionPop, pasture: R.pasture, popTotal: h.popTotal, roads: C.roads, plagues: C.plagues, tiers: C.tiers,
       stats: { regions: R.nR, edges: R.edges.length, core: Hc.ms, polity: Pol.stats, cities: C.cities.length, lost: C.cities.filter(c => c.lost).length, roads: C.roads.length, ms: Date.now() - t0 }
     };
     return data;

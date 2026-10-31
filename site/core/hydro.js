@@ -254,7 +254,7 @@
       if (pts.length >= 14) { reaches.push(pts); meta.push({ start: startCell, kind: endKind, cell: endCell }); }
     }
     // ---------- 5b. 制图分级（原版 river_display：最长上游为主干，按长度分 世界/区域/地方/细部 四级） ----------
-    const tiers = new Uint8Array(reaches.length).fill(3);
+    const tiers = new Uint8Array(reaches.length).fill(3), stems = [];
     { const R = cfg.radius, nR = reaches.length, startIdx = new Map();
       meta.forEach((m, i) => { if (m.start >= 0 && !startIdx.has(m.start)) startIdx.set(m.start, i); });
       const downR = new Int32Array(nR).fill(-1), lenKm = new Float64Array(nR), ink = new Float64Array(nR), yld = new Float64Array(nR);
@@ -282,6 +282,7 @@
         let phys = 0, pr = 0; for (const k of stem) { phys += lenKm[k]; pr += ink[k]; }
         let tier = 3; for (let t = 0; t < 3; t++) if (depth <= LIM[t][1] && phys >= LIM[t][0] * circ && pr >= LIM[t][0] * W) { tier = t; break; }
         tier = Math.max(tier, pt);
+        if (stem.length) stems.push({ r: stem, tier, km: Math.round(phys), mouth: meta[stem[0]].kind });
         for (const k of stem) { tiers[k] = tier; for (const ch of incoming[k]) if (ch !== dom[k]) stack.push([ch, depth + 1, tier]); } } }
     // ---------- 6. 平滑 + 蜿蜒（端点固定、两端收为零、不入水） ----------
     const nm = simplex2(cfg.seed + 777);
@@ -386,7 +387,7 @@
       smallLakes: Float32Array.from(small), lakeSize, lakeSoft,
       deltas, plume, wetland, wetSoft, deltaSoft, filled,
       down, lake, q, basinId, basinCount: topB.length, qth,
-      rivers: { pts: Float32Array.from(out), offs: Int32Array.from(offs), tiers },
+      rivers: { pts: Float32Array.from(out), offs: Int32Array.from(offs), tiers, stems },
       mouths, order: null
     };
   }

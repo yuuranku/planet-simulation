@@ -158,7 +158,8 @@
       // 非农生计：采集、游牧、海岸（取最大值，不叠加）
       const b = biome[i];
       const forag = (b === 2 || b === 4 || b === 5 || b === 10 || b === 11 || b === 1) ? 0.6 + 0.4 * smoothstep(300, 1500, Pr[i]) : 0.3;
-      const past = (b === 3 || b === 9 || b === 6 || kop[i] === 6 || kop[i] === 5) ? 1 : (b === 7 ? 0.35 : 0.1);
+      // 游牧承载：半干旱草原（BS）与温带草原最宜放牧；湿润的稀树草原多为农牧兼营；真正的荒漠（BW）只能稀疏放牧
+      const kk = kop[i], past = (kk === 5 || kk === 6) ? 1 : b === 3 ? 0.85 : b === 6 ? 0.5 : kk === 2 ? 0.45 : kk === 4 ? 0.22 : kk === 3 ? 0.12 : 0.1;
       const coastal = oceanCoast[i] ? (seaIce[i] ? 0.4 : 1) : 0;
       for (const [o, dens] of [[forag, 0.06], [past, 0.22], [coastal, 0.18]]) s = Math.max(s, o * dens / idealDensity * res * a);
       if (newW[i]) s *= 0.18 + 0.32 * pot[i] * hab[i];
@@ -217,13 +218,15 @@
         const i = hp.pop(), c = hp.top;
         if (acc[i] || c !== cost[i]) continue;
         acc[i] = 1;
-        const lb = labels[i], sd = seeds[lb - 1], str = sd.strength || 1, dom = sd.domain || 0;
+        const lb = labels[i], sd = seeds[lb - 1], dom = sd.domain || 0, sm = sd.steppe && o.steppeMul ? o.steppeMul : null;
+        const str = (sd.strength || 1) / (sm ? sm[i] : 1); // 草原文明：在草原上推进快，进入森林与农耕区较慢（允许溢出，离开草原的政权在历史推演中会定居）
         const fi = frx(i);
         for (let d = 0; d < 8; d++) {
           const j = NB[i * 8 + d]; if (j < 0 || acc[j] || !valid[j]) continue;
           const fs = seedAt.get(j); if (fs !== undefined && fs !== lb) continue;
           if (oc) { const req = oc[j]; if (req > 0 && req !== dom) continue; }
-          const edge = 0.5 * (fi + frx(j)) / str + (tr ? tr[d * N + i] : 0);
+          const strJ = sm ? (sd.strength || 1) / (0.5 * (sm[i] + sm[j])) : str;
+          const edge = 0.5 * (fi + frx(j)) / strJ + (tr ? tr[d * N + i] : 0);
           let nc = c + edge * DL[d];
           const peers = FRONT_PEERS[d];
           if (peers) { // 三角前沿连续到达时间
@@ -233,7 +236,7 @@
               const p = py * W + px; if (!acc[p] || labels[p] !== lb) continue;
               const diff = c - cost[p];
               const cross = tr ? tr[(7 - pd) * N + p] : 0;
-              const slow = Math.max(edge, 0.5 * (frx(p) + frx(j)) / str + cross);
+              const slow = Math.max(edge, 0.5 * (frx(p) + frx(j)) / strJ + cross);
               if (diff < 0 || diff >= slow / Math.SQRT2) continue;
               const cand = c + Math.sqrt(slow * slow - diff * diff); if (cand < nc) nc = cand;
             }
@@ -297,6 +300,29 @@
       for (const [k, cell] of best) if (cpop[k] > 0.004 && sizeC[k] >= 60 && added < Math.max(2, Math.round(civTarget * 0.5))) { civSeeds.push({ cell, strength: 0.8, primary: false }); added++; }
       if (added) CV = territory(civSeeds, { valid: domain, friction: civFriction, trans: phys });
     }
+    // 草原游牧文明：发源地按人口与地力挑选，总落在农耕沃土上；而大片连续的草原（BS 半干旱草原、温带草原）
+    // 历来自成一系——游牧民族是草原的主人。只有足够大的草原才会孕育游牧文明，荒漠（BW）不算草原。
+    // 数量随草原规模而定，最多约为文明数的 1/7，不再因为“干旱”就把大片疆域判成游牧。
+    let steppeMul = null;
+    const pastureOf = i => { const b = biome[i], kk = kop[i]; let v = (kk === 5 || kk === 6) ? 1 : (b === 3 && kk > 6) ? 0.7 : kk === 4 ? 0.3 : kk === 3 ? 0.2 : 0;
+      if (v && (order[i] >= 2 || pot[i] > 0.5)) v *= 0.3; return v; };
+    { const steppe = new Uint8Array(N); let nDom = 0;
+      for (let i = 0; i < N; i++) { if (!domain[i]) continue; nDom++; if (!newW[i] && eN[i] <= 0.38 && pastureOf(i) >= 0.65 && weight[i] > 0) steppe[i] = 1; }
+      const comp = components(steppe), size = new Int32Array(comp.count + 1), best = new Int32Array(comp.count + 1).fill(-1);
+      for (let i = 0; i < N; i++) { const k = comp[i]; if (!k) continue; size[k]++; }
+      // 种子取草原腹地（离草原边缘远）里人口最多的格
+      const inner = new Uint8Array(N); for (let i = 0; i < N; i++) if (steppe[i]) { let all = 1; for (let d = 0; d < 8 && all; d++) { const j = NB[i * 8 + d]; if (j >= 0 && !steppe[j]) all = 0; } inner[i] = all; }
+      for (let i = 0; i < N; i++) { const k = comp[i]; if (!k || !inner[i]) continue; if (best[k] < 0 || weight[i] > weight[best[k]]) best[k] = i; }
+      const minSize = Math.max(400, nDom * 0.012), maxN = Math.max(1, Math.round(civTarget / 7));
+      const ks = []; for (let k = 1; k <= comp.count; k++) if (size[k] >= minSize && best[k] >= 0) ks.push(k);
+      ks.sort((a, b) => size[b] - size[a]);
+      const occ = civSeeds.map(sd => sd.cell); let added = 0;
+      for (const k of ks) { if (added >= maxN) break;
+        const cand = []; for (let i = 0; i < N; i++) if (comp[i] === k && inner[i]) cand.push(i); cand.sort((p, q) => weight[q] - weight[p] || p - q);
+        const sp = spacedSelect(cand, 1, minHD * 0.8, occ); if (!sp.length) continue;
+        civSeeds.push({ cell: sp[0], strength: 0.85, primary: false, steppe: true }); added++; }
+      if (added) { steppeMul = new Float32Array(N); for (let i = 0; i < N; i++) { const v = pastureOf(i); steppeMul[i] = v >= 0.5 ? 1.2 : v >= 0.2 ? 0.85 : biome[i] === 7 || biome[i] === 8 ? 0.7 : 0.55; }
+        CV = territory(civSeeds, { valid: domain, friction: civFriction, trans: phys, steppeMul }); } }
     // 远离大陆的岛屿：经海路由最近的有人陆地传播（沿岸与跨海航行），使群岛也有文化、语言与宗教归属。
     // 跨海代价 1.6 倍于陆路，最远约 1500 km；更远的孤岛仍保持无人。
     function fillIslands(T) {
@@ -315,12 +341,18 @@
     { const byCiv = Array.from({ length: nCiv + 1 }, () => []); for (let i = 0; i < N; i++) if (civ[i]) byCiv[civ[i]].push(CV.cost[i]);
       const qs = byCiv.map(a => { a.sort((x, y) => x - y); return [a[Math.floor(a.length * 0.34)] || 0, a[Math.floor(a.length * 0.72)] || 0]; });
       for (let i = 0; i < N; i++) if (civ[i]) influence[i] = CV.cost[i] <= qs[civ[i]][0] ? 3 : CV.cost[i] <= qs[civ[i]][1] ? 2 : 1; }
-    // 生计类型
-    const subsistence = civSeeds.map(s => {
+    // 生计类型：看文明的整片疆域里“人住在哪里”。草原（BS、温带草原）是牧场；荒漠（BW）只算很小的放牧价值——
+    // 荒漠里的人口集中在河谷与绿洲，以灌溉农业为生（古埃及式），不能因为疆域大半是沙漠就判成游牧。
+    // 按人口（承载）加权为主、面积为辅；大河沿岸与良田不计为牧场。
+    const aridShare = new Float64Array(nCiv + 1);
+    { const n = new Float64Array(nCiv + 1), pw = new Float64Array(nCiv + 1), ps = new Float64Array(nCiv + 1), wsum = new Float64Array(nCiv + 1);
+      for (let i = 0; i < N; i++) { const k = civ[i]; if (!k || !land[i]) continue; const v = pastureOf(i); n[k]++; ps[k] += v; pw[k] += v * weight[i]; wsum[k] += weight[i]; }
+      for (let k = 1; k <= nCiv; k++) aridShare[k] = n[k] ? 0.65 * (wsum[k] > 0 ? pw[k] / wsum[k] : 0) + 0.35 * ps[k] / n[k] : 0;}
+    const subsistence = civSeeds.map((s, k) => {
       const c = s.cell, b = biome[c];
       if (newW[c]) return 'new-world';
       if (eN[c] > 0.38) return 'highland';
-      if (b === 3 || b === 9 || kop[c] === 5 || kop[c] === 6 || kop[c] === 4) return 'pastoral';
+      if (s.steppe || aridShare[k + 1] >= 0.5 || (aridShare[k + 1] >= 0.32 && (kop[c] === 5 || kop[c] === 6 || b === 3) && !order[c] && pot[c] < 0.35)) return 'pastoral'; // 人口以草原牧场为主，或起源于贫瘠且无河的草原
       if (oceanCoast[c] || dCoast[c] <= 2) return pot[c] > 0.45 ? 'agrarian' : 'maritime';
       if (pot[c] < 0.25) return 'tribal';
       return 'agrarian';
@@ -992,7 +1024,8 @@
     let chosen = (Array.isArray(cfg.cultureSelection) ? BUILTIN.filter(l => cfg.cultureSelection.includes(l.id)) : BUILTIN.slice()).concat(cfg.customLibraries || []);
     { const byId = new Map(); for (const l of chosen) byId.set(l.id, l); chosen = [...byId.values()]; } // 改过的内置库（同 id）覆盖原版
     if (!chosen.length) chosen = BUILTIN.slice();
-    const LIBS = chosen.map(l => ({ ...l, n: Object.assign({ states: [], provinces: [], cities: [], mountains: [], rivers: [], lakes: [], seas: [], regions: [] }, l.n || {}), t: Object.assign({ monarchy: ['王国'], empire: ['帝国'], republic: ['共和国'], cityRepublic: ['城邦共和国'], nomadic: ['部族邦联'], chiefdom: ['酋邦'], league: ['氏族联盟'] }, l.t || {}), c: l.c && l.c.roots && l.c.roots.length ? l.c : { roots: ['安', '宁', '平', '川', '岚'], prefixes: ['东', '西', '南', '北', '上'], suffixes: ['阳', '州', '原', '城', '泽'] } }));
+    if (G.CultureExt && G.CultureExt.preset) chosen = chosen.map(l => G.CultureExt.preset(l)); // 国号后缀预设（改过的内置库：没改过的项也换成预设）
+    const LIBS = chosen.map(l => ({ ...l, n: Object.assign({ states: [], provinces: [], cities: [], mountains: [], rivers: [], lakes: [], seas: [], regions: [] }, l.n || {}), t: Object.assign({ monarchy: ['王国'], empire: ['帝国'], republic: ['共和国'], cityRepublic: ['城邦共和国'], nomadic: ['部族邦联'], chiefdom: ['酋邦'], league: ['氏族联盟'] }, Object.fromEntries(Object.entries(l.t || {}).filter(([k, v]) => k === 'duchy' || !Array.isArray(v) || v.length))), /* 自定义库留空的后缀用默认值（公国留空 = 不设这一级） */ c: l.c && l.c.roots && l.c.roots.length ? l.c : { roots: ['安', '宁', '平', '川', '岚'], prefixes: ['东', '西', '南', '北', '上'], suffixes: ['阳', '州', '原', '城', '泽'] } }));
     const nr = mulberry32(cfg.seed + 7);
     const usedNames = new Set();
     const libFor = (() => { const usedLib = new Set(); return (cat) => {
@@ -1021,15 +1054,17 @@
       const sub = subsistence[k.civ - 1], cities = sCities[st].length;
       let form = 'monarchy';
       const kc = kop[k.s.cell];
-      if (sub === 'pastoral' && (kc >= 3 && kc <= 6 || biome[k.s.cell] === 3 || biome[k.s.cell] === 9) && cities <= 6) form = 'nomadic';
+      if (sub === 'pastoral' && (kc >= 3 && kc <= 6 || biome[k.s.cell] === 3) && cities <= 6) form = 'nomadic';
       else if (sub === 'new-world' || sub === 'tribal') form = cities <= 2 ? 'chiefdom' : 'league';
       else if (cities <= 1 || k.island) form = sub === 'maritime' ? 'cityRepublic' : 'cityRepublic';
       else if (sub === 'maritime' && cities <= 6) form = nr() < 0.5 ? 'republic' : 'league';
       if (kPop[st] >= (maxPopByCiv.get(k.civ) || 0) && kRegions[st] >= 10 && kPop[st] > popTotal * 0.03) form = 'empire';
       const lib = libAt(k.s.cell), titles = lib.t[form] || lib.t.monarchy || ['国'];
-      const base = draw(lib, 'states'); const title = titles[Math.floor(nr() * titles.length)];
+      // 君主国按大小分级：小国（≤3 城，或不到本文明最大国四分之一的人口）用王国之下一级的后缀（公国、伯国、雅尔国……），文化里不设这一级的大小都叫同一个后缀（国、汗国……）
+      const duchy = form === 'monarchy' && lib.t.duchy && lib.t.duchy.length && (cities <= 3 || kPop[st] < (maxPopByCiv.get(k.civ) || 0) * 0.25) ? lib.t.duchy : null;
+      const base = draw(lib, 'states'), r0 = nr(), title = duchy ? duchy[Math.floor(r0 * duchy.length)] : titles[Math.floor(r0 * titles.length)];
       const FORM = { monarchy: '君主制王国', empire: '帝国', republic: '共和国', cityRepublic: '城邦', nomadic: '游牧政权', chiefdom: '酋邦', league: '联盟' };
-      return { name: base + title, short: base, form, formLabel: FORM[form], capital: settlements.indexOf(k.s), civ: k.civ - 1, culture: k.civ - 1, language: Math.max(0, language[k.s.cell] - 1), religion: Math.max(0, religionRaw[k.s.cell] - 1), pop: Math.round(kPop[st]), area: Math.round(kArea[st]), cities: cities, strength: k.strength };
+      return { name: base + title, short: base, bare: G.CultureExt && G.CultureExt.bareName ? G.CultureExt.bareName(base) : base, form, formLabel: FORM[form], capital: settlements.indexOf(k.s), civ: k.civ - 1, culture: k.civ - 1, language: Math.max(0, language[k.s.cell] - 1), religion: Math.max(0, religionRaw[k.s.cell] - 1), pop: Math.round(kPop[st]), area: Math.round(kArea[st]), cities: cities, strength: k.strength };
     });
     const provinces = provSeeds.map((p, k) => ({ name: draw(libAt(p.cell), 'provinces'), country: provState[k], seat: settlements.indexOf(provSeat[k]) }));
     const shortDraw = (lib, key, max) => { let n = ''; for (let t = 0; t < 12; t++) { n = draw(lib, key).replace(/(地区|平原|高原|山地|盆地|河谷|草原|荒原|半岛|海岸|湿地|荒野|峡地|旷原|牧野|林原|戈壁)$/, ''); if (n.length <= max) return n; } return n.slice(0, max); };
@@ -1062,7 +1097,7 @@
     const groupInfo = (lab, keep) => { const info = new Map();
       for (let i = 0; i < N; i++) { const g = lab[i]; if (!g || (keep && !keep(i, g))) continue; let o = info.get(g); if (!o) { o = { n: 0, pop: 0, sx: 0, sy: 0, x0: i % W, best: i, steppe: 0, desert: 0, forest: 0, coast: 0, high: 0, cells: [] }; info.set(g, o); }
         const y = (i / W) | 0; let x = i - y * W; if (x - o.x0 > W / 2) x -= W; if (o.x0 - x > W / 2) x += W; o.n++; o.pop += weight[i]; o.sx += x; o.sy += y; o.cells.push(i);
-        if (weight[i] > weight[o.best]) o.best = i; const b = biome[i]; if (b === 3 || b === 9) o.steppe++; if (b === 7 || b === 8) o.desert++; if (b === 2 || b === 4 || b === 5 || b === 10 || b === 11) o.forest++; if (oceanCoast[i]) o.coast++; if (eN[i] > 0.4) o.high++; }
+        if (weight[i] > weight[o.best]) o.best = i; const b = biome[i], kk = kop[i]; if (kk === 5 || kk === 6 || b === 3) o.steppe++; else if (b === 7 || b === 8) o.desert++; if (b === 2 || b === 4 || b === 5 || b === 10 || b === 11) o.forest++; if (oceanCoast[i]) o.coast++; if (eN[i] > 0.4) o.high++; }
       return info; };
     const centreOf = (o) => ({ x: ((((o.sx / o.n) % W) + W) % W + 0.5) * 2, y: (o.sy / o.n + 0.5) * 2 });
     // 1) 蛮族：无主的可居土地（含无路可达而被剥离的远方）。草原荒漠 → 游牧；森林 → 部落；山地、海岸各有其称
@@ -1075,7 +1110,7 @@
       const lab = fseeds.length ? territory(fseeds, { valid, friction: civFriction, trans: phys }).labels : new Int32Array(N);
       for (const [, o] of groupInfo(lab)) {
         if (o.n < 25) continue;
-        const live = o.steppe + o.desert > o.n * 0.4 ? 'pastoral' : o.high > o.n * 0.4 ? 'highland' : o.forest > o.n * 0.35 ? 'forest' : o.coast > o.n * 0.2 ? 'maritime' : 'foraging';
+        const live = o.steppe + 0.4 * o.desert > o.n * 0.45 ? 'pastoral' : o.high > o.n * 0.4 ? 'highland' : o.forest > o.n * 0.35 ? 'forest' : o.coast > o.n * 0.2 ? 'maritime' : 'foraging';
         const lib = libAt(o.best);
         const suf = live === 'pastoral' ? TT(lib, 'nomad', ['部', '部落', '汗帐']) : TT(lib, 'tribe', ['部落', '部', '氏族']);
         const name = rootName(lib) + pickT(suf), c = centreOf(o);
@@ -1100,6 +1135,16 @@
         const id = jimis.length; jimis.push({ name, title, country: st, pop: Math.round(o.pop * popTotal), x: c.x, y: c.y, size: o.n });
         for (const i of o.cells) jimi[i] = id;
       } }
+    // 山脊线：沿山体主轴分段，每段取高处（按超出基准高度的平方加权）的重心，平滑后作为山名的排字路径（全分辨率坐标）
+    const ridgeOf = (cells, th, base) => {
+      const ca = Math.cos(th), sa = Math.sin(th); let mx = 0, my = 0; for (const c of cells) { mx += c[0]; my += c[1]; } mx /= cells.length; my /= cells.length;
+      let t0 = 1e9, t1 = -1e9; const ts = cells.map(c => { const t = (c[0] - mx) * ca + (c[1] - my) * sa; if (t < t0) t0 = t; if (t > t1) t1 = t; return t; });
+      const L = t1 - t0; if (L < 4) return undefined;
+      const nb = Math.max(3, Math.min(24, Math.round(L / 2.5))), bins = Array.from({ length: nb }, () => [0, 0, 0, 0]);
+      cells.forEach((c, k) => { const b = Math.min(nb - 1, Math.floor((ts[k] - t0) / L * nb)), w = Math.pow(Math.max(1, c[2] - base), 2); const o = bins[b]; o[0] += c[0] * w; o[1] += c[1] * w; o[2] += w; o[3]++; });
+      let P = bins.filter(o => o[3] >= 2 && o[2] > 0).map(o => [o[0] / o[2], o[1] / o[2]]); if (P.length < 3) return undefined;
+      for (let it = 0; it < 3; it++) P = P.map((p, k) => k === 0 || k === P.length - 1 ? p : [(P[k - 1][0] + 2 * p[0] + P[k + 1][0]) / 4, (P[k - 1][1] + 2 * p[1] + P[k + 1][1]) / 4]);
+      const out = []; for (const [x, y] of P) out.push(Math.round((x + 0.5) * 20) / 10, Math.round((y + 0.5) * 20) / 10); return out; };
     // 自然地名：山脉/高原、海、河、湖、大陆/岛
     const labels = [];
     { const mt = new Int32Array(N); let id = 0;
@@ -1113,7 +1158,7 @@
         const cx = ((Math.round(mx) % W) + W) % W, cy = Math.round(my), lib = libAt(cy * W + cx);
         let name = draw(lib, 'mountains'); if (plateau) name = name.replace(/(山脉|山|岭)$/, '') + '高原';
         const [px, py] = toFull(best);
-        labels.push({ type: plateau ? 'plateau' : 'range', name, x: (mx + 0.5) * 2, y: (my + 0.5) * 2, angle: th, len: Math.sqrt(l1 / comp.length) * 8, size: comp.length, peak: Math.round(e[best]), px, py });
+        labels.push({ type: plateau ? 'plateau' : 'range', name, x: (mx + 0.5) * 2, y: (my + 0.5) * 2, angle: th, len: Math.sqrt(l1 / comp.length) * 8, size: comp.length, peak: Math.round(e[best]), px, py, ridge: plateau ? undefined : ridgeOf(comp.map((i, k) => [pts[k][0], pts[k][1], e[i]]), th, 1500) });
       } }
     { const cand = []; for (let i = 0; i < N; i++) if (sea[i] && dCoast[i] > 6) cand.push(i); cand.sort((a, b) => dCoast[b] - dCoast[a]);
       const seas = []; for (const i of cand) { if (seas.length >= 10) break; if (seas.every(s => gcKm(s, i) > R * 0.8)) seas.push(i); }
@@ -1344,6 +1389,42 @@
       settlements: cityOut.length, cultures: cultures.length, languages: languages.length, religions: religions.length, tribalShare: tribalArea / Math.max(1, claimArea),
       landArea: Math.round(claimArea), cellKm, era, eraLabel: AD.label, tribes: tribes.length, jimis: jimis.length, roads: roads.length, seaRoutes: seaRoutes.length, bridges: bridges.length
     };
+    // ---- 细部自然地名（放在所有原有命名之后，不改变已有地名）：支脉、丘陵、各级河流 ----
+    { const comps8 = (mask, minN) => { const lab = new Int32Array(N), out = []; let id = 0;
+        for (let s0 = 0; s0 < N; s0++) { if (!mask(s0) || lab[s0]) continue; id++; const c = [s0]; lab[s0] = id; for (let h = 0; h < c.length; h++) for (let d = 0; d < 8; d++) { const j = NB[c[h] * 8 + d]; if (j >= 0 && !lab[j] && mask(j)) { lab[j] = id; c.push(j); } } if (c.length >= minN) out.push(c); }
+        return out; };
+      const geom = (comp) => { const y0 = (comp[0] / W) | 0, x0 = comp[0] - y0 * W; let sx = 0, sy = 0, best = comp[0];
+        const pts = comp.map(i => { const y = (i / W) | 0; let x = i - y * W; if (x - x0 > W / 2) x -= W; if (x0 - x > W / 2) x += W; if (e[i] > e[best]) best = i; sx += x; sy += y; return [x, y, e[i]]; });
+        const mx = sx / comp.length, my = sy / comp.length; let cxx = 0, cyy = 0, cxy = 0; for (const [x, y] of pts) { cxx += (x - mx) ** 2; cyy += (y - my) ** 2; cxy += (x - mx) * (y - my); }
+        const th = 0.5 * Math.atan2(2 * cxy, cxx - cyy), l1 = (cxx + cyy) / 2 + Math.sqrt(((cxx - cyy) / 2) ** 2 + cxy * cxy);
+        return { pts, mx, my, th, len: Math.sqrt(l1 / comp.length) * 8, best, cell: Math.round(my) * W + ((Math.round(mx) % W) + W) % W }; };
+      const fine = [];
+      // 支脉：大山脉内部更高的一段（阈值取山脉基准与主峰之间），只在放大后出现
+      for (const par of comps8(i => land[i] && e[i] >= 1500, 150)) { let pk = 0; for (const i of par) if (e[i] > pk) pk = e[i];
+        const thr = 1500 + 0.42 * (pk - 1500), inPar = new Uint8Array(N); for (const i of par) inPar[i] = 1;
+        for (const c of comps8(i => inPar[i] && e[i] >= thr, 10)) { if (c.length > par.length * 0.6) continue; const g = geom(c), [x, y] = toFull(c.reduce((b, i) => e[i] > e[b] ? i : b, c[0]));
+          fine.push({ type: 'ridge', g, size: c.length, base: thr, peak: Math.round(e[g.best]), x, y }); } }
+      // 丘陵：不含 1500 m 以上山体的独立低山丘陵区
+      const hill = new Uint8Array(N); for (let i = 0; i < N; i++) hill[i] = land[i] && !ice[i] && e[i] >= 550 ? 1 : 0;
+      for (const c of comps8(i => hill[i], 18)) { if (c.some(i => e[i] >= 1500)) continue; const g = geom(c); fine.push({ type: 'hills', g, size: c.length, base: 550, peak: Math.round(e[g.best]) }); }
+      fine.sort((a, b) => b.size - a.size);
+      let nRidge = 0, nHill = 0;
+      for (const f of fine) { if (f.type === 'ridge' ? nRidge++ >= 70 : nHill++ >= 60) continue;
+        const lib = libAt(f.g.cell); let name = draw(lib, 'mountains', f.type === 'ridge' ? '岭' : '山');
+        if (f.type === 'hills') name = name.replace(/(山脉|山地|山|岭|峰)$/, '') + (f.size > 60 ? '丘陵' : '岭');
+        else if (!/(山|岭|峰|脉|岳|嶂|峦|梁|岗|冈|坂|ー)$/.test(name)) name += '岭';
+        const [x, y] = [(f.g.mx + 0.5) * 2, (f.g.my + 0.5) * 2];
+        labels.push({ type: f.type, name, x, y, angle: f.g.th, len: f.g.len, size: f.size, peak: f.peak, ridge: ridgeOf(f.g.pts, f.g.th, f.base) }); }
+      // 各级河流：原有的 40 条大河认领各自的干流，其余干支流按长度依次命名（放大逐级显示）
+      const RV = Hy.rivers, stems = RV.stems || [], rp = RV.pts, ro = RV.offs;
+      const endOf = st => { const r = st.r[0], k = ro[r + 1] - 1; return [rp[k * 7], rp[k * 7 + 1]]; };
+      const taken = new Set();
+      riverNames.forEach(rn => { let bi = -1, bd = 5; stems.forEach((st, si) => { if (st.mouth !== 'ocean' || taken.has(si)) return; const [x, y] = endOf(st), d = Math.hypot(x - rn.x, y - rn.y); if (d < bd) { bd = d; bi = si; } }); if (bi >= 0) { taken.add(bi); rn.stem = bi; rn.tier = stems[bi].tier; rn.km = stems[bi].km; } });
+      const midOf = st => { let n = 0; for (const r of st.r) n += ro[r + 1] - ro[r]; let h = n / 2; for (let j = st.r.length - 1; j >= 0; j--) { const r = st.r[j], m = ro[r + 1] - ro[r]; if (h < m) { const k = ro[r] + Math.floor(h); return [rp[k * 7], rp[k * 7 + 1]]; } h -= m; } return endOf(st); };
+      const minKm = 2 * Math.PI * R * 0.0005, cand = stems.map((st, si) => [st, si]).filter(([st, si]) => !taken.has(si) && (st.tier <= 2 || st.km >= minKm)).sort((a, b) => a[0].tier - b[0].tier || b[0].km - a[0].km).slice(0, 2200);
+      for (const [st, si] of cand) { const [x, y] = midOf(st), ci = Math.min(H - 1, Math.max(0, (y / 2) | 0)) * W + ((((x / 2) | 0) % W) + W) % W;
+        let cell = ci; if (!(land[cell] && civ[cell])) for (let d = 0; d < 8; d++) { const j = NB[ci * 8 + d]; if (j >= 0 && land[j] && civ[j]) { cell = j; break; } }
+        riverNames.push({ x, y, q: 0, name: draw(libAt(cell), 'rivers'), stem: si, tier: st.tier, km: st.km, minor: 1 }); } }
     // 历史推演（core/history.js）所需的中间量：只留在 Worker 内，不随 ready 消息发往页面
     const hist = {
       W, H, N, FW, R, cellKm, lat, cosL, area, NB, gdist, era: cfg.era | 0, seed: cfg.seed, endYear: cfg.endYear || 0, targetCountries: cfg.countries || 0,

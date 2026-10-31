@@ -156,14 +156,20 @@
         const dS = S[s] - S[s - 1], cand = [];
         for (let r = 1; r <= nR; r++) { if (I.id === 'navigation' && (!R.coast[r] || R.newW[r] > 0.5)) continue; // 远洋航海只出现在旧大陆的沿海
           const v = s === 3 ? Math.max(own(s, r) * aff(r), lb(r)) : Y[prev + r] >= INF || !habitable(r) ? INF : Math.max(lb(r), Y[prev + r] + 0.9 * dS * aff(r) * (1 + 0.5 * (1 - suit[r])));
-          if (v < INF) cand.push([r, v, s === 3 ? v : v + dS * (0.22 * rnd() + (prevOrig.some(o => centerDist(o, r) < kmR * 0.04) ? 0.18 : 0))]); } // 兴起之地：随机起伏，刚兴起过思潮的地方稍逊（只影响在哪里兴起，不推迟年代） // 思潮各有兴起之地：随机起伏，刚兴起过思潮的地方稍逊
-        cand.sort((a, b) => a[2] - b[2] || a[0] - b[0]); const vBest = cand.length ? Math.min(...cand.map(c => c[1])) : INF;
+          if (v < INF) cand.push([r, v, v]); }
+        const vBest = cand.length ? Math.min(...cand.map(c => c[1])) : INF;
+        /* 兴起之地：在“已经够格”的地方里（比最早够格者晚不过三成个阶段）随机挑选；之前兴起过思潮的地方（尤其同一座城附近）要让一让，
+           这样思潮不会总出在同一座城；同样够格的地方稍后也会独立想到，所以不会明显推迟年代 */
+        const POOL = 0.3 * dS; // 够格者：比最早够格的地方晚不过这么多年
+        if (s > 3) { const near = (r, d) => { let n = 0; for (const o of prevOrig) if (centerDist(o, r) < kmR * d) n++; return n; };
+          for (const c of cand) { const r = c[0]; c[2] = c[1] > vBest + POOL ? INF + c[1] : c[1] + dS * (0.45 * rnd() + 0.6 * Math.min(3, near(r, 0.015)) + 0.2 * Math.min(3, near(r, 0.04))); } }
+        cand.sort((a, b) => a[2] - b[2] || a[0] - b[0]);
         const nO = I.n === 'all' ? cradles.length : I.n, origins = [];
         for (const [r, v] of cand) { if (origins.length >= nO) break; if (origins.every(([o]) => centerDist(o, r) >= kmR * 0.08)) origins.push([r, v]); }
         const hp = new Heap(NN * 2), seed = (r, v) => { if (v < A[r]) { A[r] = v; SR[r] = r; hp.push(r, v); } };
-        for (const [r, v] of origins) seed(r, Math.max(lb(r), Math.min(v, vBest + 0.12 * dS)));
-        for (const [r, v] of cand) seed(r, I.n === 'all' ? v : v + 0.8 * dS); // 其余地方要晚得多才能独立想到
-        ideaOrigins[k] = origins.map(o => o[0]); if (s > 3) prevOrig.push(...ideaOrigins[k]); ideaBorn[k] = origins.length ? origins[0][1] : INF;
+        for (const [r, v] of origins) seed(r, Math.max(lb(r), Math.min(v, vBest + dS * (s === 3 ? 0.12 : 0.02 + 0.08 * rnd())))); // 兴起之年也各有先后，不会两条思潮同年同地
+        for (const [r, v] of cand) seed(r, I.n === 'all' ? v : v <= vBest + POOL ? v + dS * (0.16 + 0.1 * rnd()) : v + 0.8 * dS); // 同样够格的地方稍后也会独立想到；其余地方要晚得多
+        ideaOrigins[k] = origins.map(o => o[0]); for (const o of ideaOrigins[k]) if (s > 3 || !prevOrig.includes(o)) prevOrig.push(o); ideaBorn[k] = origins.length ? origins[0][1] : INF;
         while (hp.n) { const a = hp.pop(), c = hp.top; if (c !== A[a]) continue;
           for (let kk = off[a]; kk < off[a + 1]; kk++) { const b = nbr[kk], ed = edges[eid[kk]]; const L = lb(b); if (L >= INF) continue;
             if (ed.sea && (R.newW[a] > 0.5) !== (R.newW[b] > 0.5) && k !== NAV && !(NAV >= 0 && IA[NAV * NN + a] <= c)) continue; // 跨洋：须先接纳远洋航海
@@ -209,7 +215,7 @@
       // 古文明：在摇篮点亮、称霸，之后被后来的文明征服同化
       const type = typeOf(cr.region) === 'pastoral' ? 'agrarian' : typeOf(cr.region);
       // 优先：本世界选用、尚未被现存文明占用的同类文化库；其次任一未占用的库；都没有就沿用继承者的库（古今同一风格的名称）
-      const lib = worldLibs.find(l => l.cat === type && !usedLib.has(l.id)) || worldLibs.find(l => !usedLib.has(l.id) && l.cat !== 'new-world') || (c0 >= 0 ? h.civLib[c0] : h.civLib[0]);
+      const lib = worldLibs.find(l => l.cat === type && !usedLib.has(l.id)) || worldLibs.find(l => !usedLib.has(l.id) && l.cat !== 'new-world' && l.cat !== 'pastoral') || worldLibs.find(l => !usedLib.has(l.id) && l.cat !== 'new-world') || (c0 >= 0 ? h.civLib[c0] : h.civLib[0]);
       usedLib.add(lib.id);
       const nm = pickName(lib, 'states', 3);
       const zone = []; const t3 = Y[3 * NN + cr.region];
@@ -223,7 +229,7 @@
       ancient.push(a); cr.ancient = ancient.length - 1; cr.civ = c0;
       zone.forEach(r => { if (ancientOf[r] < 0) { ancientOf[r] = ancient.length - 1; ancientEnd[r] = fall + 35 * Math.max(0, Math.round(centerDist(r, cr.region) / 250)); } });
     });
-    function titlesOf(lib, type) { const t = lib.t || {}; const f = k => (t[k] && t[k][0]) || ''; return { 2: f('chiefdom'), 3: type === 'pastoral' ? f('nomadic') : type === 'maritime' ? f('cityRepublic') : '城邦', 4: type === 'pastoral' ? f('nomadic') : f('monarchy'), 5: f('empire'), league: f('league'), republic: f('republic') }; }
+    function titlesOf(lib, type) { const t = lib.t || {}; const f = k => (t[k] && t[k][0]) || ''; return { 2: f('chiefdom'), 3: type === 'pastoral' ? f('nomadic') : type === 'maritime' ? f('cityRepublic') : (f('city') || '城邦'), 4: type === 'pastoral' ? f('nomadic') : f('monarchy'), 5: f('empire'), league: f('league'), republic: f('republic') }; }
 
     // ---------- 4. 终点：各时代的发展上限；荒野地带（人文推演判为边疆的地方）停留在部落 ----------
     const REQ = { chiefdom: 2, league: 2, nomadic: 3, cityRepublic: 3, monarchy: 4, republic: 4, empire: 5 };
@@ -288,7 +294,11 @@
 
     // ---------- 8. 编年史 ----------
     const regionName = r => { const cs = R.cities[r]; if (cs.length) { let b = cs[0]; for (const k of cs) if (h.settlements[k].score > h.settlements[b].score) b = k; return h.settlements[b].name; } return ''; };
-    const SN = c => STAGE_NAME[civType[c]] || GENERIC;
+    const stageNamesOf = c => { const base = STAGE_NAME[civType[c]] || GENERIC; if (civType[c] !== 'pastoral') return base;
+      const t = ((h.civLib[c] && h.civLib[c].t && h.civLib[c].t.nomadic) || [])[0] || '';
+      if (/汗/.test(t)) return base; // 草原系文化库：汗国、草原帝国、分封汗国
+      return ['游群采集', '牧民营地', '部落', '部族邦联', t && t !== '部族邦联' ? t : '游牧王庭', '游牧帝国', '分封诸部', '定居王朝', '民族国家']; };
+    const SN = stageNamesOf;
     cradles.forEach((cr, ci) => {
       if (!cr.river) { const lib = cr.ancient >= 0 ? ancient[cr.ancient].libObj : h.civLib[Math.max(0, cr.civ)]; let rv = pickName(lib, 'rivers'); if (!/[河江水川溪]$/.test(rv) && !/[a-zA-Z]/.test(rv)) rv += '河'; cr.river = rv; }
       const label = cr.river + '流域';
@@ -322,7 +332,7 @@
     return {
       IDEAS, ideaA: IA, ideaBorn, ideaOrigins, NAV, nwHearths, E, maxStage, Y, NN, civType, civStart, civArr, civAges, hearthR, ancient, ancientOf, ancientEnd, cradles, score, finalStage,
       relFounded, relOrigin, relArr, relPrev, relPrevArr, events, eraStep: step, eraAt,
-      STAGE_KEYS, STAGE_NAME, GENERIC, ERA_NAME, TYPE_LABEL, titlesOf, usedNames: used, NN
+      STAGE_KEYS, STAGE_NAME, stageNamesOf, GENERIC, ERA_NAME, TYPE_LABEL, titlesOf, usedNames: used, NN
     };
   }
 

@@ -2,6 +2,7 @@
 :root { --tlh: 0px; --tld: 0px; }
 body.tl-on .bottomleft { display: none; }
 body.tl-on .bottomright { bottom: calc(var(--tlh) + var(--tld) + 26px); transition: bottom .2s; }
+body.tl-on:has(#tlFeedAll:not([hidden])) .bottomright { display: none; }
 
 .tl-bar { position: fixed; left: calc(var(--rail) + 14px); right: 16px; bottom: 14px; z-index: 7; height: 58px; padding: 0 10px 0 10px; display: flex; align-items: center; gap: 12px; border-radius: 14px; }
 .tl-play { width: 38px; height: 38px; flex: none; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(26, 115, 232, .35); }
@@ -35,7 +36,32 @@ body.tl-on .bottomright { bottom: calc(var(--tlh) + var(--tld) + 26px); transiti
 .tl-feed-row small { font: 600 12px var(--font); color: #f3c26b; margin-right: 8px; }
 .tl-feed-row:hover { background: rgba(28, 26, 24, .92); opacity: 1 !important; }
 .tl-feed-row.flash { animation: tlFlash .5s ease; }
-.tl-feed-more { pointer-events: none; font: 12px var(--font); color: #fff; background: rgba(28, 26, 24, .5); padding: 2px 10px; border-radius: 8px; }
+.tl-feed-more { pointer-events: auto; cursor: pointer; border: 0; display: inline-flex; align-items: center; gap: 6px; font: 12px var(--font); color: rgba(255, 255, 255, .86); background: rgba(28, 26, 24, .58); padding: 4px 8px 4px 12px; border-radius: 999px; backdrop-filter: blur(4px); box-shadow: 0 2px 8px rgba(0, 0, 0, .16); transition: background .15s; }
+.tl-feed-more b { font-weight: 600; color: #f3c26b; }
+.tl-feed-more svg { width: 14px; height: 14px; fill: none; stroke: #f3c26b; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.tl-feed-more:hover { background: rgba(28, 26, 24, .86); }
+.tl-feed-more.only-m { display: none; }
+
+/* 同期各地大事：从字幕处展开的完整列表 */
+/* 停靠在右侧：点一件事时，地图在左边飞过去，列表不挡住它 */
+.tl-feedall { position: fixed; right: 16px; top: 12px; bottom: calc(var(--tlh) + var(--tld) + 26px); z-index: 9; width: min(380px, calc(100vw - var(--rail) - 60px)); max-height: 640px; margin-top: auto; display: flex; flex-direction: column; padding: 12px 8px 8px 14px; border-radius: 14px; animation: tlIn .2s ease; }
+.tl-feedall header { display: flex; align-items: flex-start; gap: 8px; padding-right: 2px; }
+.tl-feedall header div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tl-feedall header b { font: 700 15px "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--ink); }
+.tl-feedall header small { font-size: 11.5px; color: var(--ink3); }
+.tl-fa-sum { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 8px 6px 6px 0; }
+.tl-fa-sum span { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--c) 12%, #fff); color: var(--c); font-weight: 600; }
+.tl-feedall ul { list-style: none; margin: 0; padding: 0 6px 0 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; flex: 1; min-height: 0; }
+.tl-feedall ul::-webkit-scrollbar { display: none; }
+.tl-feedall li { display: grid; grid-template-columns: 36px auto 1fr; align-items: baseline; gap: 8px; padding: 5px 6px; border-radius: 8px; cursor: pointer; font: 13.5px/1.45 "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--ink); }
+.tl-feedall li + li { border-top: 1px solid rgba(0, 0, 0, .04); }
+.tl-feedall li:hover { background: #f4f2ec; }
+.tl-feedall li.on { background: var(--accent-soft); }
+.tl-feedall li b { font: 600 12px var(--font); color: #8a6d3b; font-variant-numeric: tabular-nums; text-align: right; }
+.tl-feedall li i { font: 600 10.5px var(--font); font-style: normal; padding: 1px 6px; border-radius: 5px; color: #fff; background: var(--c); white-space: nowrap; }
+.tl-feedall li.none { display: block; cursor: default; color: var(--ink3); text-align: center; padding: 18px 0; }
+.c-war { --c: #b03030; } .c-state { --c: #4a6fa5; } .c-revolt { --c: #d35400; } .c-idea { --c: #b8860b; } .c-faith { --c: #7a4fa0; } .c-city { --c: #8a6a2e; } .c-woe { --c: #5d5d5d; } .c-civ { --c: #2f7d4f; }
+@keyframes tlIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
 
 
 
@@ -58,11 +84,20 @@ body.tl-on .bottomright { bottom: calc(var(--tlh) + var(--tld) + 26px); transiti
 .tl-rows::-webkit-scrollbar { display: none; }
 
 @media (max-width: 1000px) { .tl-caption { max-width: calc(100vw - var(--rail) - 60px); bottom: calc(var(--tlh) + var(--tld) + 80px); } .tl-legend { max-width: 220px; } }
-@media (max-width: 760px) { .tl-chip, .tl-year span { display: none; } .tl-year { width: 78px; } .tl-seg button { padding: 5px 6px; } }
+@media (max-width: 760px) and (min-height: 541px), (max-width: 760px) and (orientation: portrait) {
+  .tl-bar { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: thin; }
+  .tl-chip, .tl-year span { display: none; }
+  .tl-year { width: 78px; }
+  .tl-seg button { padding: 5px 6px; }
+}
 
 /* 图例里的开关 */
 .tl-toggle { flex-basis: 100%; display: flex; align-items: center; gap: 6px; margin-top: 2px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--ink); cursor: pointer; }
 .tl-toggle input { margin: 0; accent-color: var(--accent); }
+.tl-syms { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 3px 10px; font-size: 11.5px; color: var(--ink2); }
+.tl-syms span { gap: 1px; }
+.tl-syms svg.mi { margin-right: 0 !important; }
+.tl-syms svg.mi[viewBox="0 0 28 14"] { width: 20px; margin: 0 -2px; }
 
 /* 城市兴衰卡：右上 */
 .tl-city { position: fixed; right: 16px; top: 12px; z-index: 8; width: 300px; padding: 14px 16px 12px; border-radius: 14px; font-size: 12.5px; color: var(--ink2); }
@@ -88,32 +123,195 @@ body.tl-on .bottomright { bottom: calc(var(--tlh) + var(--tld) + 26px); transiti
 .tl-pick.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .tl-link { color: var(--accent); cursor: pointer; text-decoration: none; }
 .tl-link:hover { text-decoration: underline; }
-.tl-focus { position: fixed; right: 16px; top: 12px; z-index: 8; width: 320px; max-height: calc(100vh - var(--tlh) - 48px); overflow-y: auto; scrollbar-width: none; padding: 14px 16px 12px; border-radius: 14px; font-size: 12.5px; color: var(--ink2); }
+/* ---- 单国视角：现代数据面板（灰阶 + 国色点缀，细线分隔，等宽数字） ---- */
+.tl-focus { --pc: 120, 120, 120; --t1: #0f1114; --t2: #5b6169; --t3: #9aa0a7; --hair: rgba(15, 17, 20, .08); --hover: rgba(15, 17, 20, .035);
+  --num: ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, monospace;
+  position: fixed; right: 16px; top: 12px; z-index: 8; width: 320px; max-height: calc(100vh - var(--tlh) - 48px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  padding: 0 18px 12px; border-radius: 16px; font-size: 12.5px; line-height: 1.5; color: var(--t2); background: #fff;
+  box-shadow: 0 0 0 1px rgba(15, 17, 20, .06), 0 12px 32px -8px rgba(15, 17, 20, .18), 0 2px 6px rgba(15, 17, 20, .06); }
 .tl-focus::-webkit-scrollbar { display: none; }
-.tl-focus h3 { margin: 0 0 2px; font: 700 20px "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--ink); padding-right: 28px; }
-.tl-focus h4 { margin: 12px 0 4px; font-size: 12.5px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
-.tl-focus h4 small { font-weight: 500; color: var(--ink3); }
-.tl-focus-life { margin: 0 0 6px; color: var(--ink3); }
-.tl-focus-line { margin: 2px 0; line-height: 1.5; }
-.tl-focus-line b { color: var(--ink); margin-right: 6px; font-weight: 600; }
-.tl-focus canvas { display: block; width: 100%; margin: 8px 0 4px; border-radius: 6px; background: #f7f8f9; }
-.tl-focus dl { margin: 0; display: grid; gap: 3px; }
-.tl-focus dl div { display: flex; justify-content: space-between; gap: 10px; }
-.tl-focus dt { color: var(--ink3); white-space: nowrap; }
-.tl-focus dd { margin: 0; color: var(--ink); text-align: right; }
-.tl-mini { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 132px; overflow-y: auto; scrollbar-width: none; }
-.tl-mini::-webkit-scrollbar { display: none; }
-.tl-mini li { cursor: pointer; padding: 2px 4px; border-radius: 6px; line-height: 1.45; }
-.tl-mini li:hover { background: #f1f4f6; }
-.tl-mini li b { color: #8a6d3b; margin-right: 6px; font-variant-numeric: tabular-nums; font-weight: 600; }
-.tl-mini li small { margin-left: 6px; color: var(--ink3); }
-.tl-mini li.none { cursor: default; color: var(--ink3); }
-.tl-lin { margin-left: auto; font-weight: 400; font-size: 11.5px; color: var(--ink2); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-.tl-linlist { display: flex; flex-wrap: wrap; gap: 4px 6px; }
-.tl-chipl { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; background: #f1f4f6; color: var(--ink); cursor: pointer; font-size: 12px; }
-.tl-chipl i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-.tl-chipl small { color: var(--ink3); font-size: 10.5px; }
-.tl-chipl.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.tl-focus .tl-city-x { z-index: 2; top: 12px; right: 10px; color: var(--t3); }
+.tl-focus .tl-city-x:hover { color: var(--t1); background: var(--hover); }
+.tl-focus .tl-link { color: var(--t1); text-decoration: underline; text-decoration-color: rgba(15, 17, 20, .25); text-underline-offset: 3px; }
+.tl-focus .tl-link:hover { text-decoration-color: currentColor; }
+.tl-focus .mute { color: var(--t3); }
+
+/* 头部 */
+.tf-head { padding: 20px 32px 0 0; }
+.tf-eyebrow { margin: 0; display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 500; letter-spacing: .04em; color: var(--t3); }
+.tf-eyebrow i { width: 8px; height: 8px; border-radius: 2px; background: rgb(var(--pc)); flex: none; }
+.tl-focus h3 { margin: 6px 0 0; font: 650 24px/1.15 var(--font); letter-spacing: -.01em; color: var(--t1); overflow-wrap: anywhere; }
+.tf-sub { margin: 4px 0 0; font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--t3); }
+
+/* 关键数字：三栏 */
+.tf-kpis { display: grid; grid-template-columns: repeat(3, 1fr); margin: 18px 0 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.tf-kpis > div { padding: 10px 0 10px 12px; min-width: 0; }
+.tf-kpis > div:first-child { padding-left: 0; }
+.tf-kpis > div + div { border-left: 1px solid var(--hair); }
+.tf-kpis small { display: block; font-size: 10.5px; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf-kpis b { display: block; margin-top: 2px; font: 600 20px/1.2 var(--num); letter-spacing: -.02em; color: var(--t1); white-space: nowrap; }
+.tf-kpis b em { margin-left: 3px; font: 400 10.5px var(--font); font-style: normal; letter-spacing: 0; color: var(--t3); }
+.tf-kpis b span { font: 500 13px/24px var(--font); color: var(--t2); }
+.tf-kpis .hot b { color: rgb(var(--pc)); }
+
+/* 在整部历史中的位置 */
+.tf-span { position: relative; height: 2px; margin: 14px 0 0; background: var(--hair); }
+.tf-span em { position: absolute; top: 0; bottom: 0; background: rgb(var(--pc)); }
+.tf-span u { position: absolute; top: -4px; width: 2px; height: 10px; margin-left: -1px; background: var(--t1); }
+
+/* 来历 / 结局 / 都城 */
+.tf-fate { margin: 14px 0 0; display: grid; gap: 6px; }
+.tf-fate div { display: grid; grid-template-columns: 40px 1fr; gap: 10px; }
+.tf-fate dt { color: var(--t3); font-size: 11.5px; }
+.tf-fate dd { margin: 0; color: var(--t1); }
+
+/* 疆域曲线 */
+.tf-chart { margin: 14px 0 0; }
+.tf-chart canvas { display: block; }
+
+/* 人口：总量、占比、排名 + 民族 / 信仰 / 生计构成 + 主要城市 + 人口曲线 */
+.tp-head { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; }
+.tp-big small { display: block; font-size: 10.5px; color: var(--t3); }
+.tp-big b { display: block; font: 600 26px/1.1 var(--num); letter-spacing: -.03em; color: var(--t1); white-space: nowrap; }
+.tp-big b em { margin-left: 3px; font: 500 12px var(--font); font-style: normal; letter-spacing: 0; color: var(--t2); }
+.tp-kv { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; padding-left: 14px; border-left: 1px solid var(--hair); }
+.tp-kv div { min-width: 0; }
+.tp-kv dt { font-size: 10px; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-kv dd { margin: 0; font: 600 12.5px/1.3 var(--num); color: var(--t1); white-space: nowrap; }
+.tp-kv dd small { font-weight: 400; font-size: 10px; color: var(--t3); }
+.tp-note { margin: 10px 0 0; font-size: 11.5px; color: var(--t2); line-height: 1.55; }
+.tp-note b { color: var(--t1); font-weight: 600; }
+.tp-block { margin: 14px 0 0; }
+.tp-block h5 { margin: 0 0 6px; display: flex; align-items: baseline; gap: 8px; font: 600 11.5px var(--font); color: var(--t1); }
+.tp-block h5 small { margin-left: auto; font: 400 10.5px var(--font); color: var(--t3); }
+.tp-bar { display: flex; height: 8px; border-radius: 3px; overflow: hidden; background: rgba(15, 17, 20, .05); gap: 1px; }
+.tp-bar i { display: block; min-width: 2px; height: 100%; }
+.tp-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 1px; }
+.tl-focus .tp-list li { display: grid; grid-template-columns: 8px 1fr 34px 58px; align-items: center; column-gap: 8px; padding: 2px 0; cursor: default; }
+.tp-list li i { width: 8px; height: 8px; border-radius: 2px; }
+.tp-list li span { min-width: 0; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-list li span small { margin-left: 5px; font-size: 10px; color: var(--t3); }
+.tl-focus .tp-list li b { font: 600 11px var(--num); color: var(--t1); text-align: right; }
+.tp-list li em { font: 400 10.5px var(--num); font-style: normal; color: var(--t3); text-align: right; white-space: nowrap; }
+.tp-cities { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.tl-focus .tp-cities li { display: grid; grid-template-columns: 82px 1fr 58px; align-items: center; column-gap: 8px; padding: 2px 0; cursor: default; }
+.tp-cities li span { min-width: 0; color: var(--t1); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-cities li span small { margin-left: 4px; padding: 0 4px; border-radius: 3px; font-size: 9.5px; font-weight: 600; color: #fff; background: var(--t1); }
+.tp-cities li u { display: block; height: 4px; border-radius: 2px; background: rgba(15, 17, 20, .06); overflow: hidden; }
+.tp-cities li u s { display: block; height: 100%; border-radius: 2px; background: rgba(var(--pc), .85); }
+.tp-cities li em { font: 400 10.5px var(--num); font-style: normal; color: var(--t2); text-align: right; white-space: nowrap; }
+.tf-popcurve { margin-top: 14px; }
+
+/* 栏目 */
+.tf-sec { margin: 22px 0 0; padding-top: 14px; border-top: 1px solid var(--hair); }
+.tl-focus h4 { margin: 0 0 10px; display: flex; align-items: baseline; gap: 8px; font: 600 13px var(--font); color: var(--t1); }
+.tl-focus h4 small { margin-left: auto; font: 400 11px var(--font); color: var(--t3); }
+.tf-none { margin: 0; color: var(--t3); }
+.tl-focus li { cursor: pointer; }
+.tl-focus li.none { cursor: default; color: var(--t3); }
+.tl-focus li b { font: 500 11px/inherit var(--num); color: var(--t3); font-variant-numeric: tabular-nums; }
+
+/* 长列表：内部滚动，底部渐隐 */
+.tf-fade { list-style: none; margin: 0; padding: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; -webkit-mask-image: linear-gradient(#000 calc(100% - 24px), transparent); mask-image: linear-gradient(#000 calc(100% - 24px), transparent); }
+.tf-fade::-webkit-scrollbar { display: none; }
+.tf-fade.end { -webkit-mask-image: none; mask-image: none; }
+
+/* 通用行：年份列 + 正文 + 右侧元信息 */
+.tf-revs li, .tf-annals li, .tf-rulers li { display: grid; grid-template-columns: 38px 1fr auto; column-gap: 10px; align-items: baseline; padding: 5px 6px; margin: 0 -6px; border-radius: 6px; }
+.tf-revs li:hover, .tf-annals li:hover, .tf-rulers li:hover, .tf-grid li:hover, .tf-steps li:hover, .tf-tags li:hover, .tf-chain li:hover { background: var(--hover); }
+
+/* 思潮：分段刻度 */
+.tf-meters { display: grid; gap: 10px; margin: 0 0 12px; }
+.tf-meter { display: grid; grid-template-columns: 32px 1fr 26px; align-items: center; column-gap: 10px; }
+.tf-meter b { font: 500 12px var(--font); color: var(--t1); }
+.tf-meter i { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; }
+.tf-meter s { height: 8px; border-radius: 1.5px; background: rgba(15, 17, 20, .07); }
+.tf-meter s.on { background: var(--t1); }
+.tf-meter.mil s.on { background: #d4483b; }
+.tf-meter.adm s.on { background: #3b6fd4; }
+.tf-meter em { font: 500 11px var(--num); font-style: normal; color: var(--t2); text-align: right; }
+.tf-meter small { grid-column: 2 / 4; margin-top: 4px; font-size: 11px; color: var(--t3); line-height: 1.4; }
+.tf-tags { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; max-height: 150px; }
+.tf-tags li { --mc: rgba(15, 17, 20, .2); display: flex; align-items: baseline; gap: 7px; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; color: var(--t1); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf-tags li::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--mc); flex: none; transform: translateY(-1px); }
+.tf-tags li.mil, .tf-key .mil { --mc: #d4483b; }
+.tf-tags li.adm, .tf-key .adm { --mc: #3b6fd4; }
+.tf-tags li.sea, .tf-key .sea { --mc: #18a37a; }
+.tf-key { display: flex; gap: 14px; margin: 8px 0 0; font-size: 10.5px; color: var(--t3); }
+.tf-key span::before { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin-right: 5px; background: var(--mc); vertical-align: 1px; }
+
+/* 政府组织：编号阶段 */
+.tf-steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+.tf-steps li { display: grid; grid-template-columns: 22px 1fr auto; column-gap: 10px; align-items: baseline; padding: 6px; margin: 0 -6px; border-radius: 6px; color: var(--t1); }
+.tf-steps li + li { box-shadow: 0 -1px 0 var(--hair); }
+.tf-steps li i { font: 500 11px var(--num); font-style: normal; color: var(--t3); }
+.tf-steps li.cur i { color: rgb(var(--pc)); font-weight: 700; }
+.tf-steps li.cur span { font-weight: 600; }
+
+/* 君主世系：年份 · 名字 · 在位长度条 */
+.tf-rulers { max-height: 230px; }
+.tf-rulers li { grid-template-columns: 38px 1fr 64px; position: relative; }
+.tf-rulers li span { color: var(--t1); font-weight: 500; min-width: 0; }
+.tf-rulers li span em { font-style: normal; font-weight: 400; color: var(--t3); margin-right: 5px; }
+.tf-rulers li span small { margin-left: 6px; font-size: 10.5px; font-weight: 400; color: var(--t3); }
+.tf-rulers li u { justify-self: end; align-self: center; height: 4px; border-radius: 2px; background: rgba(15, 17, 20, .14); }
+.tf-rulers li.cur { background: rgba(var(--pc), .1); }
+.tf-rulers li.cur b, .tf-rulers li.cur span { color: var(--t1); font-weight: 650; }
+.tf-rulers li.cur u { background: rgb(var(--pc)); }
+.tf-rulers li.none { display: block; padding-left: 54px; font-size: 11.5px; }
+
+/* 历代都城：带节点的时间线 */
+.tf-chain { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; row-gap: 6px; }
+.tf-chain li { position: relative; display: flex; flex-direction: column; min-width: 64px; padding: 14px 12px 4px 0; border-radius: 6px; }
+.tf-chain li::before { content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 1px; background: var(--hair); }
+.tf-chain li:last-child::before { right: auto; width: 8px; }
+.tf-chain li::after { content: ""; position: absolute; left: 0; top: 1px; width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1.5px var(--t3); }
+.tf-chain li span { font-weight: 600; color: var(--t1); white-space: nowrap; }
+.tf-chain li span small { margin-left: 4px; font-weight: 400; font-size: 10.5px; color: var(--t3); }
+.tf-chain li em { font-style: normal; font-size: 10.5px; color: #18a37a; }
+.tf-chain li.cur::after { background: rgb(var(--pc)); box-shadow: 0 0 0 3px rgba(var(--pc), .2); }
+.tf-chain li:hover { background: none; }
+.tf-chain li:hover span { text-decoration: underline; text-underline-offset: 3px; }
+
+/* 历代辖省：两列 */
+.tf-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; max-height: 200px; }
+.tf-grid li { position: relative; padding: 5px 6px 5px 14px; margin: 0 -6px 0 -6px; border-radius: 6px; min-width: 0; line-height: 1.35; }
+.tf-grid li::before { content: ""; position: absolute; left: 6px; top: 10px; width: 3px; height: 3px; border-radius: 50%; background: var(--t3); }
+.tf-grid li.cur::before { width: 5px; height: 5px; left: 5px; top: 9px; background: rgb(var(--pc)); }
+.tf-grid li span { display: block; font-weight: 500; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf-grid li small { margin-left: 6px; font-size: 10px; color: var(--t3); }
+
+/* 起义与民变 */
+.tf-revs { max-height: 160px; }
+.tf-revs li span { color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf-revs li em { font-style: normal; font-size: 11px; color: var(--t3); white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.tf-revs li em::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.o-suppress { color: var(--t3) !important; }
+.o-state { color: #d98a1c !important; }
+.o-overthrow { color: #d4483b !important; }
+
+/* 大事 */
+.tf-annals { max-height: 220px; }
+.tf-annals li { grid-template-columns: 38px 1fr; }
+.tf-annals li span { color: var(--t1); }
+
+/* 国统 */
+.tl-lin { order: 2; margin-left: 8px; font: 400 11px var(--font); color: var(--t2); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; align-self: center; }
+.tl-lin input { margin: 0; accent-color: var(--t1); }
+.tl-linlist { display: flex; flex-wrap: wrap; gap: 6px; }
+.tl-chipl { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 7px; color: var(--t1); cursor: pointer; font-size: 12px; box-shadow: inset 0 0 0 1px var(--hair); transition: box-shadow .15s, background .15s; }
+.tl-chipl:hover { background: var(--hover); }
+.tl-chipl i { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+.tl-chipl small { font: 10.5px var(--num); color: var(--t3); }
+.tl-chipl.on { box-shadow: inset 0 0 0 1.5px var(--t1); font-weight: 600; }
+
+/* 底部操作：贴底常驻 */
+.tf-acts { position: sticky; bottom: -12px; z-index: 1; display: flex; gap: 6px; margin: 20px -18px -12px; padding: 12px 18px; background: rgba(255, 255, 255, .92); backdrop-filter: blur(8px); border-top: 1px solid var(--hair); }
+.tf-acts button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px rgba(15, 17, 20, .12); font-size: 12px; font-weight: 500; color: var(--t1); }
+.tf-acts button:hover { background: var(--hover); }
+.tf-acts button.pri { flex: 1; background: var(--t1); color: #fff; box-shadow: none; }
+.tf-acts button.pri:hover { background: #2a2e34; }
+.tf-acts button svg { width: 11px; height: 11px; fill: currentColor; }
 body.tl-on .tl-city { top: 12px; }
 
 /* 世系河流图：铺满地图区域（时间轴之上） */
@@ -129,3 +327,16 @@ body.tl-on .tl-city { top: 12px; }
 .tl-river-tip b { font: 600 13px "Songti SC", "STSong", "Noto Serif SC", serif; }
 .tl-river-tip span { color: #e2ddd2; }
 .tl-pick.dim { opacity: .45; }
+
+/* 西方式：一个国家、历代王朝 */
+.tf-houses { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.tf-houses li { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 8px; border-radius: 999px; background: rgba(15, 17, 20, .05); font-size: 11.5px; color: var(--t2); cursor: pointer; }
+.tf-houses li b { font: 500 10.5px var(--num); color: var(--t3); }
+.tf-houses li em { font-style: normal; font-size: 10px; color: #8e1b1b; }
+.tf-houses li.cur { background: rgba(var(--pc), .16); color: var(--t1); font-weight: 600; }
+.tf-rulers li.tf-house-sep { display: block; padding: 7px 6px 3px; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; color: rgb(var(--pc)); filter: brightness(.7); }
+.tf-rulers li.tf-house-sep:hover { background: none; }
+/* 去前缀开关（与人文图共用） */
+.tl-chip.tl-pre { white-space: nowrap; }
+.tl-chip.tl-pre.on { background: #e8f0fe; color: #1a73e8; box-shadow: inset 0 0 0 1px rgba(26,115,232,.35); }
+@media (max-width: 760px) and (min-height: 541px), (max-width: 760px) and (orientation: portrait) { .tl-chip.tl-pre { display: inline-block; min-width: 0; padding: 0 6px; font-size: 11.5px; } }

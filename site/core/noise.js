@@ -107,12 +107,27 @@
   const crRaw = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
   function surfaceRaw(A, W, H, x, y) { // 不夹值的三次插值：处处连续（格边两侧一致）
     const fx = x - 0.5, fy = Math.min(H - 1, Math.max(0, y - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
-    const xa = ((x0 - 1) % W + W) % W, xb = (xa + 1) % W, xc = (xb + 1) % W, xd = (xc + 1) % W;
+    let xa = (x0 - 1) % W; if (xa < 0) xa += W;
+    const xb = xa + 1 === W ? 0 : xa + 1, xc = xb + 1 === W ? 0 : xb + 1, xd = xc + 1 === W ? 0 : xc + 1;
     let r0 = 0, r1 = 0, r2 = 0, r3 = 0, lo = Infinity, hi = -Infinity;
     for (let j = 0; j < 4; j++) { let yy = y0 - 1 + j; yy = yy < 0 ? 0 : yy >= H ? H - 1 : yy; const o = yy * W;
       if (j === 1 || j === 2) { const a = A[o + xb], b = A[o + xc]; if (a < lo) lo = a; if (b < lo) lo = b; if (a > hi) hi = a; if (b > hi) hi = b; }
       const v = crRaw(A[o + xa], A[o + xb], A[o + xc], A[o + xd], tx); if (j === 0) r0 = v; else if (j === 1) r1 = v; else if (j === 2) r2 = v; else r3 = v; }
     sLo = lo; sHi = hi; return crRaw(r0, r1, r2, r3, ty);
+  }
+  const sr2out = [0, 0];
+  function surfaceRaw2(A, B, W, H, x, y) { // 与 surfaceRaw 同一插值，一次共用格点与权重采两个场（高程 + 湖泊连采）
+    const fx = x - 0.5, fy = Math.min(H - 1, Math.max(0, y - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    let xa = (x0 - 1) % W; if (xa < 0) xa += W;
+    const xb = xa + 1 === W ? 0 : xa + 1, xc = xb + 1 === W ? 0 : xb + 1, xd = xc + 1 === W ? 0 : xc + 1;
+    let a0 = 0, a1 = 0, a2 = 0, a3 = 0, b0 = 0, b1 = 0, b2 = 0, b3 = 0, lo = Infinity, hi = -Infinity;
+    for (let j = 0; j < 4; j++) { let yy = y0 - 1 + j; yy = yy < 0 ? 0 : yy >= H ? H - 1 : yy; const o = yy * W;
+      if (j === 1 || j === 2) { const a = A[o + xb], b = A[o + xc]; if (a < lo) lo = a; if (b < lo) lo = b; if (a > hi) hi = a; if (b > hi) hi = b; }
+      const v = crRaw(A[o + xa], A[o + xb], A[o + xc], A[o + xd], tx); if (j === 0) a0 = v; else if (j === 1) a1 = v; else if (j === 2) a2 = v; else a3 = v;
+      const w = crRaw(B[o + xa], B[o + xb], B[o + xc], B[o + xd], tx); if (j === 0) b0 = w; else if (j === 1) b1 = w; else if (j === 2) b2 = w; else b3 = w; }
+    sLo = lo; sHi = hi;
+    sr2out[0] = crRaw(a0, a1, a2, a3, ty); sr2out[1] = crRaw(b0, b1, b2, b3, ty);
+    return sr2out;
   }
   function surface(A, W, H, x, y) {
     const fx = x - 0.5, fy = Math.min(H - 1, Math.max(0, y - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
@@ -195,7 +210,7 @@
     const t = cv / 100; if (t >= 0.85) return dg;
     const h = 0.03, cl = Math.max(0.15, Math.cos((0.5 - y / H) * Math.PI));
     const gx = (coastSurface(A, W, H, x + h, y) - coastSurface(A, W, H, x - h, y)) / (2 * h) / cl, gy = (coastSurface(A, W, H, x, y + h) - coastSurface(A, W, H, x, y - h)) / (2 * h);
-    const gm = Math.hypot(gx, gy), dl = gm > 1e-6 ? Math.min(1.5, cv / gm) : dg;
+    const gm = Math.sqrt(gx * gx + gy * gy), dl = gm > 1e-6 ? Math.min(1.5, cv / gm) : dg;
     const u = Math.max(0, Math.min(1, (t - 0.45) / 0.4)), w = u * u * (3 - 2 * u); // 起伏带内用局部距离，向外平滑交给格网距离
     return dl + (dg - dl) * w;
   }
@@ -214,5 +229,5 @@
   function coastKeeps(level, cv, A, W, H, x, y) { if (cv <= 0) return false; return smin(level, coastCap(cv, A, W, H, x, y)) >= 0.6 * level; }
   function setCoastScale(km) { if (km > 0 && isFinite(km)) coastKm = km; }
 
-  G.Noise = { mulberry32, simplex2, simplex3, fbm3, ridged3, fbm2, bspline, surface, surfaceRaw, cr, coastSurface, coastElev, coastKeeps, setCoastScale };
+  G.Noise = { mulberry32, simplex2, simplex3, fbm3, ridged3, fbm2, bspline, surface, surfaceRaw, surfaceRaw2, cr, coastSurface, coastElev, coastKeeps, setCoastScale };
 })(typeof self !== 'undefined' ? self : this);

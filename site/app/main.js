@@ -126,7 +126,7 @@
 
   // ---------- Worker ----------
   let worker = null, seq = 0;
-  const pending = new Map();
+  const pending = new Map(), strips = new Map();
   let shim = null;
   function startWorker() {
     try {
@@ -152,16 +152,25 @@
     if (m.type === 'progress') return onProgress(m);
     if (m.type === 'histProgress') return G.Timeline && G.Timeline.progress(m);
     if (m.type === 'ready') return onReady(m);
+    if (m.type === 'overlays') return onOverlays(m);
+    if (m.type === 'strip' || m.type === 'stripEnd') { const cb = strips.get(m.id); if (cb) { if (m.type === 'strip') cb(m); else strips.delete(m.id); } return; }
     if (m.type === 'contoursFine') { if (app.data) { app.data.contoursFine = m.contours; if (map.paths) { map.paths.cont.fine = null; map.draw(); } } return; }
     if (m.type === 'error') { console.error(m.message); toast('推演出错：' + m.message.split('\n')[0]); $('progress').hidden = true; return; }
     const r = pending.get(m.id); if (r) { pending.delete(m.id); r(m); }
   }
-  app.render = async function (req) {
-    const m = await call('render', { req });
-    const img = new ImageData(new Uint8ClampedArray(m.buf.buffer || m.buf), req.w, req.h);
-    if (window.createImageBitmap) return createImageBitmap(img);
-    const c = document.createElement('canvas'); c.width = req.w; c.height = req.h; c.getContext('2d').putImageData(img, 0, 0); return c;
+  app.render = function (req, onStrip) {
+    const id = ++seq;
+    const p = new Promise(res => { pending.set(id, res); if (onStrip) strips.set(id, onStrip); });
+    post({ type: 'render', id, req });
+    const out = p.then(m => {
+      const img = new ImageData(new Uint8ClampedArray(m.buf.buffer || m.buf), req.w, req.h);
+      if (window.createImageBitmap) return createImageBitmap(img);
+      const c = document.createElement('canvas'); c.width = req.w; c.height = req.h; c.getContext('2d').putImageData(img, 0, 0); return c;
+    });
+    out.renderId = id;
+    return out;
   };
+  app.cancelRender = function (id) { strips.delete(id); post({ type: 'cancelRender', id }); };
 
   // ---------- 推演 ----------
   const STAGES = ['板块漂移', '大陆核心', '板块边界', '地壳均衡', '山脉细节', '水力侵蚀', '四季气候', '气候分类', '水系汇流', '河流流量', '流域划分', '河道描绘', '文明', '等高线与气象场'];
@@ -182,6 +191,7 @@
   // restore：从存档 / 世界文件打开时传入 { name, ms }，进度卡说明这是按存档设置重新推演
   function generate(st, restore) {
     if (G.City && G.City.current !== null) G.City.close();
+    strips.clear(); // 上一个世界的条带回调一律作废
     if (!st.libs) st.libs = G.Home.snapshot();
     if (!st.rlibs && G.RelLib) st.rlibs = G.RelLib.snapshot();
     G.Home.hide(); $('libPage').hidden = true;
@@ -237,6 +247,13 @@
     setTimeout(() => { saveWorld(); G.Home.setJob({ name: $('worldName').textContent, seed: app.state.seed, stage: '推演完成 · 用时 ' + (m.info.ms / 1000).toFixed(1) + ' 秒', f: 1, done: true, thumb: worldThumb() }); }, 1500);
     toast(`推演完成 · 用时 ${(m.info.ms / 1000).toFixed(1)} 秒 · 网格 ${m.W}×${m.H}`);
     offerUpgrade(); renderFileInfo();
+  }
+
+  // 覆盖层（等高线 / 气象场 / 国界省界 / 专题注记）在 ready 之后补算完成，合并进数据并重画
+  function onOverlays(m) {
+    if (!app.data) return;
+    Object.assign(app.data, m.data);
+    map.buildPaths(); map.draw(); map.scheduleFrame();
   }
 
   // ---------- 地图 / 球体 ----------

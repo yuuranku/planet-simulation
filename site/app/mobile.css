@@ -152,7 +152,7 @@
   body.tl-on .world-card { display: none; }
   body.tl-on .bottomright { bottom: calc((var(--tlh) + var(--tld)) + 14px); }
   body.tl-on .toast { bottom: calc(var(--tlh) + 18px); }
-  body.tl-on:has(#tlFeedAll:not([hidden])) .bottomright, body.tl-on:has(#tlFocus:not([hidden])) .bottomright, body.tl-on:has(#tlCity:not([hidden])) .bottomright, body.tl-on:has(#tlRiver:not([hidden])) .bottomright, body.tl-on:has(#tlDrawer:not([hidden])) .bottomright, body.tl-on:has(#tlDrawer:not([hidden])) .tl-legend { display: none; }
+  body.tl-on:has(#tlFeedAll:not([hidden])) .bottomright, body.tl-on:has(#tlFocus:not([hidden])) .bottomright, body.tl-on:has(#tlCity:not([hidden])) .bottomright, body.tl-on:has(#tlProv:not([hidden])) .bottomright, body.tl-on:has(#tlRiver:not([hidden])) .bottomright, body.tl-on:has(#tlDrawer:not([hidden])) .bottomright, body.tl-on:has(#tlDrawer:not([hidden])) .tl-legend { display: none; }
   .tl-bar { left: calc(var(--rail) + var(--salz) + var(--gap)); right: calc(var(--gap) + var(--sarz)); bottom: 8px; height: 54px; gap: 10px; }
   .tl-legend { left: calc(var(--rail) + var(--salz) + var(--gap)); bottom: calc((var(--tlh) + var(--tld)) + 14px); max-width: 250px; max-height: calc(var(--vh) - (var(--tlh) + var(--tld)) - 80px); overflow-y: auto; overscroll-behavior: contain; padding: 9px 11px; scrollbar-width: none; }
   .tl-legend::-webkit-scrollbar { display: none; }

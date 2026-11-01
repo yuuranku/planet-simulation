@@ -42,6 +42,7 @@
     if (vis('tlRiver')) return tap($('tlRiverX'));
     if (vis('tlFocus')) return tap($('tlFocus').querySelector('[data-act=x]'));
     if (vis('tlCity')) return tap($('tlCity').querySelector('[data-act=x]'));
+    if (vis('tlProv')) return tap($('tlProv').querySelector('[data-act=x]'));
     if (vis('tlDrawer')) return tap($('tlDrawerX'));
     if (vis('timeline')) return tap($('tlClose'));
     var app = window.app; if (app && app.tool) return tap(document.querySelector('[data-tool=' + app.tool + ']'));

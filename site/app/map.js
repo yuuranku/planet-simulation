@@ -33,7 +33,7 @@
     this.d = d; this.W = d.W; this.H = d.H; this.urban = new Map(); this.urbanReq = new Set(); this.stemCache = null;
     this.kmPerGrid = 2 * Math.PI * d.cfg.radius / d.W;
     this.buildPaths();
-    this.tex = null; this.texKey = ''; if (this.tiles) this.tiles.clear(); if (this.inflight) this.inflight.clear(); this.queue = [];
+    this.tex = null; this.texKey = ''; if (this.tiles) this.tiles.clear(); if (this.inflight) this.inflight.clear(); if (this.inflightId) this.inflightId.clear(); this.queue = [];
     this.gen = (this.gen || 0) + 1; // 世界代号：上一个世界还在路上的瓦片、纹理一律作废
     this.fit(); this.fitted = true;
     this.refreshRaster();
@@ -44,11 +44,11 @@
   MP.buildPaths = function () {
     const d = this.d;
     const cont = { land: new Path2D(), sea: new Path2D(), index: new Path2D(), fine: null, fineIndex: null };
-    for (const c of d.contours) { const p = c.level <= 0 ? cont.sea : c.k % 4 === 0 ? cont.index : cont.land, a = c.pts; p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) p.lineTo(a[k], a[k + 1]); }
-    const roads = {}; for (const k of ['trunk', 'regional', 'local', 'sea', 'rail', 'seaTrunk']) roads[k] = toPath(smoothLines(d.roads[k] || []));
-    const borders = {}; for (const k of ['country', 'frontier', 'province', 'claim']) borders[k] = toPath(d.borders[k] || []);
+    for (const c of d.contours || []) { const p = c.level <= 0 ? cont.sea : c.k % 4 === 0 ? cont.index : cont.land, a = c.pts; p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) p.lineTo(a[k], a[k + 1]); }
+    const roads = {}; for (const k of ['trunk', 'regional', 'local', 'sea', 'rail', 'seaTrunk']) roads[k] = toPath(k === 'sea' || k === 'seaTrunk' ? smoothLines(d.roads[k] || []) : d.roads[k] || []); // 陆路已在 Worker 里按水面校验圆滑过，这里再切角会切进水里
+    const BD = d.borders || {}, borders = {}; for (const k of ['country', 'frontier', 'province', 'claim']) borders[k] = toPath(BD[k] || []);
     const plates = d.plateSegs.map(lines => toPath(lines));
-    const isobars = d.isobars.map(s => toPath(s.lines.map(l => l.pts)));
+    const isobars = (d.isobars || []).map(s => toPath(s.lines.map(l => l.pts)));
     // 小型湖泊（矢量）：按层级分两组路径，形状为确定性的不规则湖岸
     const sl = [new Path2D(), new Path2D()], SL = d.smallLakes || [];
     for (let k = 0; k < SL.length; k += 5) { const x = SL[k], y = SL[k + 1], r = SL[k + 2], sd = SL[k + 3], p = sl[SL[k + 4] === 1 ? 0 : 1];
@@ -142,6 +142,8 @@
     const key = this.rasterKey();
     if (key !== this.texKey) {
       this.texKey = key; if (this.tiles) { for (const o of this.tiles.values()) o.img.close && o.img.close(); this.tiles.clear(); }
+      if (this.inflightId) { for (const id of this.inflightId.values()) this.app.cancelRender(id); this.inflightId.clear(); } // 主题/风格切换：在途条带立即停算
+      if (this.inflight) this.inflight.clear();
       this.app.render({ w: 2048, h: 1024, x0: 0, y0: 0, s: this.W / 2048, topic: this.app.topic(), season: this.app.season, aux: this.app.auxObj() }).then(img => {
         if (this.texKey !== key) return; this.tex = img; this.draw(); this.app.onTexture && this.app.onTexture(img, key);
       });
@@ -170,9 +172,12 @@
   MP.scheduleFrame = function () { this.updateTiles(); };
   MP.updateTiles = function () {
     if (!this.d || !this.texKey) return;
-    this.tiles = this.tiles || new Map(); this.inflight = this.inflight || new Set();
+    this.tiles = this.tiles || new Map(); this.inflight = this.inflight || new Set(); this.inflightId = this.inflightId || new Map();
     const z = this.tileZoom(); this.wantZ = z;
-    this.queue = z ? this.visibleTiles(z).filter(t => !this.tiles.has(this.tileKey(z, t.txm, t.ty))) : [];
+    const want = z ? this.visibleTiles(z) : [];
+    const wantKeys = new Set(want.map(t => this.tileKey(z, t.txm, t.ty)));
+    for (const [key, id] of [...this.inflightId]) if (!wantKeys.has(key)) { this.app.cancelRender(id); this.inflight.delete(key); this.inflightId.delete(key); } // 视野外的在途瓦片立即停算
+    this.queue = want.filter(t => !this.tiles.has(this.tileKey(z, t.txm, t.ty)));
     this.pump();
   };
   MP.pump = function () {
@@ -181,15 +186,24 @@
       if (this.tiles.has(key) || this.inflight.has(key)) continue;
       const { g, span } = this.tileGeom(t.z), texKey = this.texKey;
       this.inflight.add(key);
-      this.app.render({ w: TILE, h: TILE, pad: 1, x0: t.txm * span, y0: t.ty * span, s: g, topic: this.app.topic(), season: this.app.season, aux: this.app.auxObj() }).then(img => {
-        this.inflight.delete(key);
+      // 渐进瓦片：预览帧先上屏，细节条带随后逐条覆盖到同一张画布上
+      const cv = document.createElement('canvas'); cv.width = TILE; cv.height = TILE;
+      const cctx = cv.getContext('2d');
+      const p = this.app.render({ w: TILE, h: TILE, pad: 1, x0: t.txm * span, y0: t.ty * span, s: g, topic: this.app.topic(), season: this.app.season, aux: this.app.auxObj(), strips: 1 }, m => {
+        cctx.putImageData(new ImageData(new Uint8ClampedArray(m.buf.buffer || m.buf), TILE, m.h), 0, m.y);
+        if (texKey === this.texKey) { this.fade = true; this.draw(); }
+      });
+      this.inflightId.set(key, p.renderId);
+      p.then(img => {
+        this.inflight.delete(key); this.inflightId.delete(key);
         if (texKey === this.texKey) {
-          this.tiles.set(key, { img, t: performance.now() });
+          cctx.drawImage(img, 0, 0);
+          this.tiles.set(key, { img: cv, t: performance.now() });
           while (this.tiles.size > 260) { const k0 = this.tiles.keys().next().value, o = this.tiles.get(k0); o.img.close && o.img.close(); this.tiles.delete(k0); }
           this.fade = true; this.draw();
         }
         this.pump();
-      }, () => { this.inflight.delete(key); this.pump(); });
+      }, () => { this.inflight.delete(key); this.inflightId.delete(key); this.pump(); });
     }
   };
   MP.drawTiles = function (c, ks) {
@@ -284,9 +298,9 @@
     if (aux.roads && tab !== 'plates' && lv >= 1) this.drawBridges(ks, lv);
     if (tab === 'plates') { each(() => { c.strokeStyle = '#d14b42'; c.lineWidth = 2 * px; c.stroke(this.paths.plates[1]); c.strokeStyle = '#e09a37'; c.lineWidth = 1.7 * px; c.setLineDash([5 * px, 3 * px]); c.stroke(this.paths.plates[2]); c.setLineDash([]); c.strokeStyle = '#2f5b4f'; c.lineWidth = 2.4 * px; c.stroke(this.paths.plates[0]); }); this.drawPlateMarks(ks); }
     if (tab === 'season') {
-      if (app.sx.pressure) each(() => { c.strokeStyle = 'rgba(90,100,120,.5)'; c.lineWidth = 0.9 * px; c.stroke(this.paths.isobars[app.season]); });
-      if (app.sx.currents) this.drawArrows(this.d.currents, 5, ks, true);
-      if (app.sx.wind) this.drawArrows(this.d.winds[app.season], 4, ks, false);
+      if (app.sx.pressure && this.paths.isobars[app.season]) each(() => { c.strokeStyle = 'rgba(90,100,120,.5)'; c.lineWidth = 0.9 * px; c.stroke(this.paths.isobars[app.season]); });
+      if (app.sx.currents && this.d.currents) this.drawArrows(this.d.currents, 5, ks, true);
+      if (app.sx.wind && this.d.winds) this.drawArrows(this.d.winds[app.season], 4, ks, false);
     }
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (aux.grid || POL) this.drawGraticule(zr, POL);
@@ -334,7 +348,7 @@
         c.moveTo(x1, y1); c.lineTo(x1 - dx * 5 - dy * 3, y1 - dy * 5 + dx * 3); c.moveTo(x1, y1); c.lineTo(x1 - dx * 5 + dy * 3, y1 - dy * 5 - dx * 3); c.stroke();
       }
     }
-    if (!current && this.app.sx.pressure) {
+    if (!current && this.app.sx.pressure && this.d.isobars && this.d.isobars[this.app.season]) {
       const ext = this.d.isobars[this.app.season].ext;
       c.textAlign = 'center'; c.textBaseline = 'middle';
       for (let i = 0; i < ext.length; i += 4) for (const k of ks) {
@@ -494,7 +508,8 @@
           const a0 = at(d0), a1 = at(d0 + span), steep = Math.abs(a1[1] - a0[1]) > Math.abs(a1[0] - a0[0]) * 1.4, rev = steep ? a1[1] < a0[1] : a1[0] < a0[0]; // 横向从左往右读，竖向从上往下读
           const glyph = []; let pos = 0, ok = true, prevAng = null;
           for (let j = 0; j < n; j++) {
-            const jj = rev ? n - 1 - j : j, mid = rev ? d0 + span - (pos + cw[jj] / 2) : d0 + pos + cw[jj] / 2, h = Math.max(size * 0.7, 3);
+            // rev：线的终点在左（或上），首字从终点一端排起；字序不再倒一次（原先位置、字序各倒一次，注记成了“川定”“河姆努索”）
+            const jj = j, mid = rev ? d0 + span - (pos + cw[jj] / 2) : d0 + pos + cw[jj] / 2, h = Math.max(size * 0.7, 3);
             const p0 = at(mid - h), p1 = at(mid + h); let ang = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]); if (rev) ang += Math.PI;
             while (ang > Math.PI / 2) ang -= Math.PI; while (ang < -Math.PI / 2) ang += Math.PI; ang = Math.max(-o.tilt, Math.min(o.tilt, ang)); // 字头朝上：陡处字不躺倒，沿线竖排
             if (prevAng !== null) { let da = ang - prevAng; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI; if (Math.abs(da) > o.maxTurn) { ok = false; break; } }
@@ -504,7 +519,7 @@
             glyph.push([chars[jj], x, y, ang, bx]); pos += cw[jj] + gap;
           }
           if (!ok) continue;
-          // 读序：rev 时 glyph 是从右往左算的，绘制顺序无关
+          // 读序：首字总在左端（竖排在上端），绘制顺序无关
           let ux0 = 1e9, uy0 = 1e9, ux1 = -1e9, uy1 = -1e9;
           for (const g of glyph) { boxes.push(g[4]); ux0 = Math.min(ux0, g[4][0]); uy0 = Math.min(uy0, g[4][1]); ux1 = Math.max(ux1, g[4][2]); uy1 = Math.max(uy1, g[4][3]); }
           if (o.id) this.hits.push({ id: o.id, box: [ux0, uy0, ux1, uy1], name: str, x: (ux0 + ux1) / 2, y: (uy0 + uy1) / 2 });

@@ -89,8 +89,9 @@
         }
       } }
     // 出口下切：从洼地最低处沿排水树走向出口，把高出湖面的格削到湖面以下，形成真实的出口河谷
+    const breach = []; // 保留成湖的外流湖：出口被下切的格（显示地表也要沿它开出河谷）
     for (const c of carvedLake) { let x = c.low, k = 0, g = 0;
-      while (x >= 0 && !ocean[x] && g++ < 4000) { const tgt = c.L - 0.05 * (k + 1); if (e[x] > c.L - 0.01) { if (e[x] > tgt) { e[x] = tgt; k++; } } else if (k > 0 && e[x] < tgt && filled[x] < c.lv - 0.01) break; x = from[x]; } } // 只在离开本洼地、到达更低处后停止
+      while (x >= 0 && !ocean[x] && g++ < 4000) { const tgt = c.L - 0.05 * (k + 1); if (e[x] > c.L - 0.01) { if (e[x] > tgt) { e[x] = tgt; k++; if (c.keep) breach.push(x); } } else if (k > 0 && e[x] < tgt && filled[x] < c.lv - 0.01) break; x = from[x]; } } // 只在离开本洼地、到达更低处后停止
     priorityFlood(i => ocean[i] ? e[i] : endo[i] ? lakeLevel[i] : NaN, false);
     if (G.LAKEDBG) for (const c of carvedLake) if (c.list.length > 900) G.LAKEDBG.push({ carved: c.list.length, L: Math.round(c.L), lowE: Math.round(e[c.low]), filledLow: Math.round(filled[c.low]), keep: c.keep });
     for (const c of carvedLake) if (c.keep) for (const i of c.list) if (filled[i] - e[i] > 0.3) { lake[i] = 1; lakeLevel[i] = filled[i]; }
@@ -100,7 +101,7 @@
         if (c.length < 6 && !c.some(i => endo[i])) for (const i of c) { lake[i] = 0; endo[i] = 0; } } } // 尾闾湖（水流终点）不论大小都保留
     heap.k = null; heap.v = null;
     // 湖面显示场：湖泊范围羽化（3×3 平均两次），配合三次插值得到圆滑湖岸；所有“是否湖面”的判断都用它
-    const lakeSoft = new Float32Array(N); { let A = Float32Array.from(lake); for (let it = 0; it < 2; it++) { const B = new Float32Array(N); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let s2 = 0, n = 0; for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -1; dx <= 1; dx++) { s2 += A[yy * W + ((x + dx) % W + W) % W]; n++; } } B[y * W + x] = s2 / n; } A = B; } for (let i = 0; i < N; i++) lakeSoft[i] = lake[i] ? Math.max(A[i], 0.55) : Math.min(A[i], 0.45); }
+    const lakeSoft = new Float32Array(N); const softLake = (M) => { let A = Float32Array.from(M); for (let it = 0; it < 2; it++) { const B = new Float32Array(N); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let s2 = 0, n = 0; for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -1; dx <= 1; dx++) { s2 += A[yy * W + ((x + dx) % W + W) % W]; n++; } } B[y * W + x] = s2 / n; } A = B; } for (let i = 0; i < N; i++) lakeSoft[i] = M[i] ? Math.max(A[i], 0.55) : Math.min(A[i], 0.45); }; softLake(lake);
     // ---------- 2. 流向：最陡下降；平地按到出水口的加权距离 ----------
     const down = new Int32Array(N).fill(-1);
     const flatDist = new Int32Array(N).fill(-1);
@@ -214,6 +215,21 @@
     function root(first, last, f) { let a = 0, b = 1, fa = f(first[0], first[1]); if (fa <= 0) return first;
       { let k = 1; while (k < 3 && f(first[0] + (last[0] - first[0]) * k, first[1] + (last[1] - first[1]) * k) > 0) k += 0.25; last = [first[0] + (last[0] - first[0]) * k, first[1] + (last[1] - first[1]) * k]; } /* 亚格网岸线可能比格心更靠外：沿流向延伸到真正入水 */
       for (let it = 0; it < 30; it++) { const m = (a + b) / 2, v = f(first[0] + (last[0] - first[0]) * m, first[1] + (last[1] - first[1]) * m); if (v > 0) a = m; else b = m; } const t = (a + b) / 2; return [first[0] + (last[0] - first[0]) * t, first[1] + (last[1] - first[1]) * t]; }
+    // 湖岸显示形状：湖格上做一次 3×3 闭运算（先膨胀再腐蚀），只补进不走河、与湖面大致齐平的陆格。
+    // 填掉单格宽的细颈、缺口和湖边一格之隔的小水洼：湖岸不再是“一串圆泡＋细颈”、被两侧陆地掐断的样子。
+    // 只用于显示（lakeView）：推演、河口、城市选址仍按原湖岸 lakeSoft，同一种子的河流、城市、国名不变；河流流经的格不补
+    const lakeView = new Float32Array(N);
+    { const dil = new Uint8Array(N); for (let i = 0; i < N; i++) if (lake[i]) { dil[i] = 1; for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j >= 0) dil[j] = 1; } }
+      const M = Uint8Array.from(lake); let add = 0;
+      for (let i = 0; i < N; i++) { if (lake[i] || ocean[i] || !dil[i] || stream[i]) continue; let all = true, lvl = -Infinity;
+        for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j < 0 || !dil[j]) { all = false; break; } if (lake[j] && lakeLevel[j] > lvl) lvl = lakeLevel[j]; }
+        if (all && eD[i] <= lvl + 25) { M[i] = 1; add++; } }
+      // 不留“湖中孤岛”：补水后被水四面围住的陆格（河流入湖处、高出湖面的小丘）把它四周补进的格退回陆地，保持原来的湖湾
+      for (let pass = 0; pass < 3; pass++) { let n = 0;
+        for (let i = 0; i < N; i++) { if (M[i] || ocean[i]) continue; let enc = true, nAdd = 0; for (let k = 0; k < 8; k += 2) { const j = nb(i, k); if (j < 0 || !M[j]) { enc = false; break; } if (!lake[j]) nAdd++; }
+          if (enc && nAdd) for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j >= 0 && M[j] && !lake[j]) { M[j] = 0; n++; } } }
+        if (!n) break; }
+      const keep = Float32Array.from(lakeSoft); softLake(M); lakeView.set(lakeSoft); lakeSoft.set(keep); }
     const BS = G.Noise.bspline, seaF = (x, y) => G.Noise.coastSurface(eD, W, H, x, y);
     const lakeF = (x, y) => 0.5 - G.Noise.surface(lakeSoft, W, H, x, y);
     const inc = incomingS();
@@ -383,8 +399,25 @@
       } }
     const termLake = new Uint8Array(N); meta.forEach((m, k) => { if (m.kind === 'lake' && m.cell >= 0 && tiers[k] <= 2) termLake[m.cell] = 1; });
     const lakeSize = new Uint16Array(N); { const seen = new Uint8Array(N); for (let s0 = 0; s0 < N; s0++) { if (!lake[s0] || seen[s0]) continue; const c = [s0]; seen[s0] = 1; for (let h = 0; h < c.length; h++) for (let k = 0; k < 8; k += 2) { const j = nb(c[h], k); if (j >= 0 && lake[j] && !seen[j]) { seen[j] = 1; c.push(j); } } const keep = c.some(i => termLake[i]); for (const i of c) lakeSize[i] = keep ? 65535 : Math.min(65535, c.length); } } // 有河流注入的湖、尾闾湖在任何缩放都显示，河流不会“断在陆地上”
+    // ---------- 10. 显示地表与水系对齐（湖面、出口河谷、封闭洼地） ----------
+    // 汇流只在副本上下切、填洼，显示地表若原样保留，湖边会露出一圈比湖面还低的湖床（双线性插值把湖底带到岸上，形成绿色洼环与一圈圈闭合等高线），
+    // 未成湖的洼地成了“坑”，河流也像是翻过山脊流出。这里把显示地表改成与水系一致：
+    //  1) 湖面格取湖面高度：岸边插值不再掉进湖底；缩小时隐藏的小湖显示为与湖面齐平的低地；
+    //  2) 保留成湖的外流湖沿出口下切线开出 V 形河谷（半宽约 2.5 格），湖水经河谷流出；
+    //  3) 其余封闭洼地以湖面、海洋为出口填平到溢出高度（泥沙充填的平地），河流经溢出口流出，与汇流一致。
+    let dispElev = null;
+    { const disp = Float32Array.from(eD), isW = new Uint8Array(N);
+      for (let i = 0; i < N; i++) { if (ocean[i]) { isW[i] = 1; continue; } if (lake[i] && lakeLevel[i] > 0) { disp[i] = Math.max(0.5, lakeLevel[i]); isW[i] = 1; } }
+      const RB = 2.5;
+      for (const x of breach) { const base = Math.max(0.5, e[x]), cut = eD[x] - base; if (!(cut > 0)) continue; const y = (x / W) | 0, xx = x - y * W;
+        for (let dy = -2; dy <= 2; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -2; dx <= 2; dx++) { const j = yy * W + ((xx + dx) % W + W) % W; if (isW[j]) continue;
+          const t = Math.hypot(dx, dy) / RB; if (t > 1) continue; const v = base + (eD[j] - base) * t * t; if (v < disp[j]) disp[j] = Math.max(0.5, v); } } }
+      const hp = new Heap(1 << 16), done = new Uint8Array(N);
+      for (let i = 0; i < N; i++) { const y = (i / W) | 0; if (isW[i] || y === 0 || y === H - 1) { done[i] = 1; if (!ocean[i] || hasLandNb(i)) hp.push(i, disp[i]); } }
+      while (hp.n) { const i = hp.pop(), fi = disp[i]; for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j < 0 || done[j]) continue; done[j] = 1; if (disp[j] < fi + 0.01) disp[j] = fi + 0.01; hp.push(j, disp[j]); } }
+      dispElev = disp; } // 只用于显示设色、晕渲与等高线：推演（城市、国家、地名）仍用原地表，同一种子推演结果不变
     return {
-      smallLakes: Float32Array.from(small), lakeSize, lakeSoft,
+      smallLakes: Float32Array.from(small), lakeSize, lakeSoft, lakeView, dispElev,
       deltas, plume, wetland, wetSoft, deltaSoft, filled,
       down, lake, q, basinId, basinCount: topB.length, qth,
       rivers: { pts: Float32Array.from(out), offs: Int32Array.from(offs), tiers, stems },

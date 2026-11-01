@@ -174,7 +174,7 @@
     };
   }
   // 版本：世界文件记录写出它的版本；读到旧版本时按其中的设置迁移，再用当前版本重新推演
-  const VERSION = '1.4.1';
+  const VERSION = '1.4.2';
   const verOf = f => f && f.engineVersion ? String(f.engineVersion) : (/(\d+\.\d+\.\d+)/.exec(f && f.engine || '') || [, '1.4.0'])[1];
   const verCmp = (a, b) => { const pa = String(a).split('.').map(n => parseInt(n, 10) || 0), pb = String(b).split('.').map(n => parseInt(n, 10) || 0); for (let k = 0; k < 3; k++) { const d = (pa[k] || 0) - (pb[k] || 0); if (d) return d; } return 0; };
   // 旧存档 / 旧世界文件的设置补齐到当前版本：缺失或已不存在的选项取默认值（种子、自定义、文化与宗教库快照原样保留）

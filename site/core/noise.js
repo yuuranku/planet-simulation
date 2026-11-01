@@ -107,12 +107,27 @@
   const crRaw = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
   function surfaceRaw(A, W, H, x, y) { // 不夹值的三次插值：处处连续（格边两侧一致）
     const fx = x - 0.5, fy = Math.min(H - 1, Math.max(0, y - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
-    const xa = ((x0 - 1) % W + W) % W, xb = (xa + 1) % W, xc = (xb + 1) % W, xd = (xc + 1) % W;
+    let xa = (x0 - 1) % W; if (xa < 0) xa += W;
+    const xb = xa + 1 === W ? 0 : xa + 1, xc = xb + 1 === W ? 0 : xb + 1, xd = xc + 1 === W ? 0 : xc + 1;
     let r0 = 0, r1 = 0, r2 = 0, r3 = 0, lo = Infinity, hi = -Infinity;
     for (let j = 0; j < 4; j++) { let yy = y0 - 1 + j; yy = yy < 0 ? 0 : yy >= H ? H - 1 : yy; const o = yy * W;
       if (j === 1 || j === 2) { const a = A[o + xb], b = A[o + xc]; if (a < lo) lo = a; if (b < lo) lo = b; if (a > hi) hi = a; if (b > hi) hi = b; }
       const v = crRaw(A[o + xa], A[o + xb], A[o + xc], A[o + xd], tx); if (j === 0) r0 = v; else if (j === 1) r1 = v; else if (j === 2) r2 = v; else r3 = v; }
     sLo = lo; sHi = hi; return crRaw(r0, r1, r2, r3, ty);
+  }
+  const sr2out = [0, 0];
+  function surfaceRaw2(A, B, W, H, x, y) { // 与 surfaceRaw 同一插值，一次共用格点与权重采两个场（高程 + 湖泊连采）
+    const fx = x - 0.5, fy = Math.min(H - 1, Math.max(0, y - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    let xa = (x0 - 1) % W; if (xa < 0) xa += W;
+    const xb = xa + 1 === W ? 0 : xa + 1, xc = xb + 1 === W ? 0 : xb + 1, xd = xc + 1 === W ? 0 : xc + 1;
+    let a0 = 0, a1 = 0, a2 = 0, a3 = 0, b0 = 0, b1 = 0, b2 = 0, b3 = 0, lo = Infinity, hi = -Infinity;
+    for (let j = 0; j < 4; j++) { let yy = y0 - 1 + j; yy = yy < 0 ? 0 : yy >= H ? H - 1 : yy; const o = yy * W;
+      if (j === 1 || j === 2) { const a = A[o + xb], b = A[o + xc]; if (a < lo) lo = a; if (b < lo) lo = b; if (a > hi) hi = a; if (b > hi) hi = b; }
+      const v = crRaw(A[o + xa], A[o + xb], A[o + xc], A[o + xd], tx); if (j === 0) a0 = v; else if (j === 1) a1 = v; else if (j === 2) a2 = v; else a3 = v;
+      const w = crRaw(B[o + xa], B[o + xb], B[o + xc], B[o + xd], tx); if (j === 0) b0 = w; else if (j === 1) b1 = w; else if (j === 2) b2 = w; else b3 = w; }
+    sLo = lo; sHi = hi;
+    sr2out[0] = crRaw(a0, a1, a2, a3, ty); sr2out[1] = crRaw(b0, b1, b2, b3, ty);
+    return sr2out;
   }
   function surface(A, W, H, x, y) {
     const fx = x - 0.5, fy = Math.min(H - 1, Math.max(0, y - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
@@ -144,18 +159,26 @@
     let R = rgCache.get(A); if (R) return R; const T = coastT(A); R = new Float32Array(A.length);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let lo = 9, hi = -9; for (let dy = -1; dy <= 1; dy++) { const yy = Math.min(H - 1, Math.max(0, y + dy)); for (let dx = -1; dx <= 1; dx++) { const v = T[yy * W + ((x + dx) % W + W) % W]; if (v < lo) lo = v; if (v > hi) hi = v; } } R[y * W + x] = hi - lo; }
     rgCache.set(A, R); return R; }
-  function coastSurface(A, W, H, x, y) {
+  // view：显示用（设色、海岸线、近岸收口、等高线裁剪、城市图）。推演（河口、港口、城市选址）不传，同一种子的结果与旧版一致
+  function coastSurface(A, W, H, x, y, view) {
     const T = coastT(A), t = surfaceRaw(T, W, H, x, y); if (t > 0.85 || t < -0.85) return t * 100;
     const P = coastProx(A, W, H), RG = coastRange(A, W, H);
     const sx0 = x - 0.5, sy0 = Math.min(H - 1.001, Math.max(0, y - 0.5)), sx = ((sx0 % W) + W) % W, xi = sx | 0, tx = sx - xi, xj = xi + 1 === W ? 0 : xi + 1, yi = sy0 | 0, ty = sy0 - yi, yj = Math.min(H - 1, yi + 1);
     const p = (P[yi * W + xi] * (1 - tx) + P[yi * W + xj] * tx) * (1 - ty) + (P[yj * W + xi] * (1 - tx) + P[yj * W + xj] * tx) * ty;
-    const wgt = Math.max(0, 1 - Math.abs(p) * 1.4); if (wgt <= 0) return t * 100;
+    const wgt = Math.max(0, 1 - Math.abs(p) * 1.4); if (wgt <= 0) return t > 0.005 || !view ? t * 100 : inlandLift(A, W, H, t * 100, xi, xj, yi, yj, tx, ty);
     const range = (RG[yi * W + xi] * (1 - tx) + RG[yi * W + xj] * tx) * (1 - ty) + (RG[yj * W + xi] * (1 - tx) + RG[yj * W + xj] * tx) * ty;
     const lo = (x / W) * Math.PI * 2, la = (0.5 - y / H) * Math.PI, c = Math.cos(la), k = W / (2 * Math.PI);
     const px = c * Math.cos(lo) * k, py = c * Math.sin(lo) * k, pz = Math.sin(la) * k;
     const n = coastN(px * 0.9, py * 0.9, pz * 0.9) * 0.55 + coastN(px * 2.3 + 5, py * 2.3, pz * 2.3) * 0.3 + coastN(px * 5.7 - 9, py * 5.7, pz * 5.7) * 0.15;
     const amp = Math.min(0.45, 0.06 + 0.2 * range); // 陡岸（陆海反差大）起伏大，低平海岸只轻微起伏
-    return 100 * (t + amp * n * wgt * wgt * Math.exp(-Math.abs(t) / 0.35) * Math.max(0, 1 - Math.abs(t) / 0.85));
+    const v = 100 * (t + amp * n * wgt * wgt * Math.exp(-Math.abs(t) / 0.35) * Math.max(0, 1 - Math.abs(t) / 0.85));
+    return v > 0.5 || !view ? v : inlandLift(A, W, H, v, xi, xj, yi, yj, tx, ty);
+  }
+  // 内陆低地（湖底、填平的海平面以下洼地，高程仅 1–2 m）：不夹值三次插值在两侧高地之间会下冲到 0 以下，
+  // 冒出一块块“海水”（湖里的浅色斑、平原上带一圈等高线的小坑）。离真正的海超过 1.6 格的地方不可能是海：按到海格的距离抬回陆面（连续，不留接缝）
+  function inlandLift(A, W, H, v, xi, xj, yi, yj, tx, ty) {
+    const S = coastSD(A, W, H), dg = (S[yi * W + xi] * (1 - tx) + S[yi * W + xj] * tx) * (1 - ty) + (S[yj * W + xi] * (1 - tx) + S[yj * W + xj] * tx) * ty;
+    return dg > 1.6 ? Math.max(v, Math.min(0.5, (dg - 1.6) * 10)) : v;
   }
 
 
@@ -194,10 +217,13 @@
     const dg = Math.max(0, (S[yi * W + xi] * (1 - tx) + S[yi * W + xj] * tx) * (1 - ty) + (S[yj * W + xi] * (1 - tx) + S[yj * W + xj] * tx) * ty);
     const t = cv / 100; if (t >= 0.85) return dg;
     const h = 0.03, cl = Math.max(0.15, Math.cos((0.5 - y / H) * Math.PI));
-    const gx = (coastSurface(A, W, H, x + h, y) - coastSurface(A, W, H, x - h, y)) / (2 * h) / cl, gy = (coastSurface(A, W, H, x, y + h) - coastSurface(A, W, H, x, y - h)) / (2 * h);
-    const gm = Math.hypot(gx, gy), dl = gm > 1e-6 ? Math.min(1.5, cv / gm) : dg;
+    const gx = (coastSurface(A, W, H, x + h, y, true) - coastSurface(A, W, H, x - h, y, true)) / (2 * h) / cl, gy = (coastSurface(A, W, H, x, y + h, true) - coastSurface(A, W, H, x, y - h, true)) / (2 * h);
+    const gm = Math.sqrt(gx * gx + gy * gy), dl = gm > 1e-6 ? Math.min(1.5, cv / gm) : dg;
     const u = Math.max(0, Math.min(1, (t - 0.45) / 0.4)), w = u * u * (3 - 2 * u); // 起伏带内用局部距离，向外平滑交给格网距离
-    return dl + (dg - dl) * w;
+    const r = dl + (dg - dl) * w;
+    // 离海 1.2 格以外改用格网距离：内陆的低洼平地（t 很小）不再被当成“海岸起伏带”，周围山坡不会被收口压成一圈圈下陷的坑
+    const v = Math.max(0, Math.min(1, (dg - 1.2) / 1.0)), w2 = v * v * (3 - 2 * v);
+    return r + (dg - r) * w2;
   }
   function coastCap(cv, A, W, H, x, y) {
     if (!A) { const t = cv / 100; return t >= 0.999 ? Infinity : t <= 0 ? 0 : 110 * t / (1 - t); }
@@ -214,5 +240,5 @@
   function coastKeeps(level, cv, A, W, H, x, y) { if (cv <= 0) return false; return smin(level, coastCap(cv, A, W, H, x, y)) >= 0.6 * level; }
   function setCoastScale(km) { if (km > 0 && isFinite(km)) coastKm = km; }
 
-  G.Noise = { mulberry32, simplex2, simplex3, fbm3, ridged3, fbm2, bspline, surface, surfaceRaw, cr, coastSurface, coastElev, coastKeeps, setCoastScale };
+  G.Noise = { mulberry32, simplex2, simplex3, fbm3, ridged3, fbm2, bspline, surface, surfaceRaw, surfaceRaw2, cr, coastSurface, coastElev, coastKeeps, setCoastScale };
 })(typeof self !== 'undefined' ? self : this);

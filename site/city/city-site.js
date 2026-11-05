@@ -7184,7 +7184,7 @@
         }
         for (const [arm, points] of paths.entries()) corridors.push({ ...route, id: route.id + "-approach-" + arm, sourceId: route.id, points });
       }
-      if (recipe.era === "industrial" && recipe.eraPrepared && !corridors.some((route) => route.kind === "rail")) {
+      if (recipe.era === "industrial" && recipe.eraPrepared && !recipe.fortification && !corridors.some((route) => route.kind === "rail")) {
         // An industrial-age railway arrives on a straight, dry, gently graded
         // line; choose the bearing that best follows the main highway.
         const dist = (p, q) => M.hypot((p.column - q.column) * metric.column, (p.row - q.row) * metric.row);

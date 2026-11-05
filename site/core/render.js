@@ -58,11 +58,13 @@
   function create(world) {
     const { P, Cl, K, Hy, Cv } = world;
     const W = P.W, H = P.H, cW = P.cW, cH = P.cH, vW = Cv.W, vH = Cv.H;
-    const elev = P.elev;
+    const elev = P.elev, elevD = Hy.dispElev || P.elev; // elevD：与水系对齐的显示地表（湖面齐平、洼地填平、湖口开谷），只用于设色、晕渲与等高线
+    if (P.terrainImport) { G.TerrainImport.bind(P); for (const field of [elevD, Hy.lakeSoft, Hy.lakeView]) G.Noise.bindTerrain(field, P.terrainImport); }
     const n2 = G.Noise.simplex2(world.cfg.seed + 4242), j2 = G.Noise.simplex2(world.cfg.seed + 4343);
     const KC = Uint8Array.from(G.Climate.KOPPEN.flatMap(k => hex(k[2]).map(v => Math.round(v * 0.8 + 255 * 0.2))));
     const BC = Uint8Array.from(G.Climate.BIOMES.flatMap(b => hex(b[1])));
     const pal = {
+      species: Uint8Array.from(Cv.speciesLibraries.flatMap(s=>s.color)),
       country: catPalette(Cv.countries.length, 0.55, 0.72, 1), province: catPalette(Cv.provinces.length, 0.45, 0.76, 2),
       culture: catPalette(Cv.cultures.length, 0.5, 0.72, 3), language: catPalette(Cv.languages.length, 0.48, 0.74, 4),
       religion: catPalette(Cv.religions.length, 0.5, 0.73, 5), plate: catPalette(P.plates.length, 0.4, 0.78, 6),
@@ -108,6 +110,7 @@
       else if (topic === 'system') { id = Cv.country[vi]; arr = pal.system; }
       else if (topic === 'province') { id = Cv.province[vi]; arr = pal.province; }
       else if (topic === 'culture') { id = Cv.culture[vi]; arr = pal.culture; }
+      else if (topic === 'species') { id = Cv.species[vi]; arr = pal.species; }
       else if (topic === 'language') { id = Cv.language[vi]; arr = pal.language; }
       else if (topic === 'religion') { id = Cv.religion[vi]; arr = pal.religion; }
       if (id >= 0 && (topic === 'culture' || topic === 'language') && (topic === 'culture' ? Cv.civInf : Cv.langInf)) { // 与实际治理同样的晕染：核心浓、外围淡
@@ -172,14 +175,25 @@
 
       const t = { arr, gw, gh };
       if (FULL[name] && Cv.countryF && gw === W) { // 标签：省份图按省，其余按国；无国家的陆地区分名义宣称与荒野
-        const lab = new Int32Array(W * H);
-        for (let f = 0; f < W * H; f++) { const k = Cv.countryF[f];
-          if (k >= 0) { const p = Cv.provinceF[f]; lab[f] = name === 'province' ? (p >= 0 ? 1000000 + p : 2000000 + k) : k; }
-          else if (k === -2) lab[f] = -2;
-          else if (k === -4) lab[f] = -4;
-          else { const vi = Math.min(vH - 1, ((f / W) | 0) >> 1) * vW + Math.min(vW - 1, (f % W) >> 1); lab[f] = Cv.nominal[vi] >= 0 ? -1 : -3; } }
-        t.lab = lab; }
+        const M = political().M, toLab = name === 'province' ? (m => m) : topicOf;
+        t.lab = name === 'province' ? M : Int32Array.from(M, topicOf); t.map = toLab; }
       tables.set(name, t); return t;
+    }
+    // 政区标签（全分辨率）：1000000+省 / 2000000+无省的国家 / -1 名义宣称的无主地 / -3 荒野 / -4 冰盖 / -2 水
+    const topicOf = m => m >= 2000000 ? m - 2000000 : m >= 1000000 ? provCountry[m - 1000000] : m;
+    // 政区界线：所有陆地标签之间的界线只算一次（edges.js，与历史时间线同一套算法），国界、省界、边疆线与政区填色都取自这里
+    let POL = null;
+    function political() {
+      if (POL || !Cv.countryF) return POL;
+      const M = new Int32Array(W * H);
+      for (let f = 0; f < W * H; f++) { const k = Cv.countryF[f];
+        if (k >= 0) { const p = Cv.provinceF[f]; M[f] = p >= 0 ? 1000000 + p : 2000000 + k; }
+        else if (k === -2) M[f] = -2;
+        else if (k === -4) M[f] = -4;
+        else { const vi = Math.min(vH - 1, ((f / W) | 0) >> 1) * vW + Math.min(vW - 1, (f % W) >> 1); M[f] = Cv.nominal[vi] >= 0 ? -1 : -3; } }
+      const C = G.Edges.chains(M, W, H, (a, b) => a !== -2 && b !== -2);
+      POL = { M, C, I: G.Edges.index(C, W, H), topicOf };
+      return POL;
     }
     const wetF = Hy.wetSoft || null, deltaF = Hy.deltaSoft || null, plumeF = Hy.plume || null;
     const snowField = new Float32Array(W * H); for (let i = 0; i < W * H; i++) snowField[i] = SNOW_AMT[Cl.snow[i]] || 0;
@@ -194,9 +208,8 @@
       acc[0] = A[a] * w0 + A[b] * w1 + A[c] * w2 + A[d] * w3; acc[1] = A[a + 1] * w0 + A[b + 1] * w1 + A[c + 1] * w2 + A[d + 1] * w3; acc[2] = A[a + 2] * w0 + A[b + 2] * w1 + A[c + 2] * w2 + A[d + 2] * w3;
       return acc;
     }
-    // 国家 / 省份：硬边填色。四邻格中按双线性权重取“多数标签”的颜色——边界清晰、不在国与国之间混色，
-    // 且边界位置与矢量界线（格边连线平滑）一致；同一标签内部（治理强度等）仍做平滑插值。
-    // 国家 / 省份硬边填色：2×2 邻格按双线性权重取多数标签。其边界恰好经过格边中点，与矢量界线（格边中点连线）重合。
+    // 国家 / 省份硬边填色：界线附近按最近一段政区界线（edges.js 的曲线）判断点在哪一侧——填色边界与矢量国界、省界是同一条线；
+    // 查不到界线时（如只有海岸）退回 4×4 邻格按 B 样条权重取多数标签。同一标签内部（治理强度等）仍做平滑插值。
     const cIds = new Int32Array(16), cWt = new Float64Array(16), wx4 = new Float64Array(4), wy4 = new Float64Array(4);
     const bspW = (t, o4) => { const u = 1 - t; o4[0] = u * u * u / 6; o4[1] = (3 * t * t * t - 6 * t * t + 4) / 6; o4[2] = (-3 * t * t * t + 3 * t * t + 3 * t + 1) / 6; o4[3] = t * t * t / 6; };
     function crisp(t, gx, gy) {
@@ -209,7 +222,10 @@
       let best, bw;
       if (uni) { best = l0; bw = 1; }
       else { best = -9; bw = -1;
-        for (let n = 0; n < 16; n++) { const lab = L[cIds[n]]; if (lab === -2 || lab === best) continue; let sw = 0; for (let m = 0; m < 16; m++) if (L[cIds[m]] === lab) sw += cWt[m]; if (sw > bw) { bw = sw; best = lab; } } }
+        // 先看离这里最近的界线：点在线的哪一侧就取哪一侧的颜色（填色与界线是同一条曲线）
+        const m = t.map && POL ? G.Edges.side(POL.I, gx, gy, 1) : undefined;
+        if (m !== undefined) { const lab = t.map(m); for (let n = 0; n < 16; n++) if (L[cIds[n]] === lab) { best = lab; bw = 1; break; } }
+        if (best === -9) for (let n = 0; n < 16; n++) { const lab = L[cIds[n]]; if (lab === -2 || lab === best) continue; let sw = 0; for (let m = 0; m < 16; m++) if (L[cIds[m]] === lab) sw += cWt[m]; if (sw > bw) { bw = sw; best = lab; } } }
       if (best === -9) { acc[0] = WILD[0]; acc[1] = WILD[1]; acc[2] = WILD[2]; return acc; }
       let sr = 0, sg = 0, sb = 0, sw = 0;
       for (let n = 0; n < 16; n++) { const f = cIds[n]; if (L[f] !== best) continue; const o = f * 3; sr += A[o] * cWt[n]; sg += A[o + 1] * cWt[n]; sb += A[o + 2] * cWt[n]; sw += cWt[n]; }
@@ -237,7 +253,7 @@
     const kopAt = (i, o) => { let k = Cl.koppen[i]; if (k === 255) { o[0] = o[1] = o[2] = 222; return; } o[0] = KC[k * 3]; o[1] = KC[k * 3 + 1]; o[2] = KC[k * 3 + 2]; };
     const bioAt = (i, o) => { let k = Cl.biome[i]; if (k === 255) { o[0] = o[1] = o[2] = 222; return; } o[0] = BC[k * 3]; o[1] = BC[k * 3 + 1]; o[2] = BC[k * 3 + 2]; };
     const basAt = (i, o) => { const k = Hy.basinId[i]; if (!k || elev[i] <= 0) { o[0] = 236; o[1] = 232; o[2] = 222; return; } o[0] = pal.basin[k * 3]; o[1] = pal.basin[k * 3 + 1]; o[2] = pal.basin[k * 3 + 2]; };
-    const plateAt = (i, o) => { const k = P.plate[i]; o[0] = pal.plate[k * 3]; o[1] = pal.plate[k * 3 + 1]; o[2] = pal.plate[k * 3 + 2]; };
+    const plateAt = (i, o) => { const k = P.plate[i]; if (k < 0 || !P.plates.length) { o[0] = 216; o[1] = 221; o[2] = 217; return; } o[0] = pal.plate[k * 3]; o[1] = pal.plate[k * 3 + 1]; o[2] = pal.plate[k * 3 + 2]; };
     const snowAt = (i, o) => { o[0] = SNOW_AMT[Cl.snow[i]] || 0; o[1] = o[2] = 0; };
 
     const lakeMasks = {};
@@ -252,16 +268,29 @@
       if (p === 'night') { acc[0] = r * 0.45 + 8; acc[1] = g * 0.45 + 14; acc[2] = b * 0.5 + 24; return true; }
       return false;
     }
+    const LAKE_VIEW = Hy.lakeView || Hy.lakeSoft; // 显示用湖面（湖岸闭运算后的形状）
+    // 缩小时隐藏小湖：湖格压到 0.3；湖岸补进的显示格（非湖格却显示为水）只在旁边还有可见湖格时保留
+    function hideLakes(m) {
+      const A = Float32Array.from(LAKE_VIEW), L = Hy.lake, S = Hy.lakeSize, hid = i => L[i] && S[i] < m;
+      for (let i = 0; i < A.length; i++) {
+        if (hid(i)) { A[i] = 0.3; continue; }
+        if (L[i] || A[i] < 0.5) continue;
+        const y = (i / W) | 0, x = i - y * W; let vis = false;
+        for (let dy = -1; dy <= 1 && !vis; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -1; dx <= 1; dx++) { const j = yy * W + ((x + dx) % W + W) % W; if (L[j] && !hid(j)) { vis = true; break; } } }
+        if (!vis) A[i] = 0.3;
+      }
+      return A;
+    }
     function render(req) {
       const pad = req.pad || 0, s = req.s, w = req.w + 2 * pad, h = req.h + 2 * pad, x0 = req.x0 - pad * s, y0 = req.y0 - pad * s;
       const { topic, season = 0, aux = {} } = req;
       const ST = STYLES[aux.style] || STYLES.default, LANDR = ST.land || RAMPS.land, SEAR = ST.sea || RAMPS.sea, LAKEC = ST.lake ? hex(ST.lake) : LAKE, COASTC = ST.coast ? hex(ST.coast) : COAST, SHK = ST.shade || 0.62, BG = ST.bg ? hex(ST.bg) : [236, 242, 245];
       const detail = !req.preview && s < 0.9; // preview：跳过缩放细节（渐进瓦片的预览帧）
-      const octs = detail ? Math.min(5, Math.ceil(Math.log2(1 / s)) + 1) : 0;
+      const octs = detail && !P.terrainImport ? Math.min(5, Math.ceil(Math.log2(1 / s)) + 1) : 0;
       const eb = new Float32Array(w * h), er = new Float32Array(w * h), cs = new Float32Array(w * h), lb = new Float32Array(w * h);
       // 湖泊分级显示：全图只画大湖（≥ 40 格），区域级 ≥ 8 格，再放大全部
       const zr0 = W / (s * 1400), minLake = zr0 < 2.5 ? 40 : zr0 < 7 ? 8 : 0;
-      const lakeVis = minLake ? (lakeMasks[minLake] || (lakeMasks[minLake] = Float32Array.from(Hy.lakeSoft, (v, i) => Hy.lake[i] && Hy.lakeSize[i] < minLake ? 0.3 : v))) : Hy.lakeSoft;
+      const lakeVis = minLake ? (lakeMasks[minLake] || (lakeMasks[minLake] = hideLakes(minLake))) : LAKE_VIEW;
       const gyA = new Float32Array(h);
       const LV = lakeVis; // 湖泊场在整趟渲染中不变，提出循环
       // 1) 高程（双线性 + 缩放细节）与湖泊连续场
@@ -273,12 +302,12 @@
           let sx = gx - 0.5; sx = ((sx % W) + W) % W;
           const xi = sx | 0, tx = sx - xi, xj = xi + 1 === W ? 0 : xi + 1;
           let e, lv;
-          if (octs) { const e2 = G.Noise.surfaceRaw2(elev, LV, W, H, gx, gy); e = e2[0]; lv = e2[1]; }
+          if (octs) { const e2 = G.Noise.surfaceRaw2(elevD, LV, W, H, gx, gy); e = e2[0]; lv = e2[1]; }
           else {
-            e = (elev[r0 + xi] * (1 - tx) + elev[r0 + xj] * tx) * (1 - ty) + (elev[r1 + xi] * (1 - tx) + elev[r1 + xj] * tx) * ty;
+            e = (elevD[r0 + xi] * (1 - tx) + elevD[r0 + xj] * tx) * (1 - ty) + (elevD[r1 + xi] * (1 - tx) + elevD[r1 + xj] * tx) * ty;
             lv = (LV[r0 + xi] * (1 - tx) + LV[r0 + xj] * tx) * (1 - ty) + (LV[r1 + xi] * (1 - tx) + LV[r1 + xj] * tx) * ty;
           }
-          const cv = octs ? G.Noise.coastSurface(elev, W, H, gx, gy) : e; cs[py * w + px] = cv; // 海陆判断
+          const cv = octs ? G.Noise.coastSurface(elev, W, H, gx, gy, true) : e; cs[py * w + px] = cv; // 海陆判断
           if (octs) e = G.Noise.coastElev(e, cv, elev, W, H, gx, gy); // 近岸高程收口：海岸线处归零、向内沿岸坡平滑回升（不再按海陆硬裁）
           else if (cv > 0 && e <= 0) e = 0.5; else if (cv <= 0 && e > 0) e = -0.5;
           er[py * w + px] = e;
@@ -287,7 +316,8 @@
             let f = 0.9, a = amp, d = 0;
             for (let o = 0; o < octs; o++) { d += n2(gx * f, gy * f) * a; f *= 2.1; a *= 0.5; }
             // 细节只改变起伏，不改变海陆：近岸按 |高程| 收敛，海岸线与河口始终落在同一连续地表上
-            e += d * Math.min(1, Math.abs(e) / (amp * 2.2));
+            const nearL = aux.lakes !== false ? Math.min(1, Math.max(0, lv) * 3) : 0; // 湖边不加细节起伏：否则岸上会起伏出比湖面还低的小洼圈
+            e += d * Math.min(1, Math.abs(e) / (amp * 2.2)) * (1 - nearL);
             if (cv > 0 ? e < 0.5 : e > -0.5) e = cv > 0 ? 0.5 : -0.5;
           }
           const o = py * w + px; eb[o] = e;
@@ -296,10 +326,11 @@
       }
       const out = new Uint8ClampedArray(w * h * 4);
       const lx = -0.5, ly = -0.5, lz = 0.7071, Z = 12 * Math.pow(Math.min(1, Math.max(0.04, s)), 0.6) * (aux.relief || 1);
-      const isHuman = { country: 1, province: 1, culture: 1, language: 1, religion: 1, govern: 1, heritage: 1, system: 1 }[topic];
+      const isHuman = { country: 1, province: 1, culture: 1, species: 1, language: 1, religion: 1, govern: 1, heritage: 1, system: 1 }[topic];
       const zoomR = W / (s * 1400), lfOn = aux.landform !== false && zoomR >= 2.2 && topic !== 'plates' && !ST.political;
       const polT = ST.political && topic === 'terrain' && Cv.countryF ? table('atlas') : null; // 政区图：底图陆地改用国家粉彩
       // 原版地貌面状图式：8×8 短线纹（屏幕像素对齐，跨瓦片连续）
+      // 霜冻点阵与宣称斜纹按屏幕绝对坐标取相位（+2·pad 与原整帧相位一致），条带、瓦片之间连续
       const dash = (X, Y, k) => { const u = ((X % 10) + 10) % 10, v = ((Y % 10) + 10) % 10; return k === 0 ? ((v === 2 && u >= 1 && u <= 3) || (v === 6 && u >= 5 && u <= 8) || (v === 3 && u >= 2 && u <= 3)) : ((v === 2 && u >= 1 && u <= 4) || (v === 6 && u >= 5 && u <= 8)); };
       const jit = FULL[topic] && Cv.countryF ? 0 : 0.35, catTopic = isHuman || topic === 'koppen' || topic === 'biome' || topic === 'basin' || topic === 'plates', catT = catTopic ? table(topic) : null;
       for (let py = 0; py < h; py++) {
@@ -312,7 +343,9 @@
           if (!inMap) { out[oo] = BG[0]; out[oo + 1] = BG[1]; out[oo + 2] = BG[2]; out[oo + 3] = 255; continue; }
           const gxr = x0 + (px + 0.5) * s;
           let gx = ((gxr % W) + W) % W;
-          const e = er[o], land = cs[o] > 0, isLake = land && aux.lakes !== false && lb[o] > 0.5;
+          const e = er[o], land = cs[o] > 0;
+          const importedLake = P.terrainImport && G.Noise.terrainSurface(P.terrainImport.lakes, W, H, gx, gy) > 0;
+          const isLake = aux.lakes !== false && (importedLake ? !land && lb[o] > 0.02 : land && lb[o] > 0.5);
           // 轻微扰动采样位置，使分类过渡更有机
           let jx = gx, jy = gy; if (catTopic) { jx = gx + j2(gx * 0.21, gy * 0.21) * jit * (W / vW); jy = gy + j2(gy * 0.21 + 50, gx * 0.21) * jit * (H / vH); }
           let r, g, b;
@@ -325,7 +358,7 @@
               const c = bl3(catT, jx, jy); r = c[0]; g = c[1]; b = c[2];
             } else if (topic === 'plates') { const c = bl3(catT, jx, jy); r = c[0]; g = c[1]; b = c[2]; }
             else if (isHuman) { const c = FULL[topic] && Cv.countryF ? crisp(catT, gx, gy) : bl3(catT, jx, jy); r = c[0]; g = c[1]; b = c[2];
-              if (aux.nominal && (topic === 'country' || topic === 'govern' || topic === 'province')) { const vi = Math.min(vH - 1, (jy / H * vH) | 0) * vW + (((jx / W * vW) | 0) + vW) % vW; const nom = Cv.nominal[vi]; if (Cv.country[vi] < 0 && nom >= 0 && (px + py) % 7 < 2) { r = r * 0.5 + pal.country[nom * 3] * 0.5; g = g * 0.5 + pal.country[nom * 3 + 1] * 0.5; b = b * 0.5 + pal.country[nom * 3 + 2] * 0.5; } } }
+              if (aux.nominal && (topic === 'country' || topic === 'govern' || topic === 'province')) { const vi = Math.min(vH - 1, (jy / H * vH) | 0) * vW + (((jx / W * vW) | 0) + vW) % vW; const nom = Cv.nominal[vi]; if (Cv.country[vi] < 0 && nom >= 0 && ((Math.floor(gxr / s) + Ys + 2 * pad) % 7 + 7) % 7 < 2) { r = r * 0.5 + pal.country[nom * 3] * 0.5; g = g * 0.5 + pal.country[nom * 3 + 1] * 0.5; b = b * 0.5 + pal.country[nom * 3 + 2] * 0.5; } } }
             else if (topic === 'agri' || topic === 'habit' || topic === 'pop' || topic === 'veg') {
               let v; const L = RAMPS[topic];
               if (topic === 'veg') v = bilinR(Cl.veg, gx, rpW, W) / 255;
@@ -356,7 +389,7 @@
               else amt = bilinR(snowField, gx, rpW, W);
               if (amt > 0.01) { const a = Math.min(0.9, amt); r += (250 - r) * a; g += (252 - g) * a; b += (253 - b) * a; }
             }
-            if (aux.frost) { const fr = bilinR(frostField, gx, rpW, W); if (fr > 0.3 && (px + py) % (fr > 1.4 ? 4 : 7) === 0) { r = r * 0.6 + 48; g = g * 0.6 + 44; b = b * 0.6 + 64; } }
+            if (aux.frost) { const fr = bilinR(frostField, gx, rpW, W); if (fr > 0.3 && (Math.floor(gxr / s) + Ys + 2 * pad) % (fr > 1.4 ? 4 : 7) === 0) { r = r * 0.6 + 48; g = g * 0.6 + 44; b = b * 0.6 + 64; } }
           } else if (isLake) { r = LAKEC[0]; g = LAKEC[1]; b = LAKEC[2]; }
           else {
             if (topic === 'sprecip' || topic === 'stemp') {
@@ -411,9 +444,9 @@
       return crop;
     }
     // 与 render 相同的带细节起伏的地表高程（城市图等高线用，保证与晕渲一致）
-    function sampleElev(gx, gy, s, detail) { let e = G.Noise.coastElev(G.Noise.surfaceRaw(elev, W, H, gx, gy), G.Noise.coastSurface(elev, W, H, gx, gy), elev, W, H, gx, gy); const octs = Math.min(5, Math.ceil(Math.log2(1 / s)) + 1);
-      const amp = (e > 0 ? 16 + Math.min(200, e * 0.04) : Math.min(60, 16 + (-e) * 0.02)) * (e > 0 ? (detail || 1) : 1); let f = 0.9, a = amp, d = 0; for (let o = 0; o < octs; o++) { d += n2(gx * f, gy * f) * a; f *= 2.1; a *= 0.5; } return e + d * Math.min(1, Math.abs(e) / (amp * 2.2)); }
-    return { render, pal, sampleElev };
+    function sampleElev(gx, gy, s, detail) { if (P.terrainImport) return G.Noise.terrainSurface(elevD, W, H, gx, gy); let e = G.Noise.coastElev(G.Noise.surfaceRaw(elevD, W, H, gx, gy), G.Noise.coastSurface(elev, W, H, gx, gy, true), elev, W, H, gx, gy); const octs = Math.min(5, Math.ceil(Math.log2(1 / s)) + 1);
+      const amp = (e > 0 ? 16 + Math.min(200, e * 0.04) : Math.min(60, 16 + (-e) * 0.02)) * (e > 0 ? (detail || 1) : 1); let f = 0.9, a = amp, d = 0; for (let o = 0; o < octs; o++) { d += n2(gx * f, gy * f) * a; f *= 2.1; a *= 0.5; } return e + d * Math.min(1, Math.abs(e) / (amp * 2.2)) * (1 - Math.min(1, G.Noise.surfaceRaw(LAKE_VIEW, W, H, gx, gy) * 3)); }
+    return { render, pal, sampleElev, political };
   }
 
   G.Render = { create, RAMPS, hex };

@@ -6,6 +6,8 @@
   <title>星球推演 · 世界生成器</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="app/timeline.css">
+  <link rel="stylesheet" href="app/military-map.css">
+  <link rel="stylesheet" href="app/person.css">
   <link rel="stylesheet" href="app/mobile.css">
   <script src="app/mobile.js"></script>
 </head>
@@ -47,7 +49,7 @@
     </div>
     <div class="card world-card" id="worldCard">
       <b id="worldName" data-name-id="world" title="双击改名">尚未推演</b>
-      <span id="worldStats">回答 21 个问题，推演一颗新星球</span>
+      <span id="worldStats">回答 25 个问题，推演一颗新星球</span>
     </div>
     <div class="card tool-card" id="toolCard" hidden></div>
   </div>
@@ -91,14 +93,15 @@
     <header><h2>我的世界</h2><button class="x" data-close="savedPanel" aria-label="关闭"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header>
     <div class="panel-body" id="savedBody"></div>
   </section>
-  <input type="file" id="importFile" accept=".json,application/json" hidden>
+  <input type="file" id="importFile" accept=".zip,application/zip" hidden>
 
   <!-- 菜单 -->
   <div class="card menu" id="menu" hidden>
     <button data-act="home">首页 · 我的世界</button>
     <button data-act="library">文化库</button>
     <button data-act="religions">宗教库</button>
-    <button data-act="wizard">新的推演（21 题）</button>
+    <button data-act="species">种族库</button>
+    <button data-act="wizard">创建世界…</button>
     <button data-act="reseed">同样设定，换一颗星球</button>
     <button data-act="png">导出当前地图 PNG</button>
     <button data-act="share">复制分享链接</button>
@@ -106,9 +109,6 @@
     <button data-act="saveAs">世界文件另存为…<small>自选保存位置</small></button>
     <button data-act="import">导入世界文件…</button>
   </div>
-
-  <!-- 旧版本世界文件：重新推演后写回 -->
-  <div class="card upgrade-bar" id="upgradeBar" hidden></div>
 
   <!-- 推演进度 -->
   <div class="overlay" id="progress" hidden>
@@ -125,7 +125,7 @@
   <div class="overlay wizard" id="wizard" hidden>
     <div class="card wiz">
       <header class="wiz-head">
-        <div><h2>推演一颗新星球</h2><p id="wizSub">回答 21 个问题，决定这颗星球的天文、地质、气候与文明</p></div>
+        <div><h2 id="wizTitle">创建世界</h2><p id="wizSub">上传自己的世界地图，或从生成设置开始</p></div>
         <button class="x" id="wizClose" aria-label="关闭"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </header>
       <div class="wiz-steps" id="wizSteps"></div>
@@ -146,14 +146,14 @@
     <div class="home-inner">
       <header class="home-head">
         <div class="home-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/></svg><b>世界生成器</b></div>
-        <div class="home-actions"><button class="btn ghost" id="homeLib">文化库 <small id="homeLibCount"></small></button><button class="btn ghost" id="homeRel">宗教库 <small id="homeRelCount"></small></button><button class="btn primary" id="homeCreate">＋ 创建世界</button></div>
+        <div class="home-actions"><button class="btn ghost" id="homeLib">文化库 <small id="homeLibCount"></small></button><button class="btn ghost" id="homeRel">宗教库 <small id="homeRelCount"></small></button><button class="btn ghost" id="homeSpecies">种族库 <small id="homeSpeciesCount"></small></button><button class="btn primary" id="homeCreate">＋ 创建世界</button></div>
       </header>
       <div id="homeJobSec" hidden><h2>正在推演</h2><div class="home-sub"><span>推演完成后会出现在下方“已保存的世界”。</span><span id="homeJobCount"></span></div>
       <div class="wgrid" id="homeJobs"></div>
       <div class="home-sep"></div></div>
       <h2>已保存的世界</h2><div class="home-sub"><span>打开地图，继续探索。双击世界名称可改名。</span><span><button class="link" id="homeImport">导入世界文件</button> · <span id="homeCount"></span></span></div>
       <div class="wgrid" id="homeSaved"></div>
-      <footer class="home-foot"><span>世界生成器 1.4.1 · 规则移植自 1.4.0.dev164 <a href="#" id="homeNotes" class="home-notes">更新说明</a></span><span>你的世界保存在本机浏览器中，可导出为文件。存档只记录设置、种子、改名与标记，打开时按同样设置重新推演；读到旧版本文件会用新版本重新推演。</span></footer>
+      <footer class="home-foot"><span>世界生成器 1.4.3 · 三系统版 · 界面焕新 <a href="#" id="homeNotes" class="home-notes">更新说明</a></span><span>你的世界保存在本机浏览器中，可导出为文件。世界文件包含设定、原图、人物与标记，打开时重新推演；旧版本文件请用原版本打开。</span></footer>
     </div>
   </section>
 
@@ -182,6 +182,14 @@
       <div class="lgrid" id="relGrid"></div>
     </div>
     <input type="file" id="relFile" accept=".json,application/json" hidden>
+  </section>
+  <!-- 种族库 -->
+  <section class="home lib" id="speciesPage" hidden>
+    <div class="home-inner">
+      <header class="home-head"><div class="home-logo"><button class="btn ghost" id="speciesBack">← 返回</button><b>种族库</b></div>
+        <div class="home-actions"><button class="btn ghost" id="speciesAll">全选</button><button class="btn ghost" id="speciesImport">导入 JSON</button><button class="btn ghost" id="speciesExport">导出所选</button><button class="btn primary" id="speciesNew">＋ 新建种族</button></div></header>
+      <p class="home-sub" id="speciesSummary"></p><div class="lgrid" id="speciesGrid"></div>
+    </div><input type="file" id="speciesFile" accept=".json,application/json" hidden>
   </section>
   <div class="overlay" id="libModal" hidden><div class="card libmodal" id="libModalBody"></div></div>
 
@@ -222,14 +230,40 @@
   <div class="toast" id="toast" hidden></div>
 
   <script src="core/admin.js"></script>
+  <script src="core/noise.js"></script>
+  <script src="core/culture-ext.js"></script>
+  <script src="core/human-rules.js"></script>
+  <script src="core/history/date.js"></script>
+  <script src="core/military.js"></script>
+  <script src="core/terrain-coast.js"></script>
+  <script src="core/terrain-import.js"></script>
+  <script src="app/world-assets.js"></script>
+  <script src="app/world-package.js"></script>
+  <script src="app/png-decoder.js"></script>
+  <script src="app/map-import.js"></script>
+  <script src="app/military-settings.js"></script>
+  <script src="app/trait-editor.js"></script>
   <script src="app/config.js"></script>
   <script src="app/wizard.js"></script>
   <script src="app/icons.js"></script>
+  <script src="app/fort-lifecycle.js"></script>
   <script src="app/map.js"></script>
   <script src="app/home.js"></script>
   <script src="app/religion-lib.js"></script>
+  <script src="app/species-lib.js"></script>
   <script src="app/city.js"></script>
+  <script src="core/history/query.js"></script>
+  <script src="core/navigation-overland.js"></script>
+  <script src="core/navigation.js"></script>
+  <script src="core/life-paths.js"></script>
+  <script src="core/life-story.js"></script>
+  <script src="core/life.js"></script>
+  <script src="core/life-text.js"></script>
+  <script src="app/person.js"></script>
+  <script src="app/military-panel.js"></script>
+  <script src="app/military-map.js"></script>
   <script src="app/timeline.js"></script>
+  <script src="app/world-store.js"></script>
   <script src="app/main.js"></script>
 </body>
 </html>

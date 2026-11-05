@@ -1,0 +1,113 @@
+/* 人物系统 v3：方向卡、性情、此刻、阅历、年表筛选、时局引文 */
+.person-panel { width: 352px; }
+.c-career { --kc: #b8860b; } .c-road { --kc: #2f7d4f; } .c-world { --kc: #b0402e; } .c-faith { --kc: #6b3fa0; } .c-family { --kc: #8d3d62; } .c-all { --kc: #4a4f57; }
+
+/* ---- 生成表单 ---- */
+.pf-form legend { display: flex; align-items: baseline; gap: 8px; width: 100%; }
+.pf-form legend small { font: 400 10.5px var(--font); letter-spacing: 0; color: var(--t3); }
+.pf-name { display: flex; gap: 6px; }
+.pf-name input { flex: 1; min-width: 0; height: 38px; padding: 0 12px; border: 1px solid #e3e6ea; border-radius: 10px; background: #fafbfc; font: 600 15px "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--t1); }
+.pf-name input::placeholder { font: 400 12.5px var(--font); color: var(--t3); }
+.pf-name input:focus { outline: none; border-color: rgb(var(--pc)); background: #fff; box-shadow: 0 0 0 3px rgba(var(--pc), .14); }
+.pf-name button { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 38px; padding: 0 11px; border-radius: 10px; background: #f6eff3; color: rgb(var(--pc)); font: 600 12px var(--font); }
+.pf-name button:hover { background: #efe1e9; }
+.pf-name svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.pf-name svg circle { fill: currentColor; stroke: none; }
+.pf-paths { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.pf-path { --g: 141, 61, 98; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 2px 6px; border-radius: 10px; background: #f7f7f8; box-shadow: inset 0 0 0 1px transparent; transition: background .15s, box-shadow .15s, transform .15s; }
+.pf-path[data-group="庙堂"] { --g: 166, 56, 45; } .pf-path[data-group="江湖"] { --g: 47, 92, 140; } .pf-path[data-group="商旅"] { --g: 154, 110, 20; } .pf-path[data-group="信仰与学问"] { --g: 107, 63, 160; } .pf-path[data-group="随缘"] { --g: 74, 79, 87; }
+.pf-path i { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font: 700 14px "Songti SC", "STSong", "Noto Serif SC", serif; font-style: normal; color: rgb(var(--g)); background: rgba(var(--g), .1); }
+.pf-path b { font-size: 11px; font-weight: 600; color: var(--t2); white-space: nowrap; }
+.pf-path:hover { background: rgba(var(--g), .07); }
+.pf-path.on { background: rgba(var(--g), .1); box-shadow: inset 0 0 0 1.5px rgb(var(--g)); }
+.pf-path.on i { color: #fff; background: rgb(var(--g)); }
+.pf-path.on b { color: rgb(var(--g)); }
+.pf-path-desc { margin: 8px 0 0; padding: 9px 11px; border-radius: 10px; background: #fbf8f2; font-size: 11.5px; line-height: 1.7; color: var(--t2); min-height: 52px; }
+.pf-path-desc b { color: var(--t1); font: 700 13px "Songti SC", "STSong", "Noto Serif SC", serif; }
+.pf-ranks { display: block; margin-top: 3px; font-size: 10.5px; color: var(--t3); }
+.pf-temper { display: flex; gap: 5px; flex-wrap: wrap; }
+.pf-temper button { height: 28px; padding: 0 12px; border-radius: 999px; background: #f4f5f6; font: 500 12px var(--font); color: var(--t2); }
+.pf-temper button:hover { background: #eceef0; }
+.pf-temper button.on { background: rgb(var(--pc)); color: #fff; }
+.pf-more { margin-top: 14px; }
+.pf-more > summary { cursor: pointer; list-style: none; font: 600 12px var(--font); letter-spacing: .06em; color: var(--t1); margin-bottom: 8px; display: flex; align-items: center; }
+.pf-more > summary::-webkit-details-marker { display: none; }
+.pf-more > summary small { margin-left: 8px; font: 400 10.5px var(--font); letter-spacing: 0; color: var(--t3); }
+.pf-more > summary::after { content: '展开'; margin-left: auto; font: 400 11px var(--font); letter-spacing: 0; color: var(--t3); }
+.pf-more[open] > summary::after { content: '收起'; }
+
+/* ---- 头部 ---- */
+.pp-path { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 5px; margin-right: 1px; font: 700 10.5px "Songti SC", "Noto Serif SC", serif; font-style: normal; color: #fff; background: rgb(var(--pc)); }
+.pp-head h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; }
+.pp-rename { width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; color: var(--t3); opacity: .55; }
+.pp-rename:hover { opacity: 1; color: rgb(var(--pc)); background: var(--hover); }
+.pp-rename svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.pp-rename-input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid rgb(var(--pc)); border-radius: 9px; font: 700 22px "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--t1); box-shadow: 0 0 0 3px rgba(var(--pc), .14); outline: none; }
+.pp-epithet { margin-left: 0; vertical-align: 0; }
+.pp-head .tf-sub { margin: 4px 0 0; font-size: 11.5px; color: var(--t2); }
+
+/* ---- 此刻 ---- */
+.pp-dot { background: var(--kc); }
+.pp-now { margin: 14px 0 0; padding: 11px 12px 10px; border-radius: 12px; background: #f7f6f4; }
+.pp-now-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.pp-now-row span { flex: none; font-size: 10.5px; color: var(--t3); }
+.pp-now-row b { min-width: 0; font: 700 14px "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-now-row small { margin-left: auto; flex: none; max-width: 50%; font-size: 10.5px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-meters { display: grid; gap: 4px; margin-top: 8px; }
+.pp-meter { display: grid; grid-template-columns: 30px 1fr 26px; align-items: center; gap: 8px; font-size: 10.5px; color: var(--t3); }
+.pp-meter i { height: 5px; border-radius: 3px; background: rgba(15,17,20,.07); overflow: hidden; display: block; }
+.pp-meter s { display: block; height: 100%; text-decoration: none; border-radius: 3px; transition: width .35s; }
+.pp-meter b { font: 600 11px var(--num); color: var(--t2); text-align: right; }
+.m-f s, .pp-chart .f { --c: #b8860b; } .m-w s, .pp-chart .w { --c: #2f7d4f; } .m-h s, .pp-chart .h { --c: #b0402e; }
+.pp-meter s { background: var(--c); }
+.pp-chart { margin: 8px 0 0; cursor: pointer; }
+.pp-chart svg { display: block; width: 100%; height: 58px; overflow: visible; }
+.pp-chart path { fill: none; stroke: var(--c); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; opacity: .9; }
+.pp-chart line { stroke: #0f1114; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.pp-chart figcaption { display: flex; gap: 10px; margin-top: 3px; font-size: 10px; color: var(--t3); }
+.pp-chart figcaption span::before { content: ''; display: inline-block; width: 10px; height: 2px; margin-right: 4px; vertical-align: 3px; background: var(--c); }
+
+/* ---- 志向卡：官阶阶梯 ---- */
+.pp-ladder { list-style: none; display: flex; flex-wrap: wrap; gap: 3px; margin: 8px 0 0; padding: 0; }
+.pp-ladder li { cursor: default; font-size: 10.5px; padding: 1px 7px; border-radius: 5px; background: rgba(255,255,255,.7); color: var(--t3); }
+.pp-ladder li.past { color: var(--t2); }
+.pp-ladder li.on { background: rgb(var(--pc)); color: #fff; font-weight: 600; }
+
+/* ---- 阅历 ---- */
+.pp-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.pp-chip { display: inline-flex; align-items: center; gap: 3px; height: 24px; padding: 0 9px; border-radius: 999px; background: #f1f6f2; color: #255f3d; font-size: 11.5px; }
+.pp-chip:hover { background: #e2efe6; }
+.pp-chip.more { background: #f4f5f6; color: var(--t2); }
+.pp-chip.born { background: #f6eef2; color: rgb(var(--pc)); }
+.pp-pol .pp-chip { background: #f4f2f8; color: #4f3880; }
+.pp-pol .pp-chip.served { background: #fbefe6; color: #8a4a15; }
+.pp-chip i { font: 700 10px "Songti SC", serif; font-style: normal; width: 15px; height: 15px; border-radius: 4px; display: grid; place-items: center; color: #fff; background: #b26a2a; }
+.pp-faith { margin: 8px 0 0; font-size: 11.5px; color: var(--t1); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.pp-faith > span { font-size: 10.5px; color: var(--t3); margin-right: 2px; }
+.pp-faith em { font-style: normal; color: var(--t3); }
+.pp-faith small { font: 10px var(--num); color: var(--t3); }
+
+/* ---- 年表筛选与时局引文 ---- */
+.pp-filter { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 10px; }
+.pp-filter button { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: 999px; background: #f4f5f6; font: 500 11.5px var(--font); color: var(--t2); }
+.pp-filter button em { font: 500 10px var(--num); font-style: normal; color: var(--t3); }
+.pp-filter button:hover { background: #eceef0; }
+.pp-filter button.on { background: var(--kc); color: #fff; }
+.pp-filter button.on em { color: rgba(255,255,255,.75); }
+.pp-events .pp-ev i { background: var(--kc); }
+.pp-events li.none { padding: 8px 0 8px 31px; color: var(--t3); }
+.pp-world { margin: 5px 0 0 31px; padding: 5px 9px; border-left: 2px solid #b0402e; border-radius: 0 7px 7px 0; background: #fbf3f1; font-size: 11px; line-height: 1.6; color: #6e3328; }
+.pp-world em { font-style: normal; font-weight: 700; margin-right: 6px; color: #b0402e; }
+
+/* ---- 人物列表 ---- */
+.pp-count { margin-top: 10px; }
+.person-list li { display: flex; gap: 4px; align-items: stretch; }
+.person-list li > button:first-child { flex: 1 1 auto; min-width: 0; width: auto; }
+.person-list li > button.pp-del { flex: none; width: auto; display: inline-flex; align-items: center; justify-content: center; background: transparent; }
+.person-list b em { font-style: normal; font-size: 11px; font-weight: 600; color: rgb(var(--pc)); }
+.person-list i.g-庙堂 { background: #a6382d; } .person-list i.g-江湖 { background: #2f5c8c; } .person-list i.g-商旅 { background: #9a6e14; } .person-list i.g-信仰与学问 { background: #6b3fa0; }
+.pp-del { flex: none; min-width: 34px; padding: 0 8px; border-radius: 10px; color: var(--t3); background: transparent; font: 600 11px var(--font); }
+.pp-del:hover { color: #a6382d; background: #fbefed; }
+.person-list li > button.pp-del:hover { background: #fbefed; }
+.person-list li > button.pp-del.armed { color: #fff; background: #a6382d; }
+.pp-del svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; vertical-align: -3px; }

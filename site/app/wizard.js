@@ -1,17 +1,25 @@
-/* 19 题推演向导 */
+/* 推演向导：五步问卷 + 第六步世界总结 */
 (function (G) {
   'use strict';
   const { Q, PAGES } = G.Config;
   const $ = id => document.getElementById(id);
-  let st = null, page = 0, onDone = null, canClose = false;
+  const esc = value => String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let st = null, page = -2, mapMode = false, onDone = null, canClose = false;
+
+  function preparing(value) {
+    $('wizBody').inert = value; $('wizSteps').inert = value;
+    for (const id of ['wizNext', 'wizPrev', 'wizRandom']) $(id).disabled = value;
+  }
 
   function open(state, done, closable) {
-    st = JSON.parse(JSON.stringify(state)); onDone = done; page = 0; canClose = !!closable;
+    G.MapImport.cancel(st);
+    st = JSON.parse(JSON.stringify(state)); onDone = done; page = -2; mapMode = !!st.terrainInput; canClose = !!closable;
+    preparing(false);
     $('wizClose').hidden = false;
     $('wizard').hidden = false;
     draw();
   }
-  function close() { hideTip(); $('wizard').hidden = true; }
+  function close() { G.MapImport.cancel(st); preparing(false); hideTip(); $('wizard').hidden = true; }
 
   function optBtn(q, o, i) {
     const on = st.a[q.id] === o[0];
@@ -49,14 +57,25 @@
     const lakes = c.lakeFactor < 0.8 ? ['↓', 'dn', '湖泊偏少'] : c.lakeFactor > 1.5 ? ['↑', 'up', '湖泊偏多'] : ['·', 'mid', '接近类地'];
     const nw = c.newWorld === true ? '有' : c.newWorld === false ? '无' : '随机';
     const contact = c.newWorld === false ? '' : c.endYear >= 4450 ? '前工业时代：若有，可能已被远洋航海接触' : '远洋航海尚未出现：若有，仍与旧大陆隔绝';
-    return `<div class="q"><h4><em>≈</em>整体倾向</h4><div class="trend">
+    const age = G.Config.ageLabel(c.endYear), M = G.MilitarySettings;
+    const yr = G.Config.CUSTOM && st.custom && st.custom.age && st.custom.age.on ? `第 ${c.endYear} 年` : `约第 ${G.Config.AGE[a.age].join('–')} 年`;
+    const pop = st.popMode === 'range' && c.popRange ? `${(c.popRange[0] / 1e8).toFixed(1)}–${(c.popRange[1] / 1e8).toFixed(1)} 亿` : `参考 ${G.Config.ERA_RANGE[c.popIdx].join('–')} 亿`;
+    const step3 = (v, lo, hi) => v < lo ? ['↓', 'dn'] : v > hi ? ['↑', 'up'] : ['·', 'mid'];
+    const civ = fact('时代', '·', 'mid', age, yr + (c.endYear >= 4450 ? ' · 已有火药与远洋航海' : c.endYear >= 3500 ? ' · 尚无印刷、火药与远洋航海' : ' · 尚无封建契约与远洋航海'))
+      + fact('人口基线', ...step3(c.popIdx, 1, 1), ['较低', '中等', '较高'][c.popIdx], pop + '，实际人口随历史演化')
+      + fact('文化', ...step3(c.cultures, 11, 17), c.cultures > 17 ? '多元细碎' : c.cultures < 11 ? '大文化圈' : '中等', `${c.cultures} 个文化圈 · ${c.languages} 种语言 · ${c.religions} 个宗教`)
+      + fact('国家', ...step3(c.countries, 60, 100), c.countries > 100 ? '列国林立' : c.countries < 60 ? '少数大国' : '中等', `初始约 ${c.countries} 国 · 部落空间 ${Math.round(c.tribal * 100)}%`)
+      + fact('城镇', ...step3(c.towns, 600, 900), c.towns > 900 ? '城镇密集' : c.towns < 600 ? '城镇疏朗' : '标准', `约 ${c.towns} 座城镇`);
+    return `<div class="q"><h4><em>≈</em>世界总结 <small class="trend-sub">这些选择叠加出的整体倾向</small></h4><div class="trend">
       <section><h6>气候</h6>${t1}${w1}${s1}${b1}</section>
-      <section><h6>地貌与群系</h6>${row('冰盖苔原', sc.cold)}${row('热带雨林', sc.tropic)}${row('荒漠草原', sc.arid)}${row('山地高原', sc.mount)}${row('海岸与群岛', sc.coast)}${fact('河口', '·', 'mid', tide)}${fact('湖泊', ...lakes)}</section>
-      <section><h6>文明生计</h6>${row('游牧', sc.arid)}${row('高地', sc.mount)}${row('沿海航海', sc.coast)}${row('农耕', -(sc.cold + sc.arid) / 2)}${fact('新大陆', '·', 'mid', nw, contact)}</section>
-    </div><p class="trend-note">按所选参数（含自定义数值）粗略叠加出的倾向，用来对照各选项的提示；具体分布由种子与推演决定。</p></div>`;
+      <section><h6>地貌与群系</h6>${st.terrainInput ? fact('地形', '·', 'mid', '以导入图纸为准', `介入 ${st.terrainInput.intervention} / 100，保护规则优先`) + fact('板块', '·', 'mid', st.terrainInput.intervention > 50 ? '受图纸约束的假想构造' : '未生成') : row('冰盖苔原', sc.cold) + row('热带雨林', sc.tropic) + row('荒漠草原', sc.arid) + row('山地高原', sc.mount) + row('海岸与群岛', sc.coast) + fact('河口', '·', 'mid', tide) + fact('湖泊', ...lakes)}</section>
+      <section><h6>文明生计</h6>${st.terrainInput ? fact('分布', '·', 'mid', '由图纸地形及气候推演', '图纸未标注旧／新大陆，不按问卷随机指定') : row('游牧', sc.arid) + row('高地', sc.mount) + row('沿海航海', sc.coast) + row('农耕', -(sc.cold + sc.arid) / 2) + fact('新大陆', '·', 'mid', nw, contact)}</section>
+      <section><h6>文明格局</h6>${civ}</section>
+      ${M ? `<section><h6>军事</h6>${M.trend(st, fact)}</section>` : ''}
+    </div><p class="trend-note">${st.terrainInput ? '导入图纸替代问卷中的海陆比例、极地与大陆布局；天文、气候和人文设置继续生效。' : '按所选参数（含自定义数值）粗略叠加出的倾向，用来对照各选项的提示；具体分布由种子与推演决定。'}</p></div>`;
   }
   function showTip(mark) {
-    const h = G.Config.hintOf(mark.dataset.hq, mark.dataset.hv); if (!h) return;
+    const hq = mark.dataset.hq, h = hq.startsWith('mil:') ? G.MilitarySettings.hintOf(hq.slice(4), mark.dataset.hv) : G.Config.hintOf(hq, mark.dataset.hv); if (!h) return;
     if (!tipEl) { tipEl = document.createElement('div'); tipEl.className = 'opt-tip'; document.body.appendChild(tipEl); }
     const opt = mark.closest('.opt'), title = opt ? opt.querySelector('b').textContent : '';
     tipEl.innerHTML = `<h5>${title} · 大致影响</h5>` + h.map(([k, d, v], i) => `<div><span class="lb">${i && h[i - 1][0] === k ? '' : k}</span><i class="ar ${ARC[d]}">${ARR[d]}</i><span class="tx">${v}</span></div>`).join('') + '<p><i class="ar up">↑</i>变多 / 变强　<i class="ar dn">↓</i>变少 / 变弱　<i class="ar mid">·</i>说明</p>';
@@ -77,10 +96,10 @@
   function extra(q) {
     if (q.extra === 'pop') {
       const r = G.Config.ERA_RANGE[{ A: 0, B: 1, C: 2 }[st.a.era]];
-      return `<div class="extra">人口方式
-        <span class="seg2" data-x="popMode"><button data-v="env" class="${st.popMode === 'env' ? 'on' : ''}">按环境估算</button><button data-v="range" class="${st.popMode === 'range' ? 'on' : ''}">按指定区间</button></span>
+      return `<div class="extra">承载基线方式
+        <span class="seg2" data-x="popMode"><button data-v="env" class="${st.popMode === 'env' ? 'on' : ''}">按环境估算基线</button><button data-v="range" class="${st.popMode === 'range' ? 'on' : ''}">按指定基线区间</button></span>
         ${st.popMode === 'range' ? `<label>下限 <input type="number" step="0.1" data-f="popLo" value="${st.popLo ?? r[0]}" min="${r[0]}" max="${r[1]}"> 亿</label><label>上限 <input type="number" step="0.1" data-f="popHi" value="${st.popHi ?? r[1]}" min="${r[0]}" max="${r[1]}"> 亿</label>` : ''}
-        <span style="width:100%;font-size:12px;color:#8b96a0">两种方式都不超过本档人口上限（${r[1]} 亿）。</span></div>`;
+        <span style="width:100%;font-size:12px;color:#8b96a0">基线参数不超过本档上限（${r[1]} 亿）；实际人口会随历史演化。</span></div>`;
     }
     if (q.extra === 'towns') {
       return `<div class="extra"><label><input type="checkbox" data-c="townsCustom" ${st.townsCustom ? 'checked' : ''}> 分别自定义</label>
@@ -96,46 +115,78 @@
     return '';
   }
   function draw() {
+    const sourceStep = page < 0;
+    $('wizard').classList.toggle('source-step',sourceStep);
+    $('wizSteps').hidden = sourceStep; $('wizDots').hidden = sourceStep;
+    $('wizRandom').hidden = sourceStep; $('wizPrev').hidden = page === -2; $('wizNext').hidden = page === -2;
+    $('wizPrev').disabled = false; $('wizPrev').textContent = page <= 0 ? '返回选择' : '上一步';
+    $('wizTitle').textContent = page === -2 ? '创建世界' : page === -1 ? '上传世界地图' : '自定义你的世界';
+    if (sourceStep) {
+      hideTip();
+      $('wizSub').textContent = page === -2 ? '选择从自己的图纸开始，或交给程序生成。' : '上传图片后自动处理，再设置天文、气候、种族与文明。';
+      $('wizBody').innerHTML = page === -2
+        ? '<div class="world-source-options"><button class="opt src-card" data-world-source="procedural"><span class="src-art proc"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="22"/><path d="M14 26c8 4 14-6 22-2s10 10 16 8M12 40c10-3 14 4 24 1s12-8 18-6"/><circle cx="48" cy="14" r="4"/></svg></span><b>程序生成</b><small>回答 25 个问题——星球、气候、大陆与文明——由程序推演出地形、历史与城市。</small><em>推荐 · 从零开始</em></button><button class="opt src-card" data-world-source="upload"><span class="src-art up"><svg viewBox="0 0 64 64"><rect x="10" y="14" width="44" height="34" rx="4"/><path d="M10 40l12-12 10 9 8-6 14 11"/><path d="M32 6v14M26 12l6-6 6 6"/></svg></span><b>上传世界地图</b><small>用你画好的地图或高度图。自动识别海陆、估算高程，再接着设定气候、种族与文明。</small><em>保留你的大陆轮廓</em></button></div>'
+        : G.MapImport.html(st);
+      if (page === -1) G.MapImport.bind($('wizBody'),st);
+      $('wizNext').textContent = '继续设置世界';
+      return;
+    }
     const P = PAGES[page];
-    $('wizSteps').innerHTML = PAGES.map((p, i) => `<button data-p="${i}" class="${i === page ? 'on' : ''} ${i < page ? 'done' : ''}">${i + 1}. ${p.t}</button>`).join('');
+    $('wizSteps').innerHTML = PAGES.map((p, i) => `<button data-p="${i}" class="${i === page ? 'on' : ''} ${i < page ? 'done' : ''}"><i>${i < page ? '✓' : i + 1}</i><span><b>${p.t}</b><small>${p.final ? '总览倾向 · 开始推演' : p.q.map(qi => qi + 1).join('、') + (p.military && G.MilitarySettings ? `、${G.MilitarySettings.first}–${G.MilitarySettings.first + G.MilitarySettings.count - 1}` : '') + ' 题'}</small></span></button>`).join('') + `<div class="wiz-steps-note">每题都已预选；第 6 步总结整体倾向，可从那里回到任意一题修改。</div>`;
     let html = P.q.map(qi => { const q = Q[qi]; return `<div class="q"><h4><em>${qi + 1}</em>${q.t}</h4><div class="opts">${q.o.map((o, i) => optBtn(q, o, i)).join('')}</div>${extra(q)}${customBlock(q)}</div>`; }).join('');
+    if (P.military && G.MilitarySettings) html += G.MilitarySettings.html(st);
     if (P.final) {
       html += trends(st);
+      html += `<div class="q"><h4><em>▧</em>地图来源</h4><p>${st.terrainInput ? esc((st.terrainInput.source?.asset || st.terrainInput.asset).name)+' · 介入 '+st.terrainInput.intervention+' / 100' : '按生成设置推演海陆与地形'}</p><button type="button" class="btn ghost" data-act="map-source">${st.terrainInput?'修改上传图纸':'改用上传地图'}</button><p data-map-message role="status"></p></div>`;
       html += `<div class="q"><h4><em>⚙</em>推演参数</h4><div class="extra" style="margin-top:0">
         <label>种子 <input class="seedin" style="width:130px" data-f="seed" value="${st.seed}"></label>
         <button class="btn ghost" data-act="dice" style="height:32px;font-size:12px">换个种子</button>
         <span class="gridinfo">网格 ${(g => `${g.W}×${g.H} · 每格约 ${g.km.toFixed(1)} km`)(G.Config.gridOf(st))}<small>由星球大小决定</small></span>
       </div>
-      <div class="extra" style="margin-top:10px">文化库：已选 ${G.Home ? G.Home.selectedCount() : ''} 个库（名称、国名后缀按文明的生计大类匹配）<button class="btn ghost" data-act="libs" style="height:30px;font-size:12px">前往文化库</button></div>
-      <div class="extra" style="margin-top:8px">宗教库：已选 ${G.RelLib ? G.RelLib.selectedCount() : ''} 个库（按宗教发源地的文明匹配；宗教类型与传播方式影响历史推演）<button class="btn ghost" data-act="rlibs" style="height:30px;font-size:12px">前往宗教库</button></div>
-      <div class="summary">${Q.map((q, i) => { const o = q.o.find(x => x[0] === st.a[q.id]); return `<div><span>${i + 1}. ${q.t}</span><br>${o[1]}${o[2] && o[2].length < 18 ? ' · ' + o[2] : ''}</div>`; }).join('')}</div></div>`;
+      <div class="wz-libs">
+        <button type="button" data-act="libs"><b>文化库</b><span>已选 ${G.Home ? G.Home.selectedCount() : ''} 个</span><small>人名、地名、国号与制度，按文明生计大类匹配</small></button>
+        <button type="button" data-act="rlibs"><b>宗教库</b><span>已选 ${G.RelLib ? G.RelLib.selectedCount() : ''} 个</span><small>按发源地文明匹配；类型与传播方式影响推演</small></button>
+        <button type="button" data-act="slibs"><b>种族库</b><span>已选 ${G.SpeciesLib ? G.SpeciesLib.selectedCount() : 0} 个</span><small>体质、寿命与天赋词条</small></button>
+      </div>
+      <h5 class="wz-sumtitle">设定一览 <small>点任意一项回到那一步修改</small></h5><div class="summary">${Q.map((q, i) => { const o = q.o.find(x => x[0] === st.a[q.id]); return `<button type="button" data-p="${PAGES.findIndex(pg => pg.q.includes(i))}"><span>${i + 1}. ${q.t}</span><b>${o[1]}</b>${o[2] && o[2].length < 18 ? `<small>${o[2]}</small>` : ''}</button>`; }).join('')}${G.MilitarySettings ? G.MilitarySettings.summary(st).map(m => `<button type="button" data-p="${PAGES.findIndex(pg => pg.military)}"><span>${m.n}. ${m.t}</span><b>${m.b}</b><small>${m.s}</small></button>`).join('') : ''}</div></div>`;
     }
     hideTip();
     $('wizBody').innerHTML = html;
-    $('wizDots').innerHTML = Q.map((q, i) => `<i class="${PAGES.findIndex(p => p.q.includes(i)) <= page ? 'on' : ''}"></i>`).join('');
-    $('wizPrev').disabled = page === 0;
-    $('wizNext').textContent = P.final ? '开始推演' : '下一步';
-    $('wizSub').textContent = `第 ${page + 1} / ${PAGES.length} 步 · ${P.t} · 每题都已预选，可直接修改`;
+    $('wizNext').textContent = P.final ? '开始推演' : page === PAGES.length - 2 ? '查看世界总结' : '下一步';
+    $('wizSub').textContent = `第 ${page + 1} / ${PAGES.length} 步 · ${P.t}`;
+    $('wizDots').innerHTML = `<span class="wz-prog"><i style="width:${(page + 1) / PAGES.length * 100}%"></i></span>`;
   }
 
   document.addEventListener('DOMContentLoaded', () => {
+    $('wizBody').addEventListener('mapinputchanged', e=>{if(e.detail?.source==='procedural'){mapMode=false;page=0;}draw();});
     $('wizBody').addEventListener('mouseover', e => { const m = e.target.closest('.hint'); if (m && m !== tipFor) showTip(m); });
     $('wizBody').addEventListener('mouseout', e => { const m = e.target.closest('.hint'); if (m && !m.contains(e.relatedTarget)) hideTip(); });
     $('wizBody').addEventListener('scroll', hideTip, { passive: true });
     document.addEventListener('pointerdown', e => { if (tipFor && !e.target.closest('.hint')) hideTip(); });
     $('wizBody').addEventListener('click', e => {
+      const source = e.target.closest('[data-world-source]');
+      if (source) {
+        mapMode = source.dataset.worldSource === 'upload';
+        if (!mapMode) { G.MapImport.cancel(st); st = {...st}; delete st.terrainInput; }
+        page = mapMode ? -1 : 0; draw(); $('wizBody').scrollTop = 0; return;
+      }
+      if (e.target.closest('[data-act="map-source"]')) { mapMode = true; page = -1; draw(); $('wizBody').scrollTop = 0; return; }
       const m = e.target.closest('.hint');
       if (m) { e.preventDefault(); e.stopPropagation(); showTip(m); return; } // 点标记只看说明，不改选项
+      if (G.MilitarySettings && G.MilitarySettings.click(e.target, st)) { draw(); return; }
       const o = e.target.closest('.opt');
       if (o) { st.a[o.dataset.q] = o.dataset.v; draw(); return; }
       const sg = e.target.closest('.seg2 button');
       if (sg) { const k = sg.parentElement.dataset.x; st[k] = k === 'res' ? +sg.dataset.v : sg.dataset.v; draw(); return; }
+      const jump = e.target.closest('.summary [data-p]'); if (jump) { page = +jump.dataset.p; draw(); $('wizBody').scrollTop = 0; return; }
       if (e.target.closest('[data-act=dice]')) { st.seed = (Math.random() * 1e9) | 0; draw(); }
       if (e.target.closest('[data-act=libs]')) { G.Home.showLibrary(); }
       if (e.target.closest('[data-act=rlibs]')) { G.RelLib.show(); }
+      if (e.target.closest('[data-act=slibs]')) { G.SpeciesLib.show(); }
     });
     $('wizBody').addEventListener('change', e => {
       const t = e.target;
+      if (t.dataset.milcu || t.dataset.military) { if (G.MilitarySettings.change(t, st)) draw(); return; }
       if (t.dataset.cu) { st.custom = st.custom || {}; const q = t.dataset.cu, fields = G.Config.CUSTOM[q]; const o = st.custom[q] || { on: false, v: {} }; o.on = t.checked; fields.forEach(f => { if (o.v[f.key] === undefined) o.v[f.key] = f.def; }); st.custom[q] = o; draw(); return; }
       if (t.dataset.cq) { const o = st.custom[t.dataset.cq]; let v = +t.value; const f = G.Config.CUSTOM[t.dataset.cq].find(x => x.key === t.dataset.ck); v = Math.max(f.min, Math.min(f.max, isFinite(v) ? v : f.def)); o.v[t.dataset.ck] = v; t.value = v; return; }
       if (t.dataset.c) { st[t.dataset.c] = t.checked; draw(); }
@@ -143,9 +194,22 @@
     });
     $('wizBody').addEventListener('input', e => { const t = e.target; if (t.type === 'range' && t.dataset.f) { st[t.dataset.f] = +t.value; t.nextElementSibling.textContent = t.dataset.f === 'tempBias' ? `${t.value > 0 ? '+' : ''}${t.value} °C` : `${(+t.value).toFixed(2)}×`; } });
     $('wizSteps').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { page = +b.dataset.p; draw(); $('wizBody').scrollTop = 0; } });
-    $('wizPrev').addEventListener('click', () => { if (page > 0) { page--; draw(); $('wizBody').scrollTop = 0; } });
-    $('wizNext').addEventListener('click', () => {
-      if (PAGES[page].final) { close(); onDone && onDone(st); return; }
+    $('wizPrev').addEventListener('click', () => { page = page > 0 ? page - 1 : page === 0 && mapMode ? -1 : -2; draw(); $('wizBody').scrollTop = 0; });
+    $('wizNext').addEventListener('click', async () => {
+      if (page === -1) {
+        if (!G.MapImport.validateForGenerate(st,$('wizBody'))) return;
+        if (!st.terrainInput) { $('wizBody').querySelector('[data-map-message]').textContent = '请先上传一张世界地图。'; return; }
+        page = 0; draw(); $('wizBody').scrollTop = 0; return;
+      }
+      if (page < 0) return;
+      if (PAGES[page].final) {
+        if (!G.MapImport.validateForGenerate(st, $('wizBody'))) return;
+        const current = st; preparing(true);
+        try { await G.MapImport.ensureGrid(current); if (current !== st || $('wizard').hidden) return; close(); onDone && onDone(current); }
+        catch (error) { if (current === st && error.name !== 'AbortError') { const el = $('wizBody').querySelector('[data-map-message]'); if (el) el.textContent = error.message; } }
+        finally { if (current === st) preparing(false); }
+        return;
+      }
       page++; draw(); $('wizBody').scrollTop = 0;
     });
     $('wizRandom').addEventListener('click', () => { G.Config.randomize(st); page = PAGES.length - 1; draw(); });

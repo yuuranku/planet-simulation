@@ -2,9 +2,13 @@
   "name": "planet-simulation",
   "private": true,
   "scripts": {
-    "build:globe": "esbuild site/globe-src/entry.js --bundle --minify --format=esm --outfile=site/globe/globe-bundle.js"
+    "build:globe": "esbuild site/globe-src/entry.js --bundle --minify --format=esm --outfile=site/globe/globe-bundle.js",
+    "build:world-package": "esbuild site/app/world-package-src.js --bundle --minify --format=iife --global-name=WorldPackage --outfile=site/app/world-package.js",
+    "build:png-decoder": "esbuild site/app/png-decoder-src.js --bundle --minify --format=iife --global-name=PngDecoder --outfile=site/app/png-decoder.js"
   },
   "dependencies": {
+    "fast-png": "8.0.0",
+    "fflate": "0.8.3",
     "three": "0.186.1"
   },
   "devDependencies": {

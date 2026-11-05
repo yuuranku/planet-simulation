@@ -109,12 +109,12 @@
     if (era) result.era = era;
     if (result.era === 'industrial' && !result.eraPrepared) {
       const growth = 2.2, population = result.population;
-      result.population = {...population, minimum: Math.round(population.minimum * growth),
+      if (!result.fortification) result.population = {...population, minimum: Math.round(population.minimum * growth),
         maximum: Math.round(population.maximum * growth), estimate: Math.round(population.estimate * growth)};
       const widths = result.urban.streetWidthsMetres || {arterial: 11, collector: 5.6, local: 3};
       result.urban = {...result.urban, streetWidthsMetres: {arterial: Math.max(18, widths.arterial * 1.7),
         collector: Math.max(10, widths.collector * 1.8), local: Math.max(5, widths.local * 1.6)}};
-      result.landmarks = Array.from(new Set([...(result.landmarks || []), 'railway-station', 'factory-district']));
+      if (!result.fortification) result.landmarks = Array.from(new Set([...(result.landmarks || []), 'railway-station', 'factory-district']));
       result.eraPrepared = true;
     }
     return result;

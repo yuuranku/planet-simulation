@@ -373,7 +373,7 @@
         "hill-town": "\u5C71\u5730\u57CE\u5E02",
         "market-town": "\u5546\u8D38\u57CE\u5E02"
       }[kind];
-      const defensive = ["ancient", "medieval", "early-modern", "preindustrial"].includes(recipe.era) && (!small || military) || recipe.era === "industrial" && !mobile && (military || (recipe.landmarks || []).includes("citadel"));
+      const defensive = recipe.era === "tribal" && military || ["ancient", "medieval", "early-modern", "preindustrial"].includes(recipe.era) && (!small || military) || recipe.era === "industrial" && !mobile && (military || (recipe.landmarks || []).includes("citadel"));
       const capital = culture.isCapital || (recipe.urban?.coreZones || []).some((c) => c.role === "government-core");
       const layers = defensive ? 1 : 0;
       const barbicans = defensive && !small && recipe.era !== "ancient" && recipe.era !== "industrial" && (capital || population > 8500 || ["fortress", "border-pass"].includes(kind));

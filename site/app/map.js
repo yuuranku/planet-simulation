@@ -45,7 +45,7 @@
     const d = this.d;
     const cont = { land: new Path2D(), sea: new Path2D(), index: new Path2D(), fine: null, fineIndex: null };
     for (const c of d.contours || []) { const p = c.level <= 0 ? cont.sea : c.k % 4 === 0 ? cont.index : cont.land, a = c.pts; p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) p.lineTo(a[k], a[k + 1]); }
-    const roads = {}; for (const k of ['trunk', 'regional', 'local', 'sea', 'rail', 'seaTrunk']) roads[k] = toPath(smoothLines(d.roads[k] || []));
+    const roads = {}; for (const k of ['trunk', 'regional', 'local', 'sea', 'rail', 'seaTrunk']) roads[k] = toPath(k === 'sea' || k === 'seaTrunk' ? smoothLines(d.roads[k] || []) : d.roads[k] || []); // 陆路已在 Worker 里按水面校验圆滑过，这里再切角会切进水里
     const BD = d.borders || {}, borders = {}; for (const k of ['country', 'frontier', 'province', 'claim']) borders[k] = toPath(BD[k] || []);
     const plates = d.plateSegs.map(lines => toPath(lines));
     const isobars = (d.isobars || []).map(s => toPath(s.lines.map(l => l.pts)));
@@ -185,13 +185,14 @@
       const t = this.queue.shift(), key = this.tileKey(t.z, t.txm, t.ty);
       if (this.tiles.has(key) || this.inflight.has(key)) continue;
       const { g, span } = this.tileGeom(t.z), texKey = this.texKey;
+      const onScreen = () => t.z <= this.wantZ && this.visibleTiles(t.z).some(v => v.txm === t.txm && v.ty === t.ty);
       this.inflight.add(key);
       // 渐进瓦片：预览帧先上屏，细节条带随后逐条覆盖到同一张画布上
       const cv = document.createElement('canvas'); cv.width = TILE; cv.height = TILE;
       const cctx = cv.getContext('2d');
       const p = this.app.render({ w: TILE, h: TILE, pad: 1, x0: t.txm * span, y0: t.ty * span, s: g, topic: this.app.topic(), season: this.app.season, aux: this.app.auxObj(), strips: 1 }, m => {
         cctx.putImageData(new ImageData(new Uint8ClampedArray(m.buf.buffer || m.buf), TILE, m.h), 0, m.y);
-        if (texKey === this.texKey) { this.fade = true; this.draw(); }
+        if (texKey === this.texKey && onScreen()) { this.fade = true; this.draw(); }
       });
       this.inflightId.set(key, p.renderId);
       p.then(img => {
@@ -200,7 +201,7 @@
           cctx.drawImage(img, 0, 0);
           this.tiles.set(key, { img: cv, t: performance.now() });
           while (this.tiles.size > 260) { const k0 = this.tiles.keys().next().value, o = this.tiles.get(k0); o.img.close && o.img.close(); this.tiles.delete(k0); }
-          this.fade = true; this.draw();
+          if (onScreen()) { this.fade = true; this.draw(); }
         }
         this.pump();
       }, () => { this.inflight.delete(key); this.inflightId.delete(key); this.pump(); });
@@ -227,11 +228,32 @@
     if (fading) this.draw();
   };
   // ---------- 绘制 ----------
-  MP.draw = function () { if (!this.raf) this.raf = requestAnimationFrame(() => { this.raf = 0; this.render(); }); };
+  // Ordinary changes invalidate the static frame. Moving people and event rings
+  // reuse it at the exact same viewport size and device pixel ratio.
+  MP.draw = function () { this.baseRevision = (this.baseRevision || 0) + 1; this.drawDynamic(); };
+  MP.drawDynamic = function () { if (!this.raf) this.raf = requestAnimationFrame(() => { this.raf = 0; this.render(); }); };
+  MP.frameKey = function () { const v=this.view; return [this.baseRevision || 0,this.cv.width,this.cv.height,this.dpr,v.x,v.y,v.s].join(':'); };
+  MP.saveFrame = function (styled, key) {
+    const copy = (name, source) => { const cv=this[name] || (this[name]=document.createElement('canvas')); if(cv.width!==this.cv.width || cv.height!==this.cv.height){cv.width=this.cv.width;cv.height=this.cv.height;} const c=cv.getContext('2d'); c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,cv.width,cv.height);c.drawImage(source,0,0); };
+    copy('baseCanvas',this.cv); if(styled) copy('vectorCanvas',this.vcv);
+    this.baseKey=key;
+  };
+  MP.presentFrame = function (ks, style, restore) {
+    const main=this.ctx, styled=style.filter!=='none';
+    main.setTransform(1,0,0,1,0,0); main.filter='none';
+    if(restore){main.clearRect(0,0,this.cv.width,this.cv.height);main.drawImage(this.baseCanvas,0,0);}
+    let c=main;
+    if(styled){c=this.vcv.getContext('2d');if(restore){c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,this.vcv.width,this.vcv.height);c.drawImage(this.vectorCanvas,0,0);}}
+    this.app.drawHistoryDynamic?.(c,this,ks);
+    if(styled){main.filter=style.filter;main.drawImage(this.vcv,0,0);main.filter='none';}
+    this.drawDecor(main,this.app.aux.style || 'default');
+  };
   MP.copies = function () { const v = this.view, W = this.W * v.s, out = []; if (!(W > 0) || !isFinite(v.x)) return [0]; const k0 = Math.floor(-v.x / W), k1 = Math.floor((this.vw - v.x) / W); for (let k = k0; k <= k1; k++) out.push(k); return out; };
   MP.render = function () {
     let c = this.ctx; const dpr = this.dpr, v = this.view, mainCtx = this.ctx;
     const VS = VSTYLE[this.app.aux.style] || VSTYLE.default; FONT = VS.font || SANS;
+    const frameKey=this.frameKey();
+    if(this.d && this.baseKey===frameKey){this.presentFrame(this.copies(),VS,true);return;}
     c.setTransform(1, 0, 0, 1, 0, 0); c.filter = 'none'; c.fillStyle = VS.bg; c.fillRect(0, 0, this.cv.width, this.cv.height);
     if (!this.d) return;
     const ks = this.copies(), W = this.W, H = this.H, s = v.s;
@@ -309,8 +331,12 @@
     app.drawTools && app.drawTools(c, this, ks);
     this.drawLabels(ks, zr, lv);
     if (app.drawHistoryTop) app.drawHistoryTop(c, this, ks); // 历史时间线：摇篮与文明名称
-    if (styled) { this.ctx = mainCtx; mainCtx.setTransform(1, 0, 0, 1, 0, 0); mainCtx.filter = VS.filter; mainCtx.drawImage(this.vcv, 0, 0); mainCtx.filter = 'none'; }
-    this.drawDecor(mainCtx, this.app.aux.style || 'default');
+    this.ctx = mainCtx;
+    // A moving camera invalidates its snapshot before it can ever be reused.
+    // Build the full-resolution cache only once the same static view is drawn again.
+    if (this.lastFrameKey === frameKey) this.saveFrame(styled,frameKey);
+    this.lastFrameKey = frameKey;
+    this.presentFrame(ks,VS,false);
     app.onViewChange && app.onViewChange();
     clearTimeout(this.tileTimer); this.tileTimer = setTimeout(() => this.updateTiles(), 90);
   };
@@ -409,7 +435,7 @@
     const free = (x0, y0, x1, y1) => { for (const b of boxes) if (x0 < b[2] && x1 > b[0] && y0 < b[3] && y1 > b[1]) return false; boxes.push([x0, y0, x1, y1]); return true; };
     const onScreen = (sx, sy, m = 40) => sx > -m && sy > -m && sx < this.vw + m && sy < this.vh + m;
     const items = []; // [priority, kind, payload, id]
-    this.hits = []; this.cityDots = []; this.heritageDots = []; const N_ = (id, def) => app.nameOf ? app.nameOf(id, def) : def;
+    this.hits = []; this.cityDots = []; this.fortDots = []; this.heritageDots = []; const N_ = (id, def) => app.nameOf ? app.nameOf(id, def) : def;
     const human = tab === 'human', polTopic = human && POLITICAL_TOPIC[topic], showStates = aux.borders || polTopic || (!!(VSTYLE[aux.style] || {}).political && topic === 'terrain'); // 政区风格只在地形底图上自带国名
     if (tab === 'plates') d.plates.forEach((p, i) => items.push([5, 'plate', p, 'plate:' + i]));
     // 专题注记：本专题的类别直接写在对应区域里，优先级最高
@@ -447,11 +473,11 @@
     }
     if (aux.cities && tab !== 'plates') d.cities.forEach((ct, ci) => {
       const cap = ct.capital !== undefined;
-      const fortOk = ct.role === 'military-post' && (lv >= 2 || (lv >= 1 && (ct.gate === 'trunk' || ct.type === 'pass-fort')));
-      const ok = fortOk || cap || ct.tier === 'metropolis' || (lv >= 1 && ct.tier === 'city') || (lv >= 2 && ct.tier === 'town' && ct.pop >= 2000) || lv >= 3 || (ct.seat !== undefined && topic === 'province' && lv >= 1);
+      const ok = cap || ct.tier === 'metropolis' || (lv >= 1 && ct.tier === 'city') || (lv >= 2 && ct.tier === 'town' && ct.pop >= 2000) || lv >= 3 || (ct.seat !== undefined && topic === 'province' && lv >= 1);
       if (!ok) return;
       items.push([cap ? 30 : ct.tier === 'metropolis' ? 31 : ct.tier === 'city' ? 50 : ct.tier === 'site' ? 65 : ct.pop >= 2000 ? 60 : 75, 'city', ct, 'city:' + ci]);
     });
+    if (aux.cities && tab !== 'plates' && lv >= 1) (d.forts || []).forEach(f => { const kind = G.FortLifecycle.kind(f, Infinity, lv); if (kind) items.push([kind === 'fort' ? 48 : 72, 'fort', f, 'fort:' + f.id]); });
     if (human && topic === 'heritage' && d.heritage) { const on = app.herCat || { religious: 1, war: 1, culture: 1 }; d.heritage.forEach((o, i) => { if (!on[o.cat]) return; if (o.imp < 2 && lv < 1) return; items.push([o.imp >= 3 ? 22 : o.imp === 2 ? 34 : 55, 'heritage', o, 'heritage:' + i]); }); }
     items.sort((a, b) => a[0] - b[0] || (b[2].pop || b[2].size || 0) - (a[2].pop || a[2].size || 0));
     const PH = this.vw < 600, LS = PH ? 1.12 : 1, LP = PH ? 4 : 2; // 手机：标注放大 12%、避让间距加倍，字更清楚、不挤
@@ -508,7 +534,8 @@
           const a0 = at(d0), a1 = at(d0 + span), steep = Math.abs(a1[1] - a0[1]) > Math.abs(a1[0] - a0[0]) * 1.4, rev = steep ? a1[1] < a0[1] : a1[0] < a0[0]; // 横向从左往右读，竖向从上往下读
           const glyph = []; let pos = 0, ok = true, prevAng = null;
           for (let j = 0; j < n; j++) {
-            const jj = rev ? n - 1 - j : j, mid = rev ? d0 + span - (pos + cw[jj] / 2) : d0 + pos + cw[jj] / 2, h = Math.max(size * 0.7, 3);
+            // rev：线的终点在左（或上），首字从终点一端排起；字序不再倒一次（原先位置、字序各倒一次，注记成了“川定”“河姆努索”）
+            const jj = j, mid = rev ? d0 + span - (pos + cw[jj] / 2) : d0 + pos + cw[jj] / 2, h = Math.max(size * 0.7, 3);
             const p0 = at(mid - h), p1 = at(mid + h); let ang = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]); if (rev) ang += Math.PI;
             while (ang > Math.PI / 2) ang -= Math.PI; while (ang < -Math.PI / 2) ang += Math.PI; ang = Math.max(-o.tilt, Math.min(o.tilt, ang)); // 字头朝上：陡处字不躺倒，沿线竖排
             if (prevAng !== null) { let da = ang - prevAng; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI; if (Math.abs(da) > o.maxTurn) { ok = false; break; } }
@@ -518,7 +545,7 @@
             glyph.push([chars[jj], x, y, ang, bx]); pos += cw[jj] + gap;
           }
           if (!ok) continue;
-          // 读序：rev 时 glyph 是从右往左算的，绘制顺序无关
+          // 读序：首字总在左端（竖排在上端），绘制顺序无关
           let ux0 = 1e9, uy0 = 1e9, ux1 = -1e9, uy1 = -1e9;
           for (const g of glyph) { boxes.push(g[4]); ux0 = Math.min(ux0, g[4][0]); uy0 = Math.min(uy0, g[4][1]); ux1 = Math.max(ux1, g[4][2]); uy1 = Math.max(uy1, g[4][3]); }
           if (o.id) this.hits.push({ id: o.id, box: [ux0, uy0, ux1, uy1], name: str, x: (ux0 + ux1) / 2, y: (uy0 + uy1) / 2 });
@@ -595,6 +622,11 @@
           if (ok && sub && size >= 12.5) text(sub, sx - Math.sin(ang) * size * 1.05, sy + Math.cos(ang) * size * 1.05, { size: Math.max(9.5, size * 0.6), weight: 500, color: col || '#5a544c', ls: 0.5, angle: ang, halo: 3 }); });
       }
       else if (kind === 'city') each(o.x, o.y, (sx, sy) => this.drawCity(o, sx, sy, free, lv, true, id, N_(id, o.name)));
+      else if (kind === 'fort') each(o.x, o.y, (sx, sy) => {
+        if(!free(sx-5,sy-5,sx+5,sy+5))return;
+        if (G.FortLifecycle.kind(o, Infinity, lv) === 'fort') G.MapIcons.drawFort(c,sx,sy,'fort',4.2); else G.MapIcons.drawRuin(c,sx,sy,12); this.fortDots.push({fort:o,x:sx,y:sy});
+        text(N_(id,o.name),sx+8,sy,{size:11,weight:600,color:'#5a3f30',align:'left',id});
+      });
       else if (kind === 'heritage') each(o.x, o.y, (sx, sy) => this.drawHeritage(o, sx, sy, free, lv, id, N_(id, o.name), text));
     }
   };
@@ -612,17 +644,18 @@
     if (o.imp >= 2 || lv >= 2) text(label, sx + R + 4, sy, { size: o.imp >= 3 ? 12 : 11, weight: 600, color: HER_COL[o.cat] || '#444', align: 'left', id });
   };
   MP.heritageAt = function (sx, sy) { let best = -1, bd = 12; for (const d of this.heritageDots || []) { const dd = Math.hypot(d.x - sx, d.y - sy); if (dd < bd) { bd = dd; best = d.i; } } return best; };
+  MP.fortAt = function(sx,sy) {
+    let best=null,bd=11;
+    for(const d of this.fortDots||[]){const distance=Math.hypot(d.x-sx,d.y-sy);if(distance<bd){bd=distance;best=d.fort;}}
+    if(best)return best;
+    const hit=(this.hits||[]).find(h=>h.id?.startsWith('fort:')&&sx>=h.box[0]&&sx<=h.box[2]&&sy>=h.box[1]&&sy<=h.box[3]);
+    return hit?(this.d.forts||[]).find(f=>'fort:'+f.id===hit.id):null;
+  };
   MP.drawCity = function (ct, sx, sy, free, lv, names, id, label) {
     const c = this.ctx, cap = ct.capital !== undefined;
     const R0 = G.MapIcons.R0, r = cap ? R0.capital : ct.tier === 'metropolis' ? R0.metro : ct.tier === 'city' ? R0.city : ct.tier === 'site' ? R0.site : R0.town;
     if (!free(sx - r - 1, sy - r - 1, sx + r + 1, sy + r + 1)) return;
     this.cityDots.push({ id, x: sx, y: sy });
-    if (ct.role === 'military-post') { // 原版图式：要塞＝城垛方块，关隘＝带门洞的关楼
-      const k = 4.2; G.MapIcons.drawFort(c, sx, sy, ct.type, k);
-      if (names) { c.font = `600 11px ${FONT}`; const w = c.measureText(label).width; for (const dx of [k + 4, -(k + 4) - w]) if (free(sx + dx - 1, sy - 8, sx + dx + w + 1, sy + 8)) { this.hits.push({ id, box: [sx + dx - 1, sy - 8, sx + dx + w + 1, sy + 8], name: label, x: sx + dx + w / 2, y: sy });
-        c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineWidth = 3; c.strokeStyle = 'rgba(255,255,255,.9)'; c.strokeText(label, sx + dx, sy); c.fillStyle = '#5a3f30'; c.fillText(label, sx + dx, sy); break; } }
-      return;
-    }
     if (names) {
       const size = cap ? 13 : ct.tier === 'metropolis' ? 12.5 : ct.tier === 'city' ? 12 : 11;
       c.font = `${cap || ct.tier === 'metropolis' ? 600 : 500} ${size}px ${FONT}`;
@@ -635,7 +668,7 @@
     }
     const kind = cap ? 'capital' : ct.tier === 'site' ? 'site' : ct.tier === 'metropolis' ? 'metro' : ct.tier === 'city' ? 'city' : 'town';
     G.MapIcons.drawCity(c, sx, sy, kind, { r, sel: G.City && G.City.current !== null && id === 'city:' + G.City.current });
-    if (ct.holy && ct.holy.length) G.MapIcons.drawHoly(c, sx - r - 4, sy - r - 4); // 圣城：紫色四角星
+    if (ct.holy && ct.holy.length) G.MapIcons.drawHoly(c, sx - r - 4, sy - r - 4); // 圣城：紫色光轮
   };
 
   // ---------- 相机手势（原版：滚轮累积、捏合、惯性、键盘） ----------

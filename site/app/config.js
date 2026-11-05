@@ -1,4 +1,4 @@
-/* 21 道推演题与参数映射 */
+/* 21 道推演题与参数映射（军事 4 题见 military-settings.js） */
 (function (G) {
   'use strict';
   const POLE = [['land', '有大陆', '极地被陆地覆盖'], ['ocean', '以海洋为主', '极点处为开阔海洋'], ['random', '随机', '由推演决定'], ['separate', '单独大陆', '与宜居大陆隔海']];
@@ -16,9 +16,9 @@
     { id: 'structure', t: '大陆总体结构', o: [['A', '偏聚合', '3–5 个大陆核心'], ['B', '相对分散', '6–8 个大陆核心'], ['C', '裂解附属陆块丰富', '9–12 个核心']], d: 'B' },
     { id: 'coast', t: '海岸与岛屿倾向', o: [['A', '完整陆缘', '岛链适量'], ['B', '海湾半岛与岛弧均衡', '介于两者之间'], ['C', '破碎陆缘', '丰富岛链和群岛']], d: 'B' },
     { id: 'interior', t: '内陆地形倾向', o: [['A', '低地较广', '平原与缓丘'], ['B', '山系、高原与盆地多样', '起伏丰富'], ['C', '山地较多', '崎岖多山']], d: 'B' },
-    { id: 'era', t: '人口规模', o: [['A', '人口较少', '1 亿–1.6 亿'], ['B', '人口中等', '2.5 亿–4 亿'], ['C', '人口众多', '6.5 亿–9.5 亿']], d: 'B', extra: 'pop' }, // id 沿用 era 以兼容旧存档；时代见第 21 题 age
+    { id: 'era', t: '人口承载基线', o: [['A', '较低基线', '参考 1 亿–1.6 亿'], ['B', '中等基线', '参考 2.5 亿–4 亿'], ['C', '较高基线', '参考 6.5 亿–9.5 亿']], d: 'B', extra: 'pop' }, // 文明时代由 age 设定，最终人口由历史推演决定
     { id: 'culture', t: '文化与宗教复杂度', o: [['A', '8 个文化圈', '12 种语言 · 6 个宗教'], ['B', '14 个文化圈', '24 种语言 · 10 个宗教'], ['C', '20 个文化圈', '36 种语言 · 16 个宗教']], d: 'B' },
-    { id: 'politics', t: '政治格局与部落空间', o: [['A', '约 45 国', '部落游牧空间 25%'], ['B', '约 80 国', '部落游牧空间 35%'], ['C', '约 120 国', '部落游牧空间 45%']], d: 'B' },
+    { id: 'politics', t: '政治格局与部落空间', o: [['A', '初始约 45 国', '部落游牧空间 25%'], ['B', '初始约 80 国', '部落游牧空间 35%'], ['C', '初始约 120 国', '部落游牧空间 45%']], d: 'B' },
     { id: 'towns', t: '城市、省份与交通', o: [['A', '疏朗', '480 城镇 · 行政粗分 · 基础交通'], ['B', '标准', '720 城镇 · 标准行政与交通'], ['C', '密集', '1080 城镇 · 行政细分 · 完善交通']], d: 'B', extra: 'towns' },
     { id: 'climate', t: '气候调节——冷热与水汽', o: [['A', '类地平均', '参考温偏 ±0 °C · 水汽 1.0×'], ['B', '偏热偏湿润', '+3 °C · 1.1×'], ['C', '更热更湿润', '+6 °C · 1.2×'], ['D', '偏冷偏干燥', '−3 °C · 0.9×'], ['E', '很冷很干燥', '−6 °C · 0.8×']], d: 'A', extra: 'climate' },
     { id: 'newWorld', t: '是否有新大陆', o: [['yes', '有新大陆', '远隔大洋、晚接触的陆块'], ['no', '没有新大陆', '所有大陆同属旧世界'], ['random', '随机', '由推演决定']], d: 'random' },
@@ -41,7 +41,7 @@
       1460: [['温度', '+', '全球约 +6 °C（与第 18 题叠加）'], ['群系', '+', '热带雨林、季雨林、稀树草原'], ['群系', '-', '冰盖、苔原'], ['水汽', '+', '海面蒸发增强，整体偏湿'], ['文明', '+', '高纬可耕地']]
     },
     radius: {
-      5200: [['地理', '-', '表面积约为地球的 0.66 倍'], ['地形', '+', '山地起伏略高'], ['气候', '-', '大陆腹地离海较近，大陆性与内陆干旱'], ['文明', '+', '人口与国家更密（总数仍由第 14、16 题决定）'], ['推演', '·', '网格较小，推演更快']],
+      5200: [['地理', '-', '表面积约为地球的 0.66 倍'], ['地形', '+', '山地起伏略高'], ['气候', '-', '大陆腹地离海较近，大陆性与内陆干旱'], ['文明', '+', '人口基线与国家分布较密（受第 14、16 题影响）'], ['推演', '·', '网格较小，推演更快']],
       6400: [['地理', '·', '约地球大小，标准网格']],
       8000: [['地理', '+', '表面积约为地球的 1.56 倍'], ['地形', '-', '山地起伏略低'], ['气候', '+', '大陆腹地离海更远，大陆性与内陆干旱'], ['文明', '-', '人口与国家更稀，单国疆域更大'], ['推演', '·', '网格较大，推演更慢']]
     },
@@ -92,9 +92,9 @@
       C: [['地形', '+', '崎岖多山，山地更高更多'], ['群系', '+', '高山草甸与裸岩'], ['文明', '+', '高地生计文明'], ['边界', '·', '疆域被山脊切得更碎']]
     },
     era: {
-      A: [['人口', '-', '总人口 1–1.6 亿（不会超过土地承载）'], ['城市', '-', '城市人口与规模']],
-      B: [['人口', '·', '总人口 2.5–4 亿（不会超过土地承载）']],
-      C: [['人口', '+', '总人口 6.5–9.5 亿（不会超过土地承载）'], ['城市', '+', '城市人口与规模']]
+      A: [['人口', '-', '参考承载基线 1–1.6 亿；实际人口随历史变化'], ['城市', '-', '城市模型的规模基准']],
+      B: [['人口', '·', '参考承载基线 2.5–4 亿；实际人口随历史变化']],
+      C: [['人口', '+', '参考承载基线 6.5–9.5 亿；实际人口随历史变化'], ['城市', '+', '城市模型的规模基准']]
     },
     culture: {
       A: [['文化', '-', '8 个文化圈、12 种语言、6 个宗教'], ['文化', '+', '每个文化圈覆盖范围更大']],
@@ -102,9 +102,9 @@
       C: [['文化', '+', '20 个文化圈、36 种语言、16 个宗教'], ['文化', '-', '每个文化圈覆盖范围更小，语言区更细碎']]
     },
     politics: {
-      A: [['政治', '-', '约 45 国，单国疆域更大'], ['边疆', '-', '部落与非国家空间约 25%']],
-      B: [['政治', '·', '约 80 国；部落与非国家空间约 35%']],
-      C: [['政治', '+', '约 120 国，小国更多'], ['边疆', '+', '部落与非国家空间约 45%']]
+      A: [['政治', '-', '初始约 45 国；此后随历史增减'], ['边疆', '-', '部落与非国家空间约 25%']],
+      B: [['政治', '·', '初始约 80 国；此后随历史增减']],
+      C: [['政治', '+', '初始约 120 国；此后随历史增减'], ['边疆', '+', '部落与非国家空间约 45%']]
     },
     towns: {
       A: [['城镇', '-', '约 480 座城镇'], ['行政', '-', '省份数量少，单省更大'], ['交通', '-', '道路网较稀']],
@@ -148,18 +148,19 @@
     land: [N_('landPercent', '陆地占比（%）', 35, 18, 55, 0.1)],
     structure: [N_('continentCount', '大陆核心数量', 7, 3, 12)],
     culture: [N_('civilizationCount', '文化圈数量', 14, 1, 40), N_('languageCount', '语言数量', 24, 1, 80), N_('religionCount', '宗教数量', 10, 1, 40)],
-    politics: [N_('stateCount', '国家数量', 80, 1, 240), N_('frontierPercent', '部落与非国家空间（%）', 35, 0, 90, 0.1)],
+    politics: [N_('stateCount', '初始国家数量', 80, 1, 240), N_('frontierPercent', '部落与非国家空间（%）', 35, 0, 90, 0.1)],
     age: [N_('year', '文明纪元年份（1800–4840；4780 年后进入早期工业，4840 年约相当于维多利亚前期的 1840 年）', 4700, 1800, 4840)]
   };
   const PAGES = [
     { t: '星球与恒星', q: [0, 1, 2, 3, 4] },
     { t: '运转与卫星', q: [5, 6, 7] },
     { t: '地质与大陆', q: [8, 9, 10, 11, 12] },
-    { t: '文明', q: [20, 13, 14, 15, 16] },
-    { t: '气候、水体与新大陆', q: [17, 19, 18], final: true }
+    { t: '文明与军事', q: [20, 13, 14, 15, 16], military: true },
+    { t: '气候、水体与新大陆', q: [17, 19, 18] },
+    { t: '世界总结', q: [], final: true }
   ];
   const CLIMATE = { A: [0, 1], B: [3, 1.1], C: [6, 1.2], D: [-3, 0.9], E: [-6, 0.8] };
-  const ERA_RANGE = [[1, 1.6], [2.5, 4], [6.5, 9.5]]; // 人口范围（亿）
+  const ERA_RANGE = [[1, 1.6], [2.5, 4], [6.5, 9.5]]; // 人口承载基线参数范围（亿）
   const AGE = { classical: [2700, 3500], medieval: [3500, 4450], preind: [4450, 4760] }; // 文明纪元：现实世界约 4700 年为前工业
   const AGE_MAX = 4840, AGE_MIN = 1800, INDUSTRIAL_FROM = 4780;
   const ageLabel = y => y >= INDUSTRIAL_FROM ? '早期工业时代' : y >= 4450 ? '前工业时代' : y >= 3500 ? '中世纪' : y >= 2500 ? '古典时代' : '青铜时代';
@@ -173,28 +174,42 @@
       climateCustom: false, tempBias: 0, moisture: 1, custom: {}
     };
   }
-  // 版本：世界文件记录写出它的版本；读到旧版本时按其中的设置迁移，再用当前版本重新推演
-  const VERSION = '1.4.1';
-  const verOf = f => f && f.engineVersion ? String(f.engineVersion) : (/(\d+\.\d+\.\d+)/.exec(f && f.engine || '') || [, '1.4.0'])[1];
+  const VERSION = '1.4.3';
+  const verOf = f => f && f.engineVersion ? String(f.engineVersion) : '';
   const verCmp = (a, b) => { const pa = String(a).split('.').map(n => parseInt(n, 10) || 0), pb = String(b).split('.').map(n => parseInt(n, 10) || 0); for (let k = 0; k < 3; k++) { const d = (pa[k] || 0) - (pb[k] || 0); if (d) return d; } return 0; };
-  // 旧存档 / 旧世界文件的设置补齐到当前版本：缺失或已不存在的选项取默认值（种子、自定义、文化与宗教库快照原样保留）
-  function migrate(old) {
-    const o = JSON.parse(JSON.stringify(old || {})), oa = o.a || {}, st = Object.assign(defaults(), o), changes = [];
-    st.a = {};
-    for (const q of Q) {
-      const v = oa[q.id];
-      if (q.o.some(x => x[0] === v)) st.a[q.id] = v;
-      else { st.a[q.id] = q.d; changes.push(q.t + (v === undefined ? '（新增，取默认）' : '（旧选项已调整，取默认）')); }
+  // 世界文件必须包含可复现的完整设定；缺项或无效值明确报错，不重写用户的数据。
+  function validateState(st) {
+    if (!st || typeof st !== 'object' || !st.a || typeof st.a !== 'object') throw new Error('世界设置缺失');
+    for (const q of Q) if (!q.o.some(x => x[0] === st.a[q.id])) throw new Error('无效或缺失的选项：' + q.t);
+    if (!Number.isInteger(st.seed) || st.seed < -2147483648 || st.seed > 2147483647) throw new Error('种子无效');
+    if (st.res !== null && st.res !== undefined && ![1088, 1632, 2176, 2720].includes(st.res)) throw new Error('地图网格无效');
+    if (!st.custom || typeof st.custom !== 'object' || Array.isArray(st.custom)) throw new Error('自定义设置无效');
+    for (const [key, entry] of Object.entries(st.custom)) {
+      if (!entry || typeof entry.on !== 'boolean') throw new Error('自定义设置无效：' + key);
+      if (!entry.on) continue;
+      const specs = CUSTOM[key]; if (!specs || !entry.v || typeof entry.v !== 'object') throw new Error('未知自定义设置：' + key);
+      for (const [field, value] of Object.entries(entry.v)) {
+        const spec = specs.find(x => x.key === field);
+        if (!spec || !Number.isFinite(value) || value < spec.min || value > spec.max) throw new Error('自定义数值无效：' + field);
+      }
     }
-    if (!('seed' in o)) changes.push('种子（缺失，已随机）');
-    if (!('age' in oa) && st.a.era === 'C' && !(st.custom && st.custom.age)) { st.custom = st.custom || {}; st.custom.age = { on: true, v: { year: 4800 } }; } // 与旧链接同规则：“早期工业”档落在第 4800 年
-    return { st, changes };
+    for (const [key, scope] of [['libs', 'culture'], ['rlibs', 'religion']]) {
+      const lib = st[key];
+      if (!lib || !Array.isArray(lib.ids) || lib.ids.length || !Array.isArray(lib.custom) || !lib.custom.length) throw new Error('缺少完整' + (scope === 'culture' ? '文化' : '宗教') + '库快照');
+      const ids = new Set(); for (const def of lib.custom) { G.HumanRules.validateLibrary(def, scope); if (ids.has(def.id)) throw new Error('重复库 ID：' + def.id); ids.add(def.id); if (scope === 'culture' && (!def.n || typeof def.n !== 'object')) throw new Error('文化名称库无效'); if (scope === 'religion' && (!def.names || typeof def.names !== 'object')) throw new Error('宗教名称库无效'); }
+    }
+    if (!st.slibs || !Array.isArray(st.slibs.libraries)) throw new Error('缺少完整种族库快照');
+    G.HumanRules.species({ speciesLibraries: st.slibs.libraries });
+    if (st.terrainInput) { const input=G.TerrainImport.validateInput(st.terrainInput), grid=gridOf(st); if(input.width>grid.W||input.height>grid.H) throw new Error('原图超过当前物理网格，请选择更大网格或明确缩小原图；不会自动降低精度'); }
+    G.Military.validateRules(st.militaryRules);
+    return st;
   }
   function randomize(st) {
     const r = Math.random;
     for (const q of Q) st.a[q.id] = q.o[(r() * q.o.length) | 0][0];
     st.seed = (r() * 1e9) | 0;
     st.townsCustom = false; st.climateCustom = false; st.popMode = 'env'; st.custom = {};
+    if (G.MilitarySettings) G.MilitarySettings.randomize(st);
     return st;
   }
   function toCfg(st) {
@@ -237,6 +252,9 @@
     // 文化库快照（所选内置库 id + 自定义库内容）
     if (st.libs) { out.cultureSelection = st.libs.ids; out.customLibraries = st.libs.custom || []; }
     if (st.rlibs) { out.religionSelection = st.rlibs.ids; out.customReligions = st.rlibs.custom || []; } // 宗教库快照
+    if (st.slibs) out.speciesLibraries = st.slibs.libraries;
+    if (st.terrainInput) out.terrainInput = G.TerrainImport.validateInput(st.terrainInput);
+    out.militaryRules = G.Military.validateRules(st.militaryRules);
     // 自定义数值覆盖（与原版问卷的“自定义”字段一致）
     out.polarArea = { N: cu('north', 'areaPercent'), S: cu('south', 'areaPercent') };
     out.flux = pick(cu('star', 'solarConstantWm2'), out.flux); out.radius = pick(cu('radius', 'radiusKm'), out.radius);
@@ -258,36 +276,47 @@
   function gridOf(st) { const r = st.custom && st.custom.radius && st.custom.radius.on && isFinite(+st.custom.radius.v.radiusKm) ? +st.custom.radius.v.radiusKm : +st.a.radius; const W = st.res || gridFor(r); return { W, H: W / 2, km: 2 * Math.PI * r / W }; }
   function mulberry(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
+  // 对库快照做稳定摘要；对象键顺序不影响结果，数组顺序仍然有意义。
+  function libraryDigest(st) {
+    if (!st.libs && !st.rlibs && !st.slibs && st.requiresLibraries) return st.requiresLibraries;
+    function stable(value) {
+      if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
+      if (value && typeof value === 'object') return '{' + Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => JSON.stringify(k) + ':' + stable(value[k])).join(',') + '}';
+      return JSON.stringify(value === undefined ? null : value);
+    }
+    const data = stable({ engine: VERSION, rules: G.HumanRules.VERSION, libs: st.libs || null, rlibs: st.rlibs || null, slibs: st.slibs || null, terrain: st.terrainInput || null, military: G.Military.validateRules(st.militaryRules) });
+    let a = 2166136261, b = 2246822519;
+    for (let i = 0; i < data.length; i++) { const n = data.charCodeAt(i); a = Math.imul(a ^ n, 16777619); b = Math.imul(b ^ n, 16777619); }
+    return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0');
+  }
+
   // URL：#w=<答案串>&s=<种子>&r=<分辨率>&x=<附加>
   function encode(st) {
-    let ans = Q.map(q => q.o.findIndex(o => o[0] === st.a[q.id])).join('');
-    if (!st.a.age || st.a.age === 'preind') { ans = ans.slice(0, 20); if (st.a.lakes === 'B' || !st.a.lakes) ans = ans.slice(0, 19); } // 末尾为默认时保持旧链接与旧存档的键不变
+    const ans = Q.map(q => q.o.findIndex(o => o[0] === st.a[q.id])).join('');
     const cj = Object.entries(st.custom || {}).filter(([, o]) => o.on).map(([q, o]) => q + ':' + Object.entries(o.v || {}).map(([k, v]) => k + '=' + v).join(',')).join(';');
     const x = [cj ? 'u' + encodeURIComponent(cj) : '', st.popMode === 'range' ? `p${st.popLo}-${st.popHi}` : '', st.townsCustom ? `t${st.townsN}-${st.admin}-${st.transport}` : '', st.climateCustom ? `c${st.tempBias}_${st.moisture}` : ''].filter(Boolean).join('~');
     const q = new URLSearchParams({ w: ans, s: st.seed }); if (st.res) q.set('r', st.res);
     if (x) q.set('x', x);
-    if (st.libs && st.libs.ids) q.set('l', st.libs.ids.join('.'));
-    if (st.rlibs && st.rlibs.ids) q.set('rl', st.rlibs.ids.join('.'));
+    q.set('h', libraryDigest(st));
     return q.toString();
   }
   function decode(hash) {
     const q = new URLSearchParams(hash.replace(/^#/, ''));
-    if (!q.get('w') || !q.get('s')) return null;
-    const st = defaults(), ans = q.get('w');
-    Q.forEach((qq, i) => { const k = +ans[i]; if (qq.o[k]) st.a[qq.id] = qq.o[k][0]; });
-    const oldIndustrial = ans.length < 21 && st.a.era === 'C'; // 旧存档：“早期工业”档落在第 4800 年
-    st.seed = +q.get('s') | 0;
-    const r = +q.get('r'); if ([1088, 1632, 2176, 2720].includes(r)) st.res = r; // 旧存档沿用原网格
-    if (q.get('l')) st.libs = { ids: q.get('l').split('.').filter(Boolean), custom: [] };
-    if (q.get('rl')) st.rlibs = { ids: q.get('rl').split('.').filter(Boolean), custom: [] };
+    const ans = q.get('w'), seedText = q.get('s'), digest = q.get('h');
+    if (!ans || ans.length !== Q.length || !/^[0-9]+$/.test(ans) || !/^-?\d+$/.test(seedText || '') || !/^[0-9a-f]{16}$/.test(digest || '')) return null;
+    const seed = Number(seedText); if (!Number.isInteger(seed) || seed < -2147483648 || seed > 2147483647) return null;
+    const st = defaults();
+    for (let i = 0; i < Q.length; i++) { const opt = Q[i].o[Number(ans[i])]; if (!opt) return null; st.a[Q[i].id] = opt[0]; }
+    st.seed = seed;
+    if (q.has('r')) { const r = Number(q.get('r')); if (![1088, 1632, 2176, 2720].includes(r)) return null; st.res = r; }
+    st.requiresLibraries = digest;
     for (const part of (q.get('x') || '').split('~')) {
       if (part[0] === 'u') { st.custom = {}; for (const seg of decodeURIComponent(part.slice(1)).split(';')) { const [q, kv] = seg.split(':'); if (!q) continue; const v = {}; (kv || '').split(',').forEach(p => { const [k, val] = p.split('='); if (k) v[k] = +val; }); st.custom[q] = { on: true, v }; } }
       if (part[0] === 'p') { const [lo, hi] = part.slice(1).split('-'); st.popMode = 'range'; st.popLo = +lo; st.popHi = +hi; }
       if (part[0] === 't') { const [n, ad, tr] = part.slice(1).split('-'); st.townsCustom = true; st.townsN = +n; st.admin = +ad; st.transport = +tr; }
       if (part[0] === 'c') { const [tb, mo] = part.slice(1).split('_'); st.climateCustom = true; st.tempBias = +tb; st.moisture = +mo; }
     }
-    if (oldIndustrial && !(st.custom && st.custom.age)) { st.custom = st.custom || {}; st.custom.age = { on: true, v: { year: 4800 } }; }
     return st;
   }
-  G.Config = { Q, PAGES, CUSTOM, HINTS, hintOf, VERSION, verOf, verCmp, migrate, defaults, randomize, toCfg, encode, decode, ERA_RANGE, AGE, ageLabel, CLIMATE, gridFor, gridOf };
+  G.Config = { Q, PAGES, CUSTOM, HINTS, hintOf, VERSION, verOf, verCmp, validateState, defaults, randomize, toCfg, encode, decode, ERA_RANGE, AGE, ageLabel, CLIMATE, gridFor, gridOf };
 })(window);

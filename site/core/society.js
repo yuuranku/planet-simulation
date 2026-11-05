@@ -20,6 +20,81 @@
   const ROAD_NEIGHBORS = [1, 2, 3];
   const KM_REF = 10; // 原版原生格距的参考公里数，用于把“格内代价”换算到本网格
 
+  // 粗网格中的交通节点不一定在细海岸的陆上。共用节点只选一次岸内格心，
+  // 四周留出一个采样步长，确保最早接入的道路也有实际陆段，而不是水中的半条渡线。
+  function landRoadAnchor(point, width, height, dry) {
+    const cx = Math.floor(point[0]), cy = Math.floor(point[1]); let best = null, distance = Infinity;
+    const inland = (x, y) => y >= 0 && y < height && dry(x, y) && dry(x - .25, y) && dry(x + .25, y) && dry(x, y - .25) && dry(x, y + .25);
+    const originalX = ((cx % width) + width) % width + .5;
+    if (inland(originalX, cy + .5)) return [originalX, cy + .5];
+    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+      const y = cy + dy + .5; if (y < 0 || y >= height) continue;
+      const x = ((cx + dx) % width + width) % width + .5;
+      let gap = x - point[0]; gap -= Math.round(gap / width) * width;
+      const d = gap * gap + (y - point[1]) ** 2; if (d >= distance) continue;
+      if (!inland(x, y)) continue;
+      best = [x, y]; distance = d;
+    }
+    return best;
+  }
+
+  // 水面片段与同一道路的陆段共同保存，历史上按这条路的建造年显示。
+  function splitRoadWater(line, ptWet) {
+    const land=[], ferries=[]; let cur=[], wet=null, lx=line[0], ly=line[1];
+    const flush=()=>{if(cur.length>=4)land.push(Float32Array.from(cur));cur=[];};
+    const close=()=>{let length=0;for(let q=2;q<wet.length;q+=2)length+=Math.hypot(wet[q]-wet[q-2],wet[q+1]-wet[q-1]);
+      if(length>=0.6){flush();ferries.push(Float32Array.from(wet));}
+      else for(let q=cur.length?2:0;q<wet.length;q+=2)cur.push(wet[q],wet[q+1]);wet=null;};
+    if(ptWet(lx,ly))wet=[lx,ly];else cur.push(lx,ly);
+    for(let i=2;i<line.length;i+=2){const bx=line[i],by=line[i+1],dx=bx-lx,dy=by-ly,n=Math.abs(dx)>8?1:Math.max(1,Math.ceil(Math.hypot(dx,dy)/0.25));
+      for(let t=1;t<=n;t++){const x=lx+dx*t/n,y=ly+dy*t/n,w=Math.abs(dx)<=8&&ptWet(x,y);
+        if(w&&!wet){const px=lx+dx*(t-1)/n,py=ly+dy*(t-1)/n;if(t>1)cur.push(px,py);wet=[px,py];}
+        else if(!w&&wet){wet.push(x,y);close();if(!cur.length)cur.push(x,y);}
+        else if(wet&&t===n)wet.push(bx,by);
+      }
+      if(!wet)cur.push(bx,by);lx=bx;ly=by;
+    }
+    if(wet)close();flush();return {land,ferries};
+  }
+
+  // 仅修复已经存在的路网接入关系；水段剪裁后投影到目标路实际保留的线段，不跨水、不连接无关道路。
+  function repairRoadLinks({lines, links, width, segDry}) {
+    const wrapDistance = (x,z) => { let dx=x-z; if(dx>width/2)dx-=width; else if(dx< -width/2)dx+=width; return dx; };
+    const nearest = (target,x,y,limit) => { let best=null, min=limit;
+      for (let t=0; t<target.length; t++) { const l=target[t];
+        for (let j=2; j<l.length; j+=2) { const ax=l[j-2],ay=l[j-1],dx=l[j]-ax,dy=l[j+1]-ay;
+          if (Math.abs(dx)>8) continue;
+          const shift=Math.round((x-ax)/width)*width, px=ax+shift, len=dx*dx+dy*dy;
+          const u=len ? Math.max(0,Math.min(1,((x-px)*dx+(y-ay)*dy)/len)) : 0, qx=px+u*dx, qy=ay+u*dy, d=Math.hypot(qx-x,qy-y);
+          if (d<min) { min=d; best={x:qx,y:qy,d,line:t,segment:j/2-1,t:u}; }
+        }
+      }
+      return best;
+    };
+    for (const link of links) {
+      if (link.target < 0) { link.status='unresolved'; continue; }
+      const source=lines.get(link.source), target=lines.get(link.target);
+      if (!source || !source.length || !target || !target.length) { link.status='missing'; continue; }
+      const li=link.end ? source.length-1 : 0, line=source[li];
+      if (!line || line.length<4) { link.status='missing'; continue; }
+      const x=link.end ? line[line.length-2] : line[0], y=link.end ? line[line.length-1] : line[1];
+      if (Math.hypot(wrapDistance(x,link.x),y-link.y)>0.5) { link.status='displaced'; continue; }
+      const best=nearest(target,x,y,12);
+      if (!best) { link.status='too_far'; continue; }
+      if (!segDry(x,y,best.x,best.y)) { link.status='water'; continue; }
+      if (best.d>0) source[li]=Float32Array.from(link.end ? [...line,best.x,best.y] : [best.x,best.y,...line]);
+      link.status='connected';
+    }
+    // 其他支路可能在目标路开头追加点，所有修改结束后再记录最终线段号。
+    for (const link of links) if (link.status==='connected') {
+      const source=lines.get(link.source), line=source[link.end ? source.length-1 : 0], x=link.end ? line[line.length-2] : line[0], y=link.end ? line[line.length-1] : line[1];
+      const best=nearest(lines.get(link.target),x,y,1e-4);
+      if (!best) { link.status='post_weld_gap'; continue; }
+      link.sourcePoint=[x,y]; link.targetLine=best.line; link.targetSegment=best.segment; link.targetT=best.t;
+    }
+    return links;
+  }
+
   // ---------- 小顶堆（Float64，避免平台精度导致的重复松弛） ----------
   function Heap(cap) { this.k = new Int32Array(cap); this.v = new Float64Array(cap); this.n = 0; }
   Heap.prototype.push = function (key, val) {
@@ -37,6 +112,7 @@
   };
 
   function run(P, Cl, Hy, cfg, progress) {
+    const speciesLibraries = G.HumanRules.species(cfg);
     const rnd = mulberry32(cfg.seed + 3030);
     const W = P.W / 2, H = P.H / 2, N = W * H, FW = P.W;
     const R = cfg.radius, cellKm = 2 * Math.PI * R / W;
@@ -163,7 +239,13 @@
       const coastal = oceanCoast[i] ? (seaIce[i] ? 0.4 : 1) : 0;
       for (const [o, dens] of [[forag, 0.06], [past, 0.22], [coastal, 0.18]]) s = Math.max(s, o * dens / idealDensity * res * a);
       if (newW[i]) s *= 0.18 + 0.32 * pot[i] * hab[i];
-      support[i] = s; total += s;
+      // Shared land has one food budget: species do not each get a copy.
+      // The best feasible physiology sets the initial potential; actual consumption
+      // and allocation by population are resolved by HumanEconomy in history.
+      let physiology = 0;
+      for (const species of speciesLibraries) physiology = Math.max(physiology, G.HumanAnchors.temperatureFit(species, T[i]));
+      if (physiology <= 0.02) continue;
+      support[i] = s * physiology; total += support[i];
     }
     const ERA_RANGE = [[1e8, 1.6e8], [2.5e8, 4e8], [6.5e8, 9.5e8]][cfg.popIdx !== undefined ? cfg.popIdx : cfg.era]; // 人口规模（与文明时代分开）
     let popMin, popMax;
@@ -172,6 +254,7 @@
     else if (capMax > ERA_RANGE[1]) { popMax = ERA_RANGE[1]; popMin = Math.floor(capMin * ERA_RANGE[1] / capMax); }
     else { popMin = capMin; popMax = capMax; }
     const popTotal = (popMin + popMax) / 2;
+    if (!(popTotal > 0)) throw new Error('所选种族无法在这个世界建立人口，请调整种族适温或世界气候');
     const weight = new Float32Array(N), density = new Float32Array(N);
     let wmax = 0;
     for (let i = 0; i < N; i++) { weight[i] = total > 0 ? support[i] / total : 0; density[i] = weight[i] * popTotal / area[(i / W) | 0]; if (weight[i] > wmax) wmax = weight[i]; }
@@ -636,11 +719,15 @@
       const A = allNodes[r.a], B = allNodes[r.b];
       const ta = tierRank(A.s), tb = tierRank(B.s);
       const imp = (A.kind === 'hearth' && B.kind === 'hearth') || (ta === 2 && tb === 2) || (Math.min(ta, tb) >= 1 && Math.max(ta, tb) === 2) ? 'trunk' : (ta >= 1 || tb >= 1 || A.kind === 'hearth' || B.kind === 'hearth' || A.kind === 'coastal-landing' || B.kind === 'coastal-landing') ? 'regional' : 'local';
-      return { a: r.a, b: r.b, cells: r.cells, imp, mode: 'road' };
+      return { a: r.a, b: r.b, cells: r.cells, imp, mode: 'road', cost: r.cost };
     });
+    // 剪掉通向无人锚点的断头路：发源地、登陆点、河口、山口只是选线的中途点；没有城镇、又只连着一条路的锚点，连同这条路一起删掉（反复剪，直到每条路的两端都是城镇或路口）
+    { const isTown = n => !!allNodes[n].s; let changed = true;
+      while (changed) { changed = false; const deg = new Int32Array(allNodes.length); for (const r of roads) { deg[r.a]++; deg[r.b]++; }
+        for (let k = roads.length - 1; k >= 0; k--) { const r = roads[k]; if ((!isTown(r.a) && deg[r.a] <= 1) || (!isTown(r.b) && deg[r.b] <= 1)) { deg[r.a]--; deg[r.b]--; roads.splice(k, 1); changed = true; } } } }
     // 网络分级：干道连通所有大都会与发源地；每座城市以区域道路接入干道；其余为地方道路（各级显示时均连通）
     { const nN = allNodes.length, adjR = Array.from({ length: nN }, () => []);
-      roads.forEach((r, k) => { adjR[r.a].push([r.b, k, net.routes[k].cost]); adjR[r.b].push([r.a, k, net.routes[k].cost]); r.imp = 'local'; });
+      roads.forEach((r, k) => { adjR[r.a].push([r.b, k, r.cost]); adjR[r.b].push([r.a, k, r.cost]); r.imp = 'local'; });
       const isTrunkNode = n => (allNodes[n].s && allNodes[n].s.tier === 'metropolis') || allNodes[n].kind === 'hearth';
       const lab = new Int32Array(nN).fill(-1), dist = new Float64Array(nN).fill(Infinity), predE = new Int32Array(nN).fill(-1), predN = new Int32Array(nN).fill(-1), hp = new Heap(64);
       for (let n = 0; n < nN; n++) if (isTrunkNode(n)) { lab[n] = n; dist[n] = 0; hp.push(n, 0); }
@@ -648,12 +735,18 @@
       const markPath = (n, imp) => { let g = 0; while (n >= 0 && predE[n] >= 0 && g++ < 10000) { const r = roads[predE[n]]; if (imp === 'trunk' || r.imp === 'local') r.imp = imp; n = predN[n]; } };
       // 干道：在“干道节点 Voronoi”之间取最小生成树，再给每个节点补最近的一条
       const cand = new Map();
-      roads.forEach((r, k) => { const la = lab[r.a], lb = lab[r.b]; if (la < 0 || lb < 0 || la === lb) return; const c = dist[r.a] + dist[r.b] + net.routes[k].cost, key = Math.min(la, lb) + ':' + Math.max(la, lb); const o = cand.get(key); if (!o || c < o.c) cand.set(key, { c, k, la, lb }); });
+      roads.forEach((r, k) => { const la = lab[r.a], lb = lab[r.b]; if (la < 0 || lb < 0 || la === lb) return; const c = dist[r.a] + dist[r.b] + r.cost, key = Math.min(la, lb) + ':' + Math.max(la, lb); const o = cand.get(key); if (!o || c < o.c) cand.set(key, { c, k, la, lb }); });
       const list = [...cand.values()].sort((p, q2) => p.c - q2.c), par = new Map(), find = x => { while (par.has(x) && par.get(x) !== x) x = par.get(x); return x; };
       const nearest = new Map();
       for (const ed of list) { for (const t of [ed.la, ed.lb]) if (!nearest.has(t)) nearest.set(t, ed); const ra = find(ed.la), rb = find(ed.lb); const take = ra !== rb || nearest.get(ed.la) === ed || nearest.get(ed.lb) === ed; if (ra !== rb) par.set(ra, rb); if (!take) continue; const r = roads[ed.k]; r.imp = 'trunk'; markPath(r.a, 'trunk'); markPath(r.b, 'trunk'); }
       // 区域道路：每个城市（及以上）沿最短路接入最近的干道节点
-      for (let n = 0; n < nN; n++) { const st = allNodes[n].s; if ((st && st.tier !== 'town') || allNodes[n].kind === 'coastal-landing') markPath(n, 'regional'); }
+      for (let n = 0; n < nN; n++) { const st = allNodes[n].s; if (st && st.tier !== 'town') markPath(n, 'regional'); } // 登陆点不是聚落，不再单独拉区域道路
+      // 分级显示不留断头：每一级（干道 / 区域道路及以上）在无人锚点处只剩一条时，这条降一级，直到锚点在每一级都是 0 条或 ≥2 条
+      const RK = { trunk: 0, regional: 1, local: 2 }, DOWN = ['regional', 'local'];
+      for (let pass = 0, changed = true; changed && pass < 50; pass++) { changed = false;
+        for (const lvl of [0, 1]) { const cnt = new Int32Array(nN), last = new Int32Array(nN).fill(-1);
+          roads.forEach((r, k) => { if (RK[r.imp] > lvl) return; for (const n of [r.a, r.b]) { cnt[n]++; last[n] = k; } });
+          for (let n = 0; n < nN; n++) if (cnt[n] === 1 && !allNodes[n].s) { const r = roads[last[n]]; r.imp = DOWN[RK[r.imp]]; changed = true; } } }
     }
     // 海运：港口之间沿水域的成本 Voronoi
     const ports = settlements.map((s, k) => [s, k]).filter(([s]) => s.type === 'port' || s.type === 'island-port' || s.coastalTrue || (oceanCoast[s.cell] && s.tier !== 'town'));
@@ -982,31 +1075,10 @@
     progress('人文 · 边塞与商镇', 0.945);
     const late = [];
     { const near = (c, r) => settlements.some(s => gdist(s.cell, c) <= r) || late.some(s => gdist(s.cell, c) <= r);
-      // ---- 边关要塞：国家形成之后，沿每段国界设防 ----
-      // 1) 道路过境处（干道设关，其余设堡）；2) 国界上的山口；3) 没有道路的长段国界，在最易通行处设塞
-      const forts = [], nearF = (c, r) => forts.some(f => gdist(f.cell, c) <= r) || settlements.some(s2 => gdist(s2.cell, c) <= 2);
-      const cross = [];
-      for (const r of roads) { const w0 = r.imp === 'trunk' ? 3 : r.imp === 'regional' ? 2 : 1; for (let k = 1; k < r.cells.length; k++) { const a = r.cells[k - 1], b = r.cells[k]; if (state[a] !== state[b] && state[a] >= 0 && state[b] >= 0) { const inner = (sPop2[state[a]] >= sPop2[state[b]]) ? b : a; cross.push([inner, w0, r.imp]); } } }
-      cross.sort((x, y) => y[1] - x[1]);
-      for (const [c, w0, imp] of cross) { if (nearF(c, imp === 'trunk' ? 3 : 4)) continue; forts.push({ cell: c, type: eN[c] > 0.25 || slopeN[c] > 0.05 ? 'pass-fort' : 'fort', imp }); }
-      // 国界上的山口：只在确有道路经过时设关
-      anchors.filter(a => a.kind === 'pass').forEach(a => { if (!roadTier[a.cell] || state[a.cell] < 0 || nearF(a.cell, 4)) return; let border = false; for (let d = 0; d < 8; d++) { const j = NB[a.cell * 8 + d]; if (j >= 0 && state[j] >= 0 && state[j] !== state[a.cell]) border = true; } if (border) forts.push({ cell: a.cell, type: 'pass-fort', imp: 'pass' }); });
-      // 战略要地：干道 / 区域道路翻越山口的最高点（沿路局部最高、两侧都明显更低）
-      for (const r of roads) { if (r.imp === 'local') continue; const cs = r.cells;
-        for (let k = 4; k < cs.length - 4; k++) { const c = cs[k], h = e[c]; if (h < 1100 || state[c] < 0) continue; let top = true; for (let t = -4; t <= 4; t++) if (t && e[cs[k + t]] > h) { top = false; break; } if (!top) continue;
-          const lo = Math.min(...cs.slice(Math.max(0, k - 10), k).map(x => e[x])), hi2 = Math.min(...cs.slice(k + 1, Math.min(cs.length, k + 11)).map(x => e[x])); if (h - lo < 350 || h - hi2 < 350) continue;
-          if (nearF(c, 6)) continue; forts.push({ cell: c, type: 'pass-fort', imp: r.imp === 'trunk' ? 'trunk' : 'pass' }); } }
-      // 长段国界：在离国界 3 格内的道路上设堡（不另修断头路）
-      { const pairs = new Map(); for (let i = 0; i < N; i++) { const a = state[i]; if (a < 0) continue; for (const d of [4, 6]) { const j = NB[i * 8 + d]; if (j < 0) continue; const b = state[j]; if (b < 0 || b === a) continue; const key = Math.min(a, b) * 4096 + Math.max(a, b); let o = pairs.get(key); if (!o) { o = []; pairs.set(key, o); } o.push(i); } }
-        for (const [, cellsB] of pairs) { const want = Math.floor(cellsB.length / 26); let have = forts.filter(f => cellsB.some(c => gdist(c, f.cell) <= 3)).length; if (have >= want) continue;
-          const cand = []; for (const c of cellsB) { const y = (c / W) | 0, x = c - y * W; for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; const j = yy * W + ((x + dx) % W + W) % W; if (roadTier[j] && state[j] >= 0) cand.push(j); } }
-          cand.sort((a, b) => roadTier[a] - roadTier[b]); for (const c of cand) { if (have >= want) break; if (nearF(c, 8)) continue; forts.push({ cell: c, type: eN[c] > 0.25 ? 'pass-fort' : 'fort', imp: 'wall' }); have++; } } }
-      for (const f of forts) late.push({ cell: f.cell, score: 0.3, type: f.type, tier: 'site', role: 'military-post', border: f.imp !== 'trunk' && f.imp !== 'pass' || true, gate: f.imp }); // 均在既有道路上
-      const budget = late.length;
-      const deg = new Map(); for (const r of roads) for (const c of [r.cells[0], r.cells[r.cells.length - 1]]) deg.set(c, (deg.get(c) || 0) + 1);
+      // 边界防御设施由历史阶段结合实际疆界、道路绕行与供养条件建立。
       const jn = []; { const cnt = new Uint8Array(N); for (const r of roads) for (const c of r.cells) if (cnt[c] < 255) cnt[c]++; for (let i = 0; i < N; i++) if (cnt[i] >= 3 && state[i] >= 0) jn.push(i); }
       jn.sort((a, b) => accessFinal[b] - accessFinal[a]);
-      let trade = 0; for (const c of jn) { if (trade >= Math.round(lateReserve * 0.5)) break; if (near(c, 5)) continue; late.push({ cell: c, score: 0.35, type: 'market', tier: 'town', role: 'trade' }); trade++; } void budget;
+      let trade = 0; for (const c of jn) { if (trade >= Math.round(lateReserve * 0.5)) break; if (near(c, 5)) continue; late.push({ cell: c, score: 0.35, type: 'market', tier: 'town', role: 'trade' }); trade++; }
       // 有人居住的岛屿：没有聚落的岛至少有一处渔港或岛村（大岛按面积多设几处），不计入城镇预算
       { const comp = components(land, true), info = new Map();
         for (let i = 0; i < N; i++) { const k = comp[i]; if (!k) continue; let o = info.get(k); if (!o) { o = { n: 0, cells: [] }; info.set(k, o); } o.n++; if (o.cells.length < 4000) o.cells.push(i); }
@@ -1040,11 +1112,20 @@
       for (let t = 0; t < list.length; t++) { const name = list[(c + t) % list.length]; if (!usedNames.has(name)) { cursors.set(ck, (c + t + 1) % list.length); usedNames.add(name); return name; } }
       return makeName(lib, key === 'provinces' ? 'prov' : key === 'states' ? 'state' : key === 'cities' ? 'city' : 'other', usedNames, nr, { suffix: suffixHint || '' });
     }
+    // 河名、湖名一律带通名：库里的音译名（卡尔巴赫、普里普亚特）和库用完后组合出的名字（苏奥、高特）原本没有“河 / 江 / 川 / 水”，
+    // 地图上分不清是河是地。通名取该文化库自己最常用的那个（日本库 → 川，汉语库 → 河 / 江 / 水，音译库 → 河），按名字定，不占随机数（同一种子其余地名不变）
+    const RIVER_END = /(河|江|川|水|溪|涧|渠|泾|藏布)$/, LAKE_END = /(湖|泊|潭|池|淖|淖尔|诺尔|错|潟|沼|泽|陂|海|荡|塘|洼|淀)$/;
+    const endCache = new Map();
+    const genericOf = (lib, key, re, chars, dflt, name) => { const ck = lib.id + ':' + key; let w = endCache.get(ck);
+      if (!w) { w = {}; for (const n of lib.n[key] || []) { const m = re.exec(n); if (m && chars.includes(m[1])) w[m[1]] = (w[m[1]] || 0) + 1; } endCache.set(ck, w); }
+      const ks = Object.keys(w); if (!ks.length) return dflt; const tot = ks.reduce((a, k) => a + w[k], 0); let h = 0; for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+      let t = (h % 1000) / 1000 * tot; for (const k of ks) { t -= w[k]; if (t < 0) return k; } return ks[0]; };
+    const riverName = (lib) => { const n = draw(lib, 'rivers'); return RIVER_END.test(n) || /[a-zA-Z]/.test(n) ? n : n + genericOf(lib, 'rivers', RIVER_END, ['河', '江', '川', '水'], '河', n); };
+    const lakeName = (lib) => { const n = draw(lib, 'lakes'); return LAKE_END.test(n) || /[a-zA-Z]/.test(n) ? n : n + genericOf(lib, 'lakes', LAKE_END, ['湖', '池', '沼', '泽'], '湖', n); };
     const libAt = (cell) => civ[cell] > 0 ? civLib[civ[cell] - 1] : (language[cell] > 0 ? langLib[language[cell] - 1] : LIBS[0]); // 按文明取库
     const allSettlements = settlements.concat(late);
-    allSettlements.forEach(s => { const lib = libAt(s.cell); s.name = draw(lib, 'cities'); const pl = G.CultureExt ? G.CultureExt.ext(lib).places : null; /* 地名后缀取自文化库：关隘、要塞、港口 */
-      if (s.role === 'military-post') { const list = pl ? (s.type === 'pass-fort' ? pl.pass : pl.fort) : null; const suf = list && list.length ? list[Math.floor(nr() * list.length)] : (s.type === 'pass-fort' ? '关' : s.gate === 'wall' ? '塞' : '堡'); if (!s.name.endsWith(suf) && !/[堡关塞寨城]$/.test(s.name)) s.name += suf; }
-      else if ((s.type === 'port' || s.type === 'island-port') && pl && pl.port && pl.port.length && nr() < 0.25) { const suf = pl.port[Math.floor(nr() * pl.port.length)]; if (!s.name.endsWith(suf) && s.name.length <= 4 && !usedNames.has(s.name + suf)) { usedNames.add(s.name + suf); s.name += suf; } } });
+    allSettlements.forEach(s => { const lib = libAt(s.cell); s.name = draw(lib, 'cities'); const pl = G.CultureExt ? G.CultureExt.ext(lib).places : null; /* 地名后缀取自文化库 */
+      if ((s.type === 'port' || s.type === 'island-port') && pl && pl.port && pl.port.length && nr() < 0.25) { const suf = pl.port[Math.floor(nr() * pl.port.length)]; if (!s.name.endsWith(suf) && s.name.length <= 4 && !usedNames.has(s.name + suf)) { usedNames.add(s.name + suf); s.name += suf; } } });
     // 国家政体与名称
     const kPop = new Float64Array(nK), kArea = new Float64Array(nK), kRegions = new Int32Array(nK);
     for (let i = 0; i < N; i++) if (state[i] >= 0) { kPop[state[i]] += weight[i] * popTotal; kArea[state[i]] += area[(i / W) | 0]; }
@@ -1085,7 +1166,7 @@
       usedNames.add(name);
       const holyL = (rl.names && rl.names.holy) || [], holy = holyL.length ? holyL[(nUsed + k) % holyL.length] : '';
       const col = rl.color ? rl.color.map((v, i) => Math.max(0, Math.min(255, Math.round(v + (nUsed ? (i === nUsed % 3 ? 38 : -14) * Math.min(2, nUsed) : 0))))) : null;
-      return { name, lib: rl.id, libLabel: rl.label, type: rl.type, spread: rl.spread, color: col, symbol: rl.symbol || '✦', relic: rl.relic || '', holy, holyList: (rl.names && rl.names.holy) || [], clergy: rl.clergy || {}, branches: (rl.names && rl.names.branches) || [], heresies: (rl.names && rl.names.heresies) || [] };
+      return { name, lib: rl.id, libLabel: rl.label, type: rl.type, spread: rl.spread, traits: (rl.traits || []).map(t=>({...t})), color: col, symbol: rl.symbol || '✦', relic: rl.relic || '', holy, holyList: (rl.names && rl.names.holy) || [], clergy: rl.clergy || {}, branches: (rl.names && rl.names.branches) || [], heresies: (rl.names && rl.names.heresies) || [] };
     });
     // ---------- 蛮族与羁縻 ----------
     // 称谓取自文化库：t.nomad（游牧部族）、t.tribe（部落）、t.jimi（羁縻制度）；库里没有时用通用称谓
@@ -1242,9 +1323,9 @@
         labels.push({ type: 'island', name: nm, x, y, size: gp.n, arch }); } }
     // 主要河流与湖泊名称
     const riverNames = []; { const mouths = []; for (let k = 0; k < Hy.mouths.length; k += 3) mouths.push([Hy.mouths[k], Hy.mouths[k + 1], Hy.mouths[k + 2]]); mouths.sort((a, b) => b[2] - a[2]);
-      for (const [x, y, qq] of mouths.slice(0, 40)) { const ci = Math.min(H - 1, (y / 2) | 0) * W + Math.min(W - 1, (x / 2) | 0); let cell = ci; for (let r = 1; r < 6 && !(land[cell] && civ[cell]); r++) for (let d = 0; d < 8; d++) { const j = NB[ci * 8 + d]; if (j >= 0 && land[j] && civ[j]) cell = j; } riverNames.push({ x, y, q: qq, name: draw(libAt(cell), 'rivers') }); } }
+      for (const [x, y, qq] of mouths.slice(0, 40)) { const ci = Math.min(H - 1, (y / 2) | 0) * W + Math.min(W - 1, (x / 2) | 0); let cell = ci; for (let r = 1; r < 6 && !(land[cell] && civ[cell]); r++) for (let d = 0; d < 8; d++) { const j = NB[ci * 8 + d]; if (j >= 0 && land[j] && civ[j]) cell = j; } riverNames.push({ x, y, q: qq, name: riverName(libAt(cell)) }); } }
     { const comp = components(lake); const info = new Map(); for (let i = 0; i < N; i++) if (comp[i]) { let o = info.get(comp[i]); if (!o) { o = { n: 0, sx: 0, sy: 0, any: i }; info.set(comp[i], o); } o.n++; o.sx += i % W; o.sy += (i / W) | 0; }
-      for (const [, o] of info) if (o.n >= 12) { let lib = LIBS[0]; for (let d = 0; d < 8; d++) { const j = NB[o.any * 8 + d]; if (j >= 0 && civ[j] > 0) { lib = libAt(j); break; } } labels.push({ type: 'lake', name: draw(lib, 'lakes'), x: (o.sx / o.n + 0.5) * 2, y: (o.sy / o.n + 0.5) * 2, size: o.n }); } }
+      for (const [, o] of info) if (o.n >= 12) { let lib = LIBS[0]; for (let d = 0; d < 8; d++) { const j = NB[o.any * 8 + d]; if (j >= 0 && civ[j] > 0) { lib = libAt(j); break; } } labels.push({ type: 'lake', name: lakeName(lib), x: (o.sx / o.n + 0.5) * 2, y: (o.sy / o.n + 0.5) * 2, size: o.n }); } }
     // 国家注记锚点：域内离边界最远处
     { const dd = new Float32Array(N).fill(1e9), qq = new Int32Array(N); let h = 0, t = 0;
       for (let i = 0; i < N; i++) { if (state[i] < 0) continue; for (const d of [1, 3, 4, 6]) { const j = NB[i * 8 + d]; if (j < 0 || state[j] !== state[i]) { dd[i] = 0; qq[t++] = i; break; } } }
@@ -1280,71 +1361,176 @@
     const FH = P.H, FN = FW * FH, fcellKm = 2 * Math.PI * R / FW, fe = P.elev;
     const stamp = new Int32Array(FN), dstamp = new Int32Array(FN), fdist = new Float64Array(FN), fpred = new Int32Array(FN);
     const fqth = qth;
-    const ffr = (j) => { const h = fe[j]; if (h <= 0 || Hy.lake[j]) return Infinity; const y = (j / FW) | 0, x = j - y * FW; const r_ = y * FW + (x + 1) % FW, d_ = y < FH - 1 ? j + FW : j; const sl = (Math.abs(fe[r_] - h) + Math.abs(fe[d_] - h)) / (fcellKm * 1000); let f = 1 + sl * 60 + (h > 2600 ? (h - 2600) / 900 : 0) + (Cl.snow[j] === 2 ? 6 : 0); const qv = Hy.q[j]; if (qv > fqth * 5) f += 2.5; else if (qv > fqth) f += 0.6; return f; };
+    // 显示水面：与渲染同一连续地表（海岸 coastSurface(view) 含格下小岬小湾，湖面取闭运算后的 lakeView）。
+    // 道路按格心寻路、再抽稀圆滑，格心是陆地不等于画出来的线在陆上：寻路、抽稀、切角、接线都以这张显示水面为准
+    const LVd = Hy.lakeView || Hy.lakeSoft;
+    const nearW = new Uint8Array(FN); // 1 近海 / 2 近湖（离水 1 格以内）：只有这些格需要按连续地表细查
+    { for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) { const j = y * FW + x, b = (fe[j] <= 0 ? 1 : 0) | (Hy.lake[j] || LVd[j] >= 0.15 ? 2 : 0); if (!b) continue;
+        for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= FH) continue; for (let dx = -1; dx <= 1; dx++) nearW[yy * FW + ((x + dx) % FW + FW) % FW] |= b; } } }
+    const wetAt = (x, y, b) => (b & 1 && G.Noise.coastSurface(fe, FW, FH, x, y, true) <= 0.6) || (b & 2 && G.Noise.surfaceRaw(LVd, FW, FH, x, y) >= 0.45);
+    // 显示水面按 1/4 格点阵缓存（格心、格边中点都落在点阵上）；任意点就近取点阵值
+    const QW = FW * 4, qC = new Uint32Array(FN); // 每格 4×4 个点阵值，各 2 位：0 未算 / 1 干 / 2 湿
+    const qWet = (qx, qy) => { qx = ((qx % QW) + QW) % QW; if (qy < 0) qy = 0; else if (qy > FH * 4 - 1) qy = FH * 4 - 1; const j = (qy >> 2) * FW + (qx >> 2);
+      const b = nearW[j]; if (!b) return false; const sh = ((qy & 3) * 4 + (qx & 3)) * 2; let v = (qC[j] >>> sh) & 3; if (!v) { v = wetAt(qx / 4, qy / 4, b) ? 2 : 1; qC[j] |= v << sh; } return v === 2; };
+    const ptWet = (x, y) => qWet(Math.round(x * 4), Math.round(y * 4));
+    const cWet = j => { const y = (j / FW) | 0, x = j - y * FW; return qWet(x * 4 + 2, y * 4 + 2); };
+    const segDry = (ax, ay, bx, by, skip) => { let dx = bx - ax; if (dx > FW / 2) dx -= FW; else if (dx < -FW / 2) dx += FW; const dy = by - ay, L = Math.hypot(dx, dy), n = Math.max(1, Math.ceil(L / 0.25));
+      for (let t = 0; t <= n; t++) { if (skip && t * L / n < skip) continue; if (ptWet(ax + dx * t / n, ay + dy * t / n)) return false; } return true; };
+    // 相邻两格：两格心（ffr 已查）+ 连线中点、四分点
+    const edgeDry = (i, d) => { const y = (i / FW) | 0, x = i - y * FW, qx = x * 4 + 2, qy = y * 4 + 2; return !qWet(qx + DX[d] * 2, qy + DY[d] * 2) && !qWet(qx + DX[d], qy + DY[d]) && !qWet(qx + DX[d] * 3, qy + DY[d] * 3); };
+    const ffr = (j) => { const h = fe[j]; if (h <= 0 || Hy.lake[j] || cWet(j)) return Infinity; const y = (j / FW) | 0, x = j - y * FW; const r_ = y * FW + (x + 1) % FW, d_ = y < FH - 1 ? j + FW : j; const sl = (Math.abs(fe[r_] - h) + Math.abs(fe[d_] - h)) / (fcellKm * 1000); let f = 1 + sl * 60 + (h > 2600 ? (h - 2600) / 900 : 0) + (Cl.snow[j] === 2 ? 6 : 0); const qv = Hy.q[j]; if (qv > fqth * 5) f += 2.5; else if (qv > fqth) f += 0.6; return f; };
     let routeId = 0;
-    function refine(cells, pa, pb, imp, water) {
-      routeId++;
-      if (cells.length < 2) return null;
-      const passable = water ? (j => fe[j] <= 0 && !Hy.lake[j] && Cl.snow[j] !== 4) : null;
-      // 走廊：沿粗路线的全分辨率格（半径 3）
-      const pts = cells.map(c => toFull(c));
+    const keepF = new Uint8Array(FN); // 抽稀取舍：1 保留 / 2 略过（首条经过的道路决定）
+    const fineOn = new Uint8Array(FN); // 已细化道路经过的全分辨率格：后修的路就近并入旧路（共线不再并排两条），支路以它为终点
+    // 走廊：沿折线盖章（全分辨率，半径 rad）
+    function corridor(pts, rad) {
+      let n = 0; const r2 = rad * rad + 1;
       for (let k = 0; k < pts.length; k++) {
         const [x0, y0] = pts[k], [x1, y1] = pts[Math.min(pts.length - 1, k + 1)];
         let dx = x1 - x0; if (dx > FW / 2) dx -= FW; if (dx < -FW / 2) dx += FW;
         const steps = Math.max(1, Math.ceil(Math.hypot(dx, y1 - y0)));
         for (let t = 0; t <= steps; t++) { const cx = x0 + dx * t / steps, cy = y0 + (y1 - y0) * t / steps;
-          for (let oy = -3; oy <= 3; oy++) for (let ox = -3; ox <= 3; ox++) { if (ox * ox + oy * oy > 10) continue; const yy = Math.floor(cy) + oy; if (yy < 0 || yy >= FH) continue; const xx = ((Math.floor(cx) + ox) % FW + FW) % FW; stamp[yy * FW + xx] = routeId; } }
+          for (let oy = -rad; oy <= rad; oy++) for (let ox = -rad; ox <= rad; ox++) { if (ox * ox + oy * oy > r2) continue; const yy = Math.floor(cy) + oy; if (yy < 0 || yy >= FH) continue; const j = yy * FW + ((Math.floor(cx) + ox) % FW + FW) % FW; if (stamp[j] !== routeId) { stamp[j] = routeId; n++; } } }
       }
-      if (pa) pts[0] = pa; if (pb) pts[pts.length - 1] = pb;
-      const cellAt = p => Math.min(FH - 1, Math.max(0, Math.floor(p[1]))) * FW + ((Math.floor(p[0]) % FW) + FW) % FW;
+      return n;
+    }
+    const cellAtF = p => Math.min(FH - 1, Math.max(0, Math.floor(p[1]))) * FW + ((Math.floor(p[0]) % FW) + FW) % FW;
+    // 进出城：去掉城址一格半以内的路点，道路直接通向城址（不在城边绕钩）
+    const attach = (arr, P0, atStart) => { if (!P0 || arr.length < 2) return arr; let a = Array.from(arr); if (!atStart) { const r = []; for (let i = a.length - 2; i >= 0; i -= 2) r.push(a[i], a[i + 1]); a = r; }
+      let dx = Math.abs(a[0] - P0[0]); dx = Math.min(dx, FW - dx); if (dx > 12) return arr;
+      const dP = i => Math.hypot(Math.min(Math.abs(a[i] - P0[0]), FW - Math.abs(a[i] - P0[0])), a[i + 1] - P0[1]);
+      // 直连城址的那一段必须在陆上（城址本身贴着岸线，起头半格不算）；岸边城市的路口点被水逼开时，4 格内取能直通的最远点拉直，不在城边兜小钩
+      let k = 0, pl = dP(0); for (let i = 2; i < a.length - 2 && dP(i) < 4; i += 2) { pl += Math.hypot(a[i] - a[i - 2], a[i + 1] - a[i - 1]); if ((dP(i) < 1.6 || dP(i) < 3 || pl > 1.25 * dP(i)) && segDry(P0[0], P0[1], a[i], a[i + 1], 0.5)) k = i - 2; }
+      const p0x = P0[0] + Math.round((a[0] - P0[0]) / FW) * FW; // 经度接缝：城址取与路线同侧的副本，不连出横跨全图的直线
+      a = [p0x, P0[1]].concat(a.slice(k + 2)); if (!atStart) { const r = []; for (let i = a.length - 2; i >= 0; i -= 2) r.push(a[i], a[i + 1]); a = r; } return Float32Array.from(a); };
+    // 圆滑：两次 Chaikin 切角（端点不动），去掉 8 方向寻路的 45° 锯齿
+    // 三次切角（第三次原在前端做，挪到这里统一校验）：切下的角若会落进水面就保留原拐点，圆滑后的线不比原线更靠水
+    const chaikin = a0 => { let a = Array.from(a0); for (let it = 0; it < 3; it++) { if (a.length < 6) break; const q = [a[0], a[1]]; let rx = a[0], ry = a[1];
+        for (let i = 0; i < a.length - 2; i += 2) { const x0 = a[i], y0 = a[i + 1], x1 = a[i + 2], y1 = a[i + 3], qx = x0 * 0.75 + x1 * 0.25, qy = y0 * 0.75 + y1 * 0.25;
+          if (i > 0 && !segDry(rx, ry, qx, qy)) q.push(x0, y0); q.push(qx, qy);
+          rx = x0 * 0.25 + x1 * 0.75; ry = y0 * 0.25 + y1 * 0.75; q.push(rx, ry); }
+        q.push(a[a.length - 2], a[a.length - 1]); a = q; } return Float32Array.from(a); };
+    const finish = (out, pa, pb) => { if (!out.length) return out; out[0] = attach(out[0], pa, true); out[out.length - 1] = attach(out[out.length - 1], pb, false); return out.map(chaikin); };
+    const refineStats = { fine: 0, wide: 0, wet: 0, coarse: 0, merged: 0, ms: 0 }, tRoad0 = Date.now();
+    // 全分辨率细化：沿粗路线走廊（含通到真实城址的接线段）重新寻路；失败时放宽走廊、允许短距离涉水（渡口/堤道），仍失败才退回粗路线
+    // toNet：支路——碰到已修好的道路即止（真正接在路上，不靠事后找最近点）
+    function refine(cells, pa, pb, imp, water, toNet) {
+      if (cells.length < 2) return null;
+      const passable = water ? (j => fe[j] <= 0 && !Hy.lake[j] && Cl.snow[j] !== 4) : null;
+      const pts = cells.map(c => toFull(c));
+      if (pa) pts.unshift(pa); if (pb) pts.push(pb); // 城址可能被吸附到岸线/河道上，离粗格中心几格远：接线段也进走廊，起终点不再被困在走廊外
       const nearestOk = (c) => { if (!passable || passable(c)) return c; const y = (c / FW) | 0, x = c - y * FW; for (let r = 1; r <= 4; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const yy = y + dy; if (yy < 0 || yy >= FH) continue; const j = yy * FW + ((x + dx) % FW + FW) % FW; if (passable(j)) return j; } return c; };
-      const start = nearestOk(cellAt(pts[0])), goal = nearestOk(cellAt(pts[pts.length - 1]));
-      stamp[start] = routeId; stamp[goal] = routeId;
-      const gy = (goal / FW) | 0, gx = goal - gy * FW;
-      const hp = new Heap(4096);
-      dstamp[start] = routeId; fdist[start] = 0; fpred[start] = -1; hp.push(start, 0);
-      let found = false, guard = 0;
-      while (hp.n && guard++ < 400000) {
-        const i = hp.pop(), fv = hp.top; const y = (i / FW) | 0, x = i - y * FW;
-        let ddx = Math.abs(x - gx); ddx = Math.min(ddx, FW - ddx);
-        if (fv - Math.hypot(ddx, y - gy) > fdist[i] + 1e-9) continue;
-        if (i === goal) { found = true; break; }
-        const fi = passable ? 1 : (ffr(i) === Infinity ? 1 : ffr(i));
-        for (let d = 0; d < 8; d++) {
-          const yy = y + DY[d]; if (yy < 0 || yy >= FH) continue; let xx = x + DX[d]; if (xx < 0) xx += FW; else if (xx >= FW) xx -= FW;
-          const j = yy * FW + xx; if (stamp[j] !== routeId) continue;
-          let fj; if (passable) { if (!passable(j) && j !== goal) continue; fj = 1 + (dCoastF(j) < 2 ? 0.6 : 0); } else { fj = ffr(j); if (fj === Infinity) { if (j !== goal) continue; fj = 1; } }
-          const nd = fdist[i] + 0.5 * (fi + fj) * DL[d] + Math.abs(fe[j] - fe[i]) / 120;
-          if (dstamp[j] !== routeId || nd < fdist[j]) { dstamp[j] = routeId; fdist[j] = nd; fpred[j] = i; let hx = Math.abs(xx - gx); hx = Math.min(hx, FW - hx); hp.push(j, nd + Math.hypot(hx, yy - gy)); }
+      const start = nearestOk(cellAtF(pts[0])), goal = nearestOk(cellAtF(pts[pts.length - 1]));
+      const gy = (goal / FW) | 0, gx = goal - gy * FW, sy0 = (start / FW) | 0, sx0 = start - sy0 * FW;
+      const search = (rad, relax) => {
+        routeId++; const nC = corridor(pts, rad); stamp[start] = routeId; stamp[goal] = routeId;
+        const hp = new Heap(4096), cap = Math.max(60000, nC * 10);
+        dstamp[start] = routeId; fdist[start] = 0; fpred[start] = -1; hp.push(start, 0);
+        let end = -1, guard = 0, goalHit = false;
+        while (hp.n && guard++ < cap) {
+          const i = hp.pop(), fv = hp.top; const y = (i / FW) | 0, x = i - y * FW;
+          let ddx = Math.abs(x - gx); ddx = Math.min(ddx, FW - ddx);
+          if (fv - Math.hypot(ddx, y - gy) > fdist[i] + 1e-9) continue;
+          if (i === goal) { if (!toNet) { end = i; break; } goalHit = true; } // 支路：粗格接入点只是方向，真正的终点是已修好的路
+          if (toNet && fineOn[i]) { let sx = Math.abs(x - sx0); sx = Math.min(sx, FW - sx); if (Math.hypot(sx, y - sy0) > 2.5) { end = i; break; } }
+          const fi0 = passable ? 1 : ffr(i), fi = fi0 === Infinity ? (relax ? 30 : 1) : fi0;
+          for (let d = 0; d < 8; d++) {
+            const yy = y + DY[d]; if (yy < 0 || yy >= FH) continue; let xx = x + DX[d]; if (xx < 0) xx += FW; else if (xx >= FW) xx -= FW;
+            const j = yy * FW + xx; if (stamp[j] !== routeId) continue;
+            let fj; if (passable) { if (!passable(j) && j !== goal) continue; fj = 1 + (dCoastF(j) < 2 ? 0.6 : 0); }
+            else { fj = ffr(j); if (fj !== Infinity && i !== start && j !== goal && !edgeDry(i, d)) fj = Infinity; if (fj === Infinity) { if (j === goal || j === start) fj = 1; else if (relax) fj = 30; else continue; } else if (fineOn[j]) fj *= 0.55; } // 并入已有道路：同一走廊不再修第二条
+            const nd = fdist[i] + 0.5 * (fi + fj) * DL[d] + Math.abs(fe[j] - fe[i]) / 120;
+            if (dstamp[j] !== routeId || nd < fdist[j]) { dstamp[j] = routeId; fdist[j] = nd; fpred[j] = i; let hx = Math.abs(xx - gx); hx = Math.min(hx, FW - hx); hp.push(j, nd + Math.hypot(hx, yy - gy)); }
+          }
         }
-      }
-      if (!found) return null;
-      const path = []; let x = goal; while (x >= 0) { path.push(x); x = x === start ? -1 : fpred[x]; } path.reverse();
-      if (!passable) { let inRiver = false; for (let k = 0; k < path.length; k++) { const c = path[k], big = Hy.q[c] > qth * 5 && fe[c] > 0; if (big && !inRiver && bridges.length < 6000) { const y = (c / FW) | 0; bridges.push([c - y * FW + 0.5, y + 0.5, 0, imp === 'trunk' ? 0 : imp === 'regional' ? 1 : 2]); } inRiver = big; } }
+        if (end < 0 && goalHit) end = goal;
+        if (end < 0) return null;
+        const path = []; let x = end; while (x >= 0) { path.push(x); x = x === start ? -1 : fpred[x]; } path.reverse(); return path;
+      };
+      let path = search(toNet ? 5 : 3, false), how = 'fine'; // 支路走廊放宽：主路细化后可能偏离粗格几格，要能摸到
+      if (!path) { path = search(7, false); how = 'wide'; } // 先放宽走廊、仍不下水
+      if (!path) { path = search(7, true); how = 'wet'; }   // 实在绕不过（粗格连着、细格隔水）：允许涉水，水上那段事后改画成渡口
+      if (!path) return null;
+      refineStats[how]++;
+      const merged = toNet && path[path.length - 1] !== goal; if (merged) refineStats.merged++;
+      if (!passable) for (const c of path) if (ffr(c) !== Infinity) fineOn[c] = 1; // 支路只能接入陆上道路，不能停在渡线中间
       // 抽稀（保留每 2 格）+ 输出全分辨率坐标，跨日期线断开
       const out = []; let cur = [], px = null;
-      path.forEach((c, k) => { if (k % 2 && k !== path.length - 1) return; const y = (c / FW) | 0, xx = c - y * FW; if (px !== null && Math.abs(xx - px) > 8) { if (cur.length >= 4) out.push(Float32Array.from(cur)); cur = []; } cur.push(xx + 0.5, y + 0.5); px = xx; });
+      // 共用路段沿用先修道路的取舍点，两条路在共线处画出来完全重合，不会错开半格成双线
+      let since = 2, lk = -1; const ctr = c => { const y = (c / FW) | 0; return [c - y * FW + 0.5, y + 0.5]; };
+      // 略过一格时，前一保留点直连下一格的弦不能切进水面（岸边、湖汊处保留每一格）
+      const chordDry = k => { if (passable || lk < 0) return true; const a = ctr(lk), b = ctr(path[k + 1]); return segDry(a[0], a[1], b[0], b[1]); };
+      path.forEach((c, k) => { const forced = k === 0 || k === path.length - 1; let keep = forced || (!passable && keepF[c] ? keepF[c] === 1 : since >= 2);
+        if (!keep && !chordDry(k)) keep = true;
+        if (!passable && !keepF[c]) keepF[c] = keep ? 1 : 2; if (keep) lk = c; if (!keep) { since++; return; } since = 1; const y = (c / FW) | 0, xx = c - y * FW; if (px !== null && Math.abs(xx - px) > 8) { if (cur.length >= 4) out.push(Float32Array.from(cur)); cur = []; } cur.push(xx + 0.5, y + 0.5); px = xx; });
       if (cur.length >= 4) out.push(Float32Array.from(cur));
-      // 进出城：去掉城市一格半以内的路点，道路直接通向城址（不在城边绕钩）
-      const attach = (arr, P0, atStart) => { if (!P0 || arr.length < 4) return arr; let a = Array.from(arr); if (!atStart) { const r = []; for (let i = a.length - 2; i >= 0; i -= 2) r.push(a[i], a[i + 1]); a = r; }
-        let dx = Math.abs(a[0] - P0[0]); dx = Math.min(dx, FW - dx); if (dx > 6) return arr;
-        let k = 0; while (k + 2 < a.length - 2 && Math.hypot(Math.min(Math.abs(a[k + 2] - P0[0]), FW - Math.abs(a[k + 2] - P0[0])), a[k + 3] - P0[1]) < 1.6) k += 2;
-        const p0x = P0[0] + Math.round((a[0] - P0[0]) / FW) * FW; // 经度接缝：城址取与路线同侧的副本，不连出横跨全图的直线
-        a = [p0x, P0[1]].concat(a.slice(k + 2)); if (!atStart) { const r = []; for (let i = a.length - 2; i >= 0; i -= 2) r.push(a[i], a[i + 1]); a = r; } return Float32Array.from(a); };
-      if (out.length) { out[0] = attach(out[0], pa, true); out[out.length - 1] = attach(out[out.length - 1], pb, false); }
-      // 圆滑：两次 Chaikin 切角（端点不动），去掉 8 方向寻路的 45° 锯齿
-      for (let k = 0; k < out.length; k++) { let a = Array.from(out[k]); for (let it = 0; it < 2; it++) { if (a.length < 6) break; const q = [a[0], a[1]]; for (let i = 0; i < a.length - 2; i += 2) { const x0 = a[i], y0 = a[i + 1], x1 = a[i + 2], y1 = a[i + 3]; q.push(x0 * 0.75 + x1 * 0.25, y0 * 0.75 + y1 * 0.25, x0 * 0.25 + x1 * 0.75, y0 * 0.25 + y1 * 0.75); } q.push(a[a.length - 2], a[a.length - 1]); a = q; } out[k] = Float32Array.from(a); }
-      return out;
+      return finish(out, pa, merged ? null : pb);
     }
     const fineByRoute = new Map();
     const dCoastF = j => { const y = (j / FW) | 0, x = j - y * FW; for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const yy = y + oy; if (yy < 0 || yy >= FH) continue; if (fe[yy * FW + ((x + ox) % FW + FW) % FW] > 0) return 1; } return 9; };
-    const posOfNode = nd => nd.s && nd.s.fx !== undefined ? [nd.s.fx, nd.s.fy] : null;
-    roads.forEach((r, k) => { const f = refine(r.cells, posOfNode(allNodes[r.a]), posOfNode(allNodes[r.b]), r.imp, false); fineByRoute.set(k, f || lineOut(r.cells)); });
-    // 支路末端（接入点）精确接到细化后的主路上，不留缺口
-    { const mainLines = []; roads.forEach((r, k) => { if (allNodes[r.b] && allNodes[r.b].kind === 'junction') return; for (const l of fineByRoute.get(k)) mainLines.push(l); });
-      roads.forEach((r, k) => { if (!allNodes[r.b] || allNodes[r.b].kind !== 'junction') return; const ls = fineByRoute.get(k); if (!ls || !ls.length) return; const L = ls[ls.length - 1], ex = L[L.length - 2], ey = L[L.length - 1];
-        let bx = 0, by = 0, bd = 4; for (const m of mainLines) for (let i = 2; i < m.length; i += 2) { const ax = m[i - 2], ay = m[i - 1]; if (Math.abs(ax - ex) > 6 || Math.abs(ay - ey) > 6) continue; const dx = m[i] - ax, dy = m[i + 1] - ay, L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((ex - ax) * dx + (ey - ay) * dy) / L2)) : 0, qx = ax + dx * t, qy = ay + dy * t, dd = Math.hypot(qx - ex, qy - ey); if (dd < bd) { bd = dd; bx = qx; by = qy; } }
-        if (bd < 4) ls[ls.length - 1] = Float32Array.from([...L, bx, by]); }); }
+    const landAnchors = new Map();
+    const posOfNode = nd => {
+      if (!nd) return null;
+      if (nd.s) return nd.s.fx !== undefined ? [nd.s.fx, nd.s.fy] : toFull(nd.cell);
+      if (nd.kind === 'junction') return null; // 支路的终点由实际路网决定
+      if (!landAnchors.has(nd.cell)) {
+        const point = landRoadAnchor(toFull(nd.cell), FW, FH, (x, y) => !ptWet(x, y) && ffr(cellAtF([x, y])) !== Infinity);
+        if (!point) throw new Error('交通节点附近缺少有效陆地：' + nd.cell);
+        landAnchors.set(nd.cell, point);
+      }
+      return landAnchors.get(nd.cell);
+    };
+    // 修路顺序：干道 → 区域道路 → 地方道路 → 支路（新设县城接入路网）；后修的就近并入先修的
+    { const rank = r => (allNodes[r.b] && allNodes[r.b].kind === 'junction') ? 3 : r.imp === 'trunk' ? 0 : r.imp === 'regional' ? 1 : 2;
+      const order = roads.map((r, k) => k).sort((p, q2) => rank(roads[p]) - rank(roads[q2]) || p - q2);
+      for (const k of order) { const r = roads[k], A = allNodes[r.a], B = allNodes[r.b], pa = posOfNode(A), pb = posOfNode(B);
+        let f = refine(r.cells, pa, pb, r.imp, false, B && B.kind === 'junction');
+        if (!f || !f.length) { refineStats.coarse++; f = finish(lineOut(r.cells), pa, pb); }
+        fineByRoute.set(k, f); } }
+    // 焊接：每条路两端必须落在城址或另一条路上；端点离路网还有缝（含经度接缝外的端点）就补一段接上
+    refineStats.ms = Date.now() - tRoad0;
+    const weldStats = { welded: 0, open: 0, maxGap: 0 }, weldLinks = [];
+    { const CELL = 4, grid = new Map(), gk = (x, y) => Math.floor(y / CELL) * 65536 + Math.floor((((x % FW) + FW) % FW) / CELL);
+      const segs = []; // [route, lineIdx]
+      fineByRoute.forEach((ls, k) => ls.forEach((l, li) => { const id = segs.push([k, li]) - 1; const seen = new Set();
+        const add = (x,y) => { const kk=gk(x,y); if(!seen.has(kk)){seen.add(kk);(grid.get(kk)||grid.set(kk,[]).get(kk)).push(id);} };
+        if(l.length>=2)add(l[0],l[1]); for(let i=2;i<l.length;i+=2){const dx=l[i]-l[i-2],dy=l[i+1]-l[i-1];if(Math.abs(dx)>8)continue;const steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)/(CELL/2)));for(let t=1;t<=steps;t++)add(l[i-2]+dx*t/steps,l[i-1]+dy*t/steps);}
+      }));
+      const RKw = { trunk: 0, regional: 1, local: 2 };
+      const nearestOn = (x, y, self, R) => { let best = null, bd = R; const myRk = RKw[roads[self].imp]; /* 只接到同级或更高级的路上：分级显示时也连着 */ const r = Math.ceil(R / CELL), seen = new Set();
+        for (let oy = -r; oy <= r; oy++) for (let ox = -r; ox <= r; ox++) for (const id of grid.get(gk(x + ox * CELL, y + oy * CELL)) || []) { if (seen.has(id)) continue; seen.add(id); const [k, li] = segs[id]; if (k === self || RKw[roads[k].imp] > myRk) continue; const l = fineByRoute.get(k)[li];
+          for (let i = 2; i < l.length; i += 2) { const ax = l[i - 2], ay = l[i - 1]; if (Math.abs(l[i] - ax) > 8) continue; const sh = Math.round((x - ax) / FW) * FW, axs = ax + sh, ex = l[i] - ax, ey = l[i + 1] - ay; if (Math.abs(axs - x) > R + 8 || Math.abs(ay - y) > R + 8) continue;
+            const L2 = ex * ex + ey * ey, t = L2 ? Math.max(0, Math.min(1, ((x - axs) * ex + (y - ay) * ey) / L2)) : 0, qx = axs + ex * t, qy = ay + ey * t, d = Math.hypot(qx - x, qy - y); if (d < bd) { bd = d; best = [qx, qy, d, (i === 2 && t === 0) || (i === l.length - 2 && t === 1), k]; } } }
+        return best; };
+      fineByRoute.forEach((ls, k) => { if (!ls.length) return; const r = roads[k];
+        for (const [end, node] of [[0, allNodes[r.a]], [1, allNodes[r.b]]]) {
+          const li = end ? ls.length - 1 : 0, l = ls[li], x = end ? l[l.length - 2] : l[0], y = end ? l[l.length - 1] : l[1];
+          const P0 = posOfNode(node); let tgt = null;
+          if (P0) { const px0 = P0[0] + Math.round((x - P0[0]) / FW) * FW; if (Math.hypot(px0 - x, P0[1] - y) > 0.05) tgt = [px0, P0[1]]; }
+          else { // 接到路上：先剪掉贴着主路走的末梢（否则接点处折回成小钩），再从新端点垂直接上
+            let l2 = Array.from(l); const pop = () => end ? l2.splice(l2.length - 2, 2) : l2.splice(0, 2), tip = () => end ? [l2[l2.length - 2], l2[l2.length - 1]] : [l2[0], l2[1]];
+            while (l2.length >= 4) { const [ax, ay] = tip(), q = nearestOn(ax, ay, k, 1.2); if (!q || q[3]) break; pop(); } // 碰到的是别的路的端点（路口处首尾相接）不剪
+            if (l2.length !== l.length) { ls[li] = Float32Array.from(l2); }
+            const [tx, ty] = tip(), q = nearestOn(tx, ty, k, 12); if (!q) { weldStats.open++; weldLinks.push({source:k,end,target:-1,x:tx,y:ty}); continue; }
+            if (q[2] > 0) { weldStats.maxGap = Math.max(weldStats.maxGap, +q[2].toFixed(2)); const L = ls[li]; ls[li] = Float32Array.from(end ? [...L, q[0], q[1]] : [q[0], q[1], ...L]); weldStats.welded++; }
+            weldLinks.push({source:k,end,target:q[4],x:q[0],y:q[1]});
+            continue; }
+          if (!tgt) continue;
+          weldStats.maxGap = Math.max(weldStats.maxGap, +Math.hypot(tgt[0] - x, tgt[1] - y).toFixed(2));
+          ls[li] = Float32Array.from(end ? [...l, tgt[0], tgt[1]] : [tgt[0], tgt[1], ...l]); weldStats.welded++; } }); }
+    // 落水校验：最终道路线（含接线、焊接段、涉水细化与粗路线回退）逐段按显示水面采样，水上的那段剪下改画成渡口航线
+    const ferryOut = { trunk: [], regional: [] }, ferryByRoute = new Map(), wetStats = { ferries: 0, ferryLen: 0 };
+    fineByRoute.forEach((ls, k) => { const r=roads[k], out=[], ferries=[];
+      for (const line of ls) { const parts=splitRoadWater(line,ptWet); out.push(...parts.land); ferries.push(...parts.ferries);
+        for (const ferry of parts.ferries) { ferryOut[r.imp==='trunk'?'trunk':'regional'].push(ferry); wetStats.ferries++;
+          for(let q=2;q<ferry.length;q+=2)wetStats.ferryLen+=Math.hypot(ferry[q]-ferry[q-2],ferry[q+1]-ferry[q-1]); }
+      }
+      fineByRoute.set(k,out); ferryByRoute.set(k,ferries);
+    });
+    wetStats.ferryLen = Math.round(wetStats.ferryLen);
+    repairRoadLinks({lines:fineByRoute,links:weldLinks,width:FW,segDry});
+    weldStats.verified = weldLinks.filter(x => x.status === 'connected').length;
+    weldStats.unresolved = weldLinks.filter(x => x.status !== 'connected').length;
     roads.forEach((r, k) => { for (const l of fineByRoute.get(k)) roadOut[r.imp].push(l); });
     // 桥梁：按最终绘制的道路线与河流线求交点（河流流量 ≥ 显示阈值的 3 倍），桥沿道路方向
     bridges.length = 0;
@@ -1358,9 +1544,9 @@
           const t = ((ax - px0) * d2y - (ay - py0) * d2x) / den, u = ((ax - px0) * d1y - (ay - py0) * d1x) / den; if (t < 0 || t > 1 || u < 0 || u > 1) continue;
           const x = px0 + d1x * t, y = py0 + d1y * t; if (seen.some(o => Math.abs(o[0] - x) < 0.6 && Math.abs(o[1] - y) < 0.6)) continue; seen.push([x, y]);
           if (bridges.length < 8000) bridges.push([x, y, Math.atan2(d1y, d1x), imp, Math.min(4, Math.floor(Math.log2(q))), tier]); } } }
-    // 关隘、边堡、集镇吸附到实际路线上（全分辨率），保证就在路边
+    // 集镇吸附到实际路线上（全分辨率）。
     { const lines = roadOut.trunk.concat(roadOut.regional, roadOut.local);
-      allSettlements.forEach((st, ci) => { if (st.role !== 'military-post' && st.role !== 'trade') return; const c = cityOut[ci]; let bx = 0, by = 0, bd = 7;
+      allSettlements.forEach((st, ci) => { if (st.role !== 'trade') return; const c = cityOut[ci]; let bx = 0, by = 0, bd = 7;
         for (const l of lines) { if (Math.abs(l[0] - c.x) > 400 && Math.abs(l[l.length - 2] - c.x) > 400) continue;
           for (let i = 2; i < l.length; i += 2) { const ax = l[i - 2], ay = l[i - 1], ex = l[i] - ax, ey = l[i + 1] - ay; if (Math.abs(ax - c.x) > 8 || Math.abs(ay - c.y) > 8) continue; const L2 = ex * ex + ey * ey, t = L2 ? Math.max(0, Math.min(1, ((c.x - ax) * ex + (c.y - ay) * ey) / L2)) : 0, qx = ax + ex * t, qy = ay + ey * t, d = Math.hypot(qx - c.x, qy - c.y); if (d < bd) { bd = d; bx = qx; by = qy; } } }
         if (bd < 7 && G.Noise.coastSurface(P.elev, FW, P.H, bx, by) > 0.2 && G.Noise.surface(Hy.lakeSoft, FW, P.H, bx, by) < 0.35) { c.x = bx; c.y = by; } }); }
@@ -1375,6 +1561,7 @@
       if (lines.length) { const first = lines[0], last = lines[lines.length - 1]; lines[0] = Float32Array.from([near(A.fx, first[0]), A.fy, ...first]); lines[lines.length - 1] = Float32Array.from([...last, near(B.fx, last[last.length - 2]), B.fy]); }
       for (const l of lines) { const o = []; for (let k = 0; k < l.length; k += 2) if ((k / 2) % 2 === 0 || k >= l.length - 2 || k <= 2) o.push(l[k], l[k + 1]); roadOut.sea.push(Float32Array.from(o)); seaOut[r.imp === 'trunk' ? 'trunk' : 'regional'].push(Float32Array.from(o)); }
     }
+    for (const l of ferryOut.trunk) { roadOut.sea.push(l); seaOut.trunk.push(l); } for (const l of ferryOut.regional) roadOut.sea.push(l); // 渡口：与海运航线同画法
     roadOut.seaTrunk = seaOut.trunk;
     // 工业时代：国内主要城市之间的铁路（沿干线/区域道路走廊）
     if (era === 'industrial') { for (const r of roads) { if (r.imp === 'local') continue; const A = allNodes[r.a], B = allNodes[r.b]; if (!A.s || !B.s) continue; if (state[A.cell] >= 0 && state[A.cell] === state[B.cell] && (A.s.tier !== 'town' && B.s.tier !== 'town')) for (const l of fineByRoute.get(roads.indexOf(r))) roadOut.rail.push(l); } }
@@ -1387,7 +1574,7 @@
       worldName: draw(LIBS[(cfg.seed >>> 0) % LIBS.length] || LIBS[0], 'regions').replace(/(地区|平原|高原)$/, ''),
       population: Math.round(popTotal), popRange: [popMin, popMax], supportRange: [capMin, capMax], countries: nK, provinces: provinces.length,
       settlements: cityOut.length, cultures: cultures.length, languages: languages.length, religions: religions.length, tribalShare: tribalArea / Math.max(1, claimArea),
-      landArea: Math.round(claimArea), cellKm, era, eraLabel: AD.label, tribes: tribes.length, jimis: jimis.length, roads: roads.length, seaRoutes: seaRoutes.length, bridges: bridges.length
+      landArea: Math.round(claimArea), cellKm, era, eraLabel: AD.label, tribes: tribes.length, jimis: jimis.length, roads: roads.length, seaRoutes: seaRoutes.length, bridges: bridges.length, roadBuild: Object.assign({}, refineStats, weldStats, wetStats)
     };
     // ---- 细部自然地名（放在所有原有命名之后，不改变已有地名）：支脉、丘陵、各级河流 ----
     { const comps8 = (mask, minN) => { const lab = new Int32Array(N), out = []; let id = 0;
@@ -1424,10 +1611,11 @@
       const minKm = 2 * Math.PI * R * 0.0005, cand = stems.map((st, si) => [st, si]).filter(([st, si]) => !taken.has(si) && (st.tier <= 2 || st.km >= minKm)).sort((a, b) => a[0].tier - b[0].tier || b[0].km - a[0].km).slice(0, 2200);
       for (const [st, si] of cand) { const [x, y] = midOf(st), ci = Math.min(H - 1, Math.max(0, (y / 2) | 0)) * W + ((((x / 2) | 0) % W) + W) % W;
         let cell = ci; if (!(land[cell] && civ[cell])) for (let d = 0; d < 8; d++) { const j = NB[ci * 8 + d]; if (j >= 0 && land[j] && civ[j]) { cell = j; break; } }
-        riverNames.push({ x, y, q: 0, name: draw(libAt(cell), 'rivers'), stem: si, tier: st.tier, km: st.km, minor: 1 }); } }
+        riverNames.push({ x, y, q: 0, name: riverName(libAt(cell)), stem: si, tier: st.tier, km: st.km, minor: 1 }); } }
     // 历史推演（core/history.js）所需的中间量：只留在 Worker 内，不随 ready 消息发往页面
     const hist = {
-      W, H, N, FW, R, cellKm, lat, cosL, area, NB, gdist, era: cfg.era | 0, seed: cfg.seed, endYear: cfg.endYear || 0, targetCountries: cfg.countries || 0,
+      speciesLibraries,
+      W, H, N, FW, R, cellKm, lat, cosL, area, NB, gdist, era: cfg.era | 0, seed: cfg.seed, endYear: cfg.endYear || 0,
       land, ice, domain, oceanCoast, dCoast, e, eN, slopeN, T, Pr, kop, biome, order, pot, hab, weight, density, newW, stateFr,
       civ, civCost: CV.cost, civSeeds: civSeeds.map(s => ({ cell: s.cell, primary: s.primary })), civLib, subsistence,
       relSeeds: relSeeds.map(s => s.cell), relRaw: religionRaw, relCost: RG.cost, religion, culture,
@@ -1435,7 +1623,8 @@
       settlements: allSettlements.map(s => ({ cell: s.cell, name: s.name, pop: s.pop, score: s.score || 0, tier: s.tier, type: s.type, role: s.role, capital: s.capital, seat: s.seat, newSeat: !!s.newSeat })),
       LIBS, usedNames, popTotal,
       // 道路：两端的格与聚落（用于推算修建年代），以及最终绘制的全分辨率折线
-      roads: (() => { const idxOf = new Map(allSettlements.map((s, k) => [s, k])); return roads.map((r, k) => { const A = allNodes[r.a], B = allNodes[r.b]; return { imp: r.imp, a: A ? A.cell : -1, b: B ? B.cell : -1, sa: A && A.s && idxOf.has(A.s) ? idxOf.get(A.s) : -1, sb: B && B.s && idxOf.has(B.s) ? idxOf.get(B.s) : -1, lines: fineByRoute.get(k) || [] }; }); })()
+      ...(G.debugSociety && G.debugSociety.roadConnections ? {roadConnections:weldLinks} : {}),
+      roads: (() => { const idxOf = new Map(allSettlements.map((s, k) => [s, k])); return roads.map((r, k) => { const A = allNodes[r.a], B = allNodes[r.b]; return { imp: r.imp, a: A ? A.cell : -1, b: B ? B.cell : -1, sa: A && A.s && idxOf.has(A.s) ? idxOf.get(A.s) : -1, sb: B && B.s && idxOf.has(B.s) ? idxOf.get(B.s) : -1, cells: r.cells, lines: fineByRoute.get(k) || [], ferries: ferryByRoute.get(k) || [] }; }); })()
     };
     return {
       hist,
@@ -1456,7 +1645,15 @@
 
 
   // ---------- 文化库起名器：库里现成的名字用完后，用该库的前缀、词根、后缀拼出新名字（不出现数字） ----------
-  // kind：state 国名 / prov 省名 / city 城名 / other；省名的结尾词（州、牧地、河谷……）从该库自己的省名里学
+  // kind：state 国名 / prov 省名 / city 城名 / fort 关名 / other；省名结尾从该库自己的省名里学
+  const fortNameEnding = name => /[关堡塞]$/.test(name) ? name : name + '关';
+  function makeFortName(lib, used, rnd) {
+    for (const base of (lib && lib.n && lib.n.cities) || []) {
+      const name = fortNameEnding(base);
+      if (!used.has(name)) { used.add(name); return name; }
+    }
+    return makeName(lib, 'fort', used, rnd);
+  }
   const NG_DIR = ['东', '西', '南', '北', '新', '上', '下', '大', '小', '内', '外', '中'];
   const ngEndCache = new Map();
   function ngEndings(lib) {
@@ -1471,6 +1668,7 @@
   }
   function makeName(lib, kind, used, rnd, opt) {
     opt = opt || {};
+    const finish = kind === 'fort' ? fortNameEnding : name => name + (opt.suffix || '');
     const C = lib && lib.c && lib.c.roots && lib.c.roots.length ? lib.c : { roots: ['安', '宁', '岚', '川', '溪', '岱'], prefixes: ['东', '西', '南', '北'], suffixes: ['阳', '平', '和'] };
     const pre = C.prefixes && C.prefixes.length ? C.prefixes : [''], suf = C.suffixes && C.suffixes.length ? C.suffixes : [''];
     const pick = a => a[Math.floor(rnd() * a.length) % a.length];
@@ -1484,14 +1682,14 @@
     for (let t = 0; t < 400; t++) {
       let w = forms[t % forms.length](); if (!w || w.length > maxLen + (t > 200 ? 2 : 0)) continue;
       if (kind === 'prov') { const e = ending(); if (e && !w.endsWith(e) && !w.endsWith(e[0])) w += e; }
-      if (opt.suffix) w += opt.suffix;
+      w = finish(w);
       if (!used.has(w)) return add(w);
     }
     // 实在撞名：加方位字或再接一个后缀（仍是该库的音），绝不加数字
-    let base = pick(C.roots) + pick(suf) + (opt.suffix || '');
-    for (let t = 0; t < 2000; t++) { const w = t < NG_DIR.length * 4 ? NG_DIR[(t + Math.floor(rnd() * NG_DIR.length)) % NG_DIR.length] + base : pick(pre) + pick(C.roots) + pick(suf) + pick(suf) + (opt.suffix || ''); if (!used.has(w)) return add(w); if (t % 12 === 11) base = pick(C.roots) + pick(C.roots) + (opt.suffix || ''); }
+    let base = finish(pick(C.roots) + pick(suf));
+    for (let t = 0; t < 2000; t++) { const w = t < NG_DIR.length * 4 ? NG_DIR[(t + Math.floor(rnd() * NG_DIR.length)) % NG_DIR.length] + base : finish(pick(pre) + pick(C.roots) + pick(suf) + pick(suf)); if (!used.has(w)) return add(w); if (t % 12 === 11) base = finish(pick(C.roots) + pick(C.roots)); }
     let w = base; while (used.has(w)) w = NG_DIR[Math.floor(rnd() * NG_DIR.length)] + w; return add(w);
   }
-  G.NameGen = { make: makeName, endings: ngEndings };
-  G.Society = { run };
+  G.NameGen = { make: makeName, fort: makeFortName, endings: ngEndings };
+  G.Society = { run, repairRoadLinks, splitRoadWater, landRoadAnchor };
 })(typeof self !== 'undefined' ? self : this);

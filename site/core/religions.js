@@ -49,3 +49,10 @@ self.RELIGION_LIBRARIES = [
     names: { faiths: ['圣日教', '烈阳正道', '光辉秩序'], suffix: ['教', '正道', '秩序'], branches: ['晨曦派', '正午派', '黄昏派'], heresies: ['蚀日派', '永夜会'], holy: ['日神殿', '金阶城', '晨曦峰'] },
     clergy: { head: '太阳大祭司', priest: '光誓者', theocracy: '太阳神国', ruler: '太阳之子' } }
 ];
+
+// 可编辑的传播习惯；与既有传播类型分别表达强度和组织特征。
+for (const library of self.RELIGION_LIBRARIES) {
+  library.traits = library.spread === 'ethnic' ? [{id:'orthodoxy',strength:1}]
+    : library.spread === 'syncretic' ? [{id:'syncretism',strength:1}]
+    : [{id:'pilgrimage',strength:1}];
+}

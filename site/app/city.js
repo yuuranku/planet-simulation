@@ -6,10 +6,10 @@
   const $ = id => document.getElementById(id);
   const SCRIPTS = ['city/city-libraries.js', 'city/city-era.js', 'city/city-character.js', 'city/city-detail.js', 'city/city-site.js', 'city/city-layout-store.js', 'city/atlas-interaction.js', 'city/city-map.js'];
   const CAP = 35000; // 送进精细城市生成器的人口上限：更大的城市由城心精细生成 + 外围城郊快速补齐
-  const TIER = { metropolis: '大都会', city: '城市', town: '城镇', site: '要塞' };
-  const TYPE = { port: '海港', 'island-port': '岛港', 'lake-port': '湖港', 'river-city': '河港', oasis: '绿洲', fort: '边堡', 'pass-fort': '关隘', market: '集镇' };
+  const TIER = { metropolis: '大都会', city: '城市', town: '城镇', site: '聚落' };
+  const TYPE = { port: '海港', 'island-port': '岛港', 'lake-port': '湖港', 'river-city': '河港', oasis: '绿洲', market: '集镇' };
   const ERA = { preindustrial: '前工业时代', industrial: '早期工业时代', tribal: '部落时代', ancient: '古典时代', medieval: '中世纪', 'early-modern': '近代早期', contemporary: '当代' };
-  let app = null, loaded = null, cityMap = null, mapKey = null, current = null, worker = null, wseq = 0;
+  let app = null, loaded = null, cityMap = null, mapKey = null, current = null, currentFort = null, currentLocation = null, pendingToken = 0, worker = null, wseq = 0;
   const wpending = new Map();
 
   function loadScripts() {
@@ -33,14 +33,12 @@
     w.postMessage({ id, recipe, site, seed, grid });
   });
   // city-map.js 调用：城市配方（替代 city-maps/<id>.json.zst）
-  window.CityPayloadSource = async (sourceId) => {
-    const idx = +String(sourceId).replace('city-', '');
-    const m = await app.call('citySite', { idx });
-    const p = m.data; if (!p) throw new Error('该聚落没有可用的城市配方');
+  function preparePayload(p, city, idx) {
+    if (!p || !p.recipe) throw new Error('该地点没有可用的城市配方');
     const lib = p.lib || {}, libs = window.CITY_LIBRARIES || {};
     const sameCat = () => { const all = window.CULTURE_LIBRARIES || []; const b = all.find(l => l.cat === lib.cat && libs[l.id]); return b ? libs[b.id] : libs['realistic-00']; };
     const extra = libs[lib.id] || sameCat() || Object.values(libs)[0];
-    const r = p.recipe, city = app.data.cities[idx];
+    const r = p.recipe;
     r.name = city ? city.name : r.name;
     if (r.harbor) r.harbor.name = r.name.slice(0, 3) + (r.harbor.kind === 'lake' ? '湖港' : '港');
     const lay = extra.cityLayout;
@@ -51,8 +49,13 @@
     r.naming = { libraryId: lib.id || 'custom', composition: comp };
     r.namePool = { cities: fill(lib.cities, ['新城']), rivers: fill(lib.rivers, ['清河']), lakes: fill(lib.lakes, ['镜湖']), mountains: fill(lib.mountains, ['青山']), regions: fill(lib.regions, ['平原']), streets: fill(lib.streets, extra.streets) };
     // 城内保存的改名
-    const saved = app.names['citylocal:' + idx]; if (saved) r.localNames = saved;
-    const digest = String(app.worldKey()).replace(/[^\w-]/g, '_'); return { schema: 'world-atlas-city-map-v1', gridDigest: digest, worldId: 'planet-' + digest, grid: p.grid, recipe: r, siteContext: p.site };
+    const saved = idx !== undefined ? app.names['citylocal:' + idx] : null; if (saved) r.localNames = saved;
+    const digest = String(app.worldKey()).replace(/[^\w-]/g, '_'); return { schema: 'world-atlas-city-map-v1', gridDigest: digest, worldId: 'planet-' + digest, grid: p.grid, recipe: r, siteContext: p.site, ...(p.fortification ? {fortification:p.fortification} : {}) };
+  }
+  window.CityPayloadSource = async (sourceId) => {
+    const idx = +String(sourceId).replace('city-', '');
+    const m = await app.call('citySite', { idx });
+    return preparePayload(m.data, app.data.cities[idx], idx);
   };
 
   function names() {
@@ -106,14 +109,16 @@
     const d = app.data, c = d.cities[idx]; if (!c) return;
     current = idx; $('cityPanel').hidden = true;
     const k = c.country >= 0 ? d.countries[c.country] : null, pv = c.prov >= 0 ? d.provinces[c.prov] : null;
-    const role = c.capital !== undefined ? '首都' : c.seat !== undefined ? '省会' : c.role === 'military-post' ? (c.type === 'pass-fort' ? '关隘' : '要塞') : TIER[c.tier] || '城镇';
+    const role = c.capital !== undefined ? '首都' : c.seat !== undefined ? '省会' : c.tier === 'site' ? '聚落' : TIER[c.tier] || '城镇';
+    const absorbed = G.FortLifecycle.linked(d.forts || [],idx,Infinity,false);
+    const safe = x => String(x ?? '').replace(/[&<>"']/g, v => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[v]));
     const era = d.stats.era, dens = era === 'industrial' ? 3450 : 3200, td = { metropolis: 0.82, city: 0.98, town: 1.18, site: 0.76 }[c.tier] || 1;
     const area = Math.max(0.12, c.pop / (dens * td) * (era === 'industrial' ? 1.25 : 1));
     const cu = c.civ >= 0 && d.cultures[c.civ] ? d.cultures[c.civ].name : '—', la = c.lang >= 0 && d.languages[c.lang] ? d.languages[c.lang].name : '—', re = c.rel >= 0 && d.religions[c.rel] ? d.religions[c.rel].name : '—';
     const f = (a, b) => `<div><dt>${a}</dt><dd>${b}</dd></div>`;
     $('cityCard').innerHTML = `<button class="city-x" id="cityCardX" title="关闭"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       <p class="city-eyebrow">${[role, TYPE[c.type] || '', k ? k.name : '无国家统治'].filter(Boolean).join(' · ')}</p><h3 data-name-id="city:${idx}" title="双击改名">${c.name}</h3>
-      <dl class="city-facts">${f('人口', fmtPop(c.pop))}${f('建成区', area < 10 ? area.toFixed(1) + ' km²' : Math.round(area) + ' km²')}${f('省份', pv ? `<span data-name-id="province:${c.prov}">${pv.name}</span>` : '—')}${f('文明', cu)}${f('语言', la)}${f('宗教', re)}${c.holy && c.holy.length ? f('圣城', c.holy.map(i => d.religions[i] ? '<span style="color:#6b3fa0">✦ ' + d.religions[i].name + '</span>' : '').join('、') + '的圣地') : ''}</dl>
+      <dl class="city-facts">${f('人口', fmtPop(c.pop))}${f('建成区', area < 10 ? area.toFixed(1) + ' km²' : Math.round(area) + ' km²')}${f('省份', pv ? `<span data-name-id="province:${c.prov}">${pv.name}</span>` : '—')}${absorbed.map(([fort,st]) => f('旧关沿革', `${safe(app.nameOf('fort:'+fort.id,fort.name))} · ${G.HistoryDate.label(fort.year)}建造，${G.HistoryDate.label(st.since)}并入已有聚落`)).join('')}${f('文明', cu)}${f('语言', la)}${f('宗教', re)}${c.holy && c.holy.length ? f('圣城', c.holy.map(i => d.religions[i] ? '<span style="color:#6b3fa0">✦ ' + d.religions[i].name + '</span>' : '').join('、') + '的圣地') : ''}</dl>
       <div class="row" style="gap:6px;margin-top:8px"><button class="chip" id="cityZoom">放大到城市</button><button class="chip" id="cityFrom">从这里出发</button><button class="chip" id="cityTo">到这里去</button></div>`;
     $('cityCard').hidden = false;
     const zoomTo = () => { const m = app.map, r = m.urbanRadiusPx(c) / m.view.s, want = 0.4 * Math.min(m.vw, m.vh) / Math.max(1e-6, r), z = Math.max(4, Math.min(1500, want / m.fitScale())); m.flyTo(c.x, c.y, z); };
@@ -247,21 +252,59 @@
     if (frame) return frameReady;
     const box = document.createElement('div'); box.id = 'cityGenBox'; box.className = 'citygen-box'; box.hidden = true;
     box.innerHTML = '<div class="citygen-bar"><b id="cityGenTitle">城市</b><span id="cityGenSub"></span><span class="sp"></span><button class="btn ghost" id="cityGenRegen" title="换一个布局种子重新生成">重新生成</button><button class="btn ghost" id="cityGenLocate">在地图中定位</button><button class="city-x" id="cityGenClose" title="关闭"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div><iframe id="cityGenFrame" title="城市生成器" src="citygen/index.html?embed=1"></iframe>';
-    document.body.appendChild(box); frame = $('cityGenFrame');
-    $('cityGenClose').onclick = close; $('cityGenRegen').onclick = () => { const b = frame.contentWindow.document.getElementById('regenerate'); if (b) b.click(); }; $('cityGenLocate').onclick = () => { if (current === null) return; const c = app.data.cities[current]; app.map.flyTo(c.x, c.y, 10); };
-    frameReady = new Promise(res => { const on = e => { if (e.data && e.data.type === 'citygen-ready') { window.removeEventListener('message', on); res(); } }; window.addEventListener('message', on); });
+    frame = box.querySelector('#cityGenFrame');
+    frameReady = new Promise(res => { const on = e => { if (e.source === frame.contentWindow && e.origin === location.origin && e.data && e.data.type === 'citygen-ready') { window.removeEventListener('message', on); res(); } }; window.addEventListener('message', on); });
+    document.body.appendChild(box);
+    $('cityGenClose').onclick = close; $('cityGenRegen').onclick = () => { const b = frame.contentWindow.document.getElementById('regenerate'); if (b) b.click(); }; $('cityGenLocate').onclick = () => { if (currentLocation) app.map.flyTo(currentLocation.column, currentLocation.row, 10); };
     return frameReady;
   }
-  async function open(idx) {
-    const d = app.data, c = d.cities[idx]; if (!d || !c) return;
-    current = idx; pendingIdx = idx; $('cityPanel').hidden = true; if ($('cityCard')) $('cityCard').hidden = true;
-    const k = c.country >= 0 ? d.countries[c.country] : null, role = c.capital !== undefined ? '首都' : c.seat !== undefined ? '省会' : TIER[c.tier] || '城镇';
-    await ensureFrame(); if (pendingIdx !== idx) return;
-    $('cityGenBox').hidden = false; document.body.classList.add('city-open'); $('cityGenTitle').textContent = c.name; $('cityGenSub').textContent = [role, TYPE[c.type] || '', k ? k.name : '', fmtPop(c.pop) + ' 人'].filter(Boolean).join(' · '); app.map.draw();
+  async function cityLibraries() {
     if (!window.CULTURE_LIBRARIES && G.Home) await G.Home.loadBuiltin();
     if (!window.CITY_LIBRARIES) await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'city/city-libraries.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
-    const payload = await window.CityPayloadSource('city-' + idx); if (pendingIdx !== idx) return;
-    frame.contentWindow.postMessage({ type: 'planet-city', payload, label: (k ? k.name + ' · ' : '') + role }, '*');
+  }
+  const targetOrigin = () => location.origin === 'null' ? '*' : location.origin;
+  function showFrame(payload, subtitle) {
+    currentLocation = payload.recipe.location;
+    $('cityGenBox').hidden = false; document.body.classList.add('city-open');
+    $('cityGenTitle').textContent = payload.recipe.name; $('cityGenSub').textContent = subtitle;
+    app.map.draw(); frame.contentWindow.postMessage({ type:'planet-city', payload, label:subtitle }, targetOrigin());
+  }
+  async function open(idx) {
+    const d = app.data, c = d && d.cities[idx]; if (!c) return;
+    G.Person?.hide();G.MilitaryMap?.hide();
+    const token=++pendingToken; current=idx; currentFort=null; pendingIdx=idx; currentLocation={column:c.x,row:c.y}; $('cityPanel').hidden=true; if($('cityCard')) $('cityCard').hidden=true;
+    const k=c.country>=0?d.countries[c.country]:null, role=c.capital!==undefined?'首都':c.seat!==undefined?'省会':TIER[c.tier]||'城镇';
+    try { await ensureFrame(); if(token!==pendingToken)return; await cityLibraries(); if(token!==pendingToken)return;
+      const payload=await window.CityPayloadSource('city-'+idx); if(token!==pendingToken)return;
+      showFrame(payload,[role,TYPE[c.type]||'',k?k.name:'',fmtPop(c.pop)+' 人'].filter(Boolean).join(' · '));
+    } catch(e) { if(token===pendingToken) app.toast('城市打开失败：'+e.message); }
+  }
+  function lastActiveYear(fort, year) {
+    let result=null; for(let i=0;i<fort.statusLog.length;i++){const entry=fort.statusLog[i];if(entry[0]>year)break;if(entry[1]!=='active')continue;
+      const next=fort.statusLog[i+1];const end=next?next[0]-1:year;const value=Math.min(year,end);if(value>=entry[0])result=value;
+    } return result;
+  }
+  function fortCard(fort, year, token) {
+    const info=app.fortInfo(fort,year), safe=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const previous=lastActiveYear(fort,year); const box=$('cityCard');
+    box.innerHTML=`<button class="city-x" id="cityCardX" title="关闭">×</button><p class="city-eyebrow">关塞沿革</p><h3>${safe(info.title)}</h3><dl class="city-facts">${info.rows.map(([a,b])=>fact(safe(a),safe(b))).join('')}</dl><div class="row" style="gap:6px;margin-top:8px"><button class="chip" id="cityZoom">地图定位</button>${previous!==null?'<button class="chip" id="fortPrevious">查看撤守前布局</button>':''}</div>`;
+    box.hidden=false; $('cityCardX').onclick=close; $('cityZoom').onclick=()=>app.map.flyTo(fort.x,fort.y,10);
+    if(previous!==null) $('fortPrevious').onclick=()=>{if(token===pendingToken)openFort(fort,previous);}; app.map.draw();
+  }
+  async function openFort(fort, year=Infinity) {
+    const state=G.FortLifecycle.at(fort,year); if(!state){app.toast('该年份关塞尚未建成');return;}
+    G.Person?.hide();G.MilitaryMap?.hide();
+    const token=++pendingToken; current=null; currentFort=fort; pendingIdx=null; currentLocation={column:fort.x,row:fort.y};
+    $('cityPanel').hidden=true;if($('cityGenBox'))$('cityGenBox').hidden=true;if($('cityCard'))$('cityCard').hidden=true;document.body.classList.remove('city-open');
+    if(state.status==='inactive'||state.status==='abandoned'){fortCard(fort,year,token);return;}
+    try { await ensureFrame(); if(token!==pendingToken)return; await cityLibraries(); if(token!==pendingToken)return;
+      const request={fortId:fort.id};if(Number.isFinite(year))request.year=year;
+      const response=await app.call('fortSite',request);if(token!==pendingToken)return;
+      const p=response.data; if(!p || !p.fortification)throw new Error('该关塞没有可用配方');
+      const payload=preparePayload(p);if(token!==pendingToken)return;
+      const m=p.fortification, status=G.FortLifecycle.label(fort,year), subtitle=m.status === 'settlement' ? `${G.HistoryDate.label(m.year)} · ${status} · ${payload.recipe.population.estimate.toLocaleString('zh-CN')} 位居民` : `${G.HistoryDate.label(m.year)} · ${status} · ${m.guards.toLocaleString('zh-CN')} 人驻守`;
+      showFrame(payload,subtitle);
+    } catch(e) {if(token===pendingToken)app.toast('关塞打开失败：'+e.message);}
   }
   // 大城市外围：快速城郊算法生成的街块、街巷与宅地，铺在精细城心之下，配色与城心一致
   async function addOuter(idx, recipe) {
@@ -297,7 +340,7 @@
     if (current === idx && recipe) { detailFacts(recipe); if (d.cities[idx].pop > CAP) addOuter(idx, recipe); setTimeout(() => { if (current === idx) $('city-map-status').textContent = ''; }, 4500); }
   }
   function close() {
-    current = null; pendingIdx = null; if ($('cityGenBox')) $('cityGenBox').hidden = true; $('cityPanel').hidden = true; if ($('cityCard')) $('cityCard').hidden = true; document.body.classList.remove('city-open');
+    ++pendingToken; current = null; currentFort = null; currentLocation = null; pendingIdx = null; if ($('cityGenBox')) $('cityGenBox').hidden = true; $('cityPanel').hidden = true; if ($('cityCard')) $('cityCard').hidden = true; document.body.classList.remove('city-open');
     if (cityMap) cityMap.clear();
     app.map.draw();
   }
@@ -328,8 +371,8 @@
     $('cityOpen').onclick = () => $('cityFile').click();
     $('cityFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f || current === null) return; try { const v = JSON.parse(await f.text()); const idx = current; const r = await cityMap.importSnapshot(v, { id: 'city:' + idx, sourceId: 'city-' + idx, kind: 'city', name: app.data.cities[idx].name }, { replace: true }); if (r) detailFacts(r); } catch (err) { app.toast('导入失败：' + err.message); } };
     $('cityPanel').addEventListener('dblclick', onDbl, true);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && current !== null && !document.querySelector('.name-editor')) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && (current !== null || currentFort !== null) && !document.querySelector('.name-editor')) close(); });
   }
 
-  G.City = { init, open, close, get current() { return current; }, refresh() { if (current !== null) baseFacts(current); } };
+  G.City = { init, open, openFort, close, get current() { return current; }, refresh() { if (current !== null) baseFacts(current); } };
 })(window);

@@ -27,18 +27,45 @@
   // ---------- 更新说明（最新在前） ----------
   // 第一条是当前版本，展开显示；其余折叠
   const NOTES = [
-    ['1.4.1', '更新说明', [
-      '<b>新功能</b>：为 21 项生成选项增加对应的影响提示，并可查看总影响；历史时间线新增制度图层，并可查看国家人口及人口组成。',
-      '<b>优化与修复</b>：适配手机界面；修正游牧过多的问题；优化历史推演与思潮产生；修复等高线溢出和飞地问题；调整事件发生年份；附庸国使用同色系；统一历史图与专题图的图标；优化界面及各专题图显示。'
+    ['1.4.3', '更新说明', [
+      '<b>自定义上传地图</b>：上传高度图或海陆配色图，生成属于自己的世界；可调整高程与生成程度，并保护指定区域。',
+      '<b>军事</b>：加入军制与军事思潮，推演征兵、驻军调防和攻守城；通过战棋、战报和战事簿查看战役经过与伤亡。',
+      '<b>人物</b>：在历史城市或省份创建人物，自定义姓名、志向与性情；人物经历随战争、朝代和信仰变化发展，可查看生平与年表。',
+      '<b>其他优化与修复</b>：优化创建向导、地图符号、词条和历史时间条；减少安卓地图的无用绘制，新增横屏使用建议；修复无文明地区错误建国的问题。'
     ]],
+    ['1.4.2', '更新说明', [
+      '性能优化',
+      '优化道路生成',
+      '优化省界国界',
+      '优化湖泊生成',
+      '优化历史生成',
+      '新增历史地图中的省份信息'
+    ]],
+
+    ['1.4.1', '更新说明', [
+
+      '<b>新功能</b>：为 21 项生成选项增加对应的影响提示，并可查看总影响；历史时间线新增制度图层，并可查看国家人口及人口组成。',
+
+      '<b>优化与修复</b>：适配手机界面；修正游牧过多的问题；优化历史推演与思潮产生；修复等高线溢出和飞地问题；调整事件发生年份；附庸国使用同色系；统一历史图与专题图的图标；优化界面及各专题图显示。'
+
+    ]],
+
     ['1.4.0', '思潮、宗教库与遗迹', [
+
       '<b>思潮接纳</b>：发展阶段改由 13 条思潮推动。思潮在世界某处兴起、向四周传播，同一文明之内传得快，各类文明接纳快慢不同；接纳了一个阶段的全部思潮才进入下一阶段。历史时间线的“思潮”图层可单看一条思潮的传播。',
+
       '<b>远洋航海</b>：只有接纳了这条思潮的沿海国家才能殖民新大陆。',
+
       '<b>思潮与国力</b>：冶铁、火药等军事思潮带来战场优势，官僚、律法等治理思潮让国家更富、更稳、管得更远；落后于时代的国家人心浮动。人口与疆土仍是根本。',
+
       '<b>宗教库</b>：新增 15 个宗教库（写实化名与架空），设定类型、传播方式、教名、派别、异端、圣地、圣职、象征色与圣徽；宗教会传教、分裂出教派、建立神权国。可在首页或向导里勾选与编辑。',
+
       '<b>文化库扩展</b>：人名与王朝、君主称谓、政府组织、起义名号、地名后缀、附庸与殖民地称号；政府风格（官僚、封建、部族、商贸、神庙）影响历史推演。每个国家有君主世系与官制变迁。',
+
       '<b>遗迹地图</b>：人文专题新增遗迹地图，收录圣地、圣山、圣墓、围城、古战场、旧关塞、古城废墟、古都、帝王陵等，均来自推演出的历史；圣城在城市旁以紫色星标出。'
+
     ]]
+
   ];
 
   // ---------- 文化库数据 ----------
@@ -54,14 +81,15 @@
   const setOvr = v => localStorage.setItem(OVR_KEY, JSON.stringify(v));
   const getSel = () => { try { const v = JSON.parse(localStorage.getItem(SEL_KEY) || 'null'); return Array.isArray(v) ? v : null; } catch (e) { return null; } };
   const setSel = v => localStorage.setItem(SEL_KEY, JSON.stringify(v));
-  // 冻结快照：所选内置库 id + 所选自定义库完整内容（随世界保存，与原版“文化快照”一致）
+  // 冻结每个所选库的完整定义，避免内置库变化改变既有世界。
   function snapshot() {
-    const sel = getSel(), custom = getCustom();
-    // 改过的内置库按“自定义内容 + 原 id”冻结进快照，推演时替换内置版本
-    const ovr = getOvr(), allIds = sel || (builtin ? builtin.map(l => l.id) : null);
-    const edited = Object.values(ovr).filter(l => !allIds || allIds.includes(l.id));
-    if (!sel) return { ids: edited.length && builtin ? builtin.map(l => l.id).filter(id => !ovr[id]) : null, custom: edited };
-    return { ids: sel.filter(id => !id.startsWith('custom-') && !ovr[id]), custom: custom.filter(l => sel.includes(l.id)).concat(edited) };
+    if (!builtin) builtin = G.CULTURE_LIBRARIES;
+    if (!builtin) throw new Error('文化库尚未载入');
+    const libs = allLibs(), sel = getSel() || libs.map(l => l.id);
+    const custom = libs.filter(l => sel.includes(l.id)).map(({ builtin, edited, ...l }) => JSON.parse(JSON.stringify(l)));
+    if (!custom.length) throw new Error('至少选择一个文化库');
+    custom.forEach(l => G.HumanRules.validateLibrary(l, 'culture'));
+    return { ids: [], custom };
   }
   function selectedCount() { const sel = getSel(); return sel ? sel.length : (builtin ? builtin.length : 32); }
 
@@ -73,7 +101,7 @@
   function setJob(j) { job = j; if (!$('home').hidden) renderJob(); }
   function renderJob() {
     const box = $('homeJobs'); $('homeJobSec').hidden = !job || !!job.done;
-    if (!job || job.done) { box.innerHTML = '<p class="home-empty">当前没有正在推演的世界。点击右上角“创建世界”，回答 21 个问题开始推演。</p>'; $('homeJobCount').textContent = '0 项任务'; return; }
+    if (!job || job.done) { box.innerHTML = '<p class="home-empty">当前没有正在推演的世界。点击右上角“创建世界”，回答 25 个问题开始推演。</p>'; $('homeJobCount').textContent = '0 项任务'; return; }
     $('homeJobCount').textContent = '1 项任务';
     box.innerHTML = `<div class="wcard"><div class="wthumb">${job.thumb ? `<img src="${job.thumb}" alt="">` : '<div class="wthumb-ph"><i></i></div>'}</div><div class="wcap">地形与水系</div>
       <div class="wbody"><span class="badge run">${job.done ? '已完成' : '正在推演'}</span><h4>${esc(job.name || '新世界')} <code>${job.seed}</code></h4>
@@ -85,9 +113,10 @@
     const list = hooks.loadSaved();
     $('homeCount').textContent = `${list.length} 个世界`;
     $('homeLibCount').textContent = `已选 ${selectedCount()} 个文化库`;
+    if ($('homeSpeciesCount') && G.SpeciesLib) $('homeSpeciesCount').textContent = `已选 ${G.SpeciesLib.selectedCount()} 个种族`;
     if ($('homeRelCount') && G.RelLib) { $('homeRelCount').textContent = `已选 ${G.RelLib.selectedCount()} 个宗教库`; G.RelLib.load().then(() => { $('homeRelCount').textContent = `已选 ${G.RelLib.selectedCount()} 个宗教库`; }); }
     $('homeSaved').innerHTML = list.length ? list.map((w, i) => `<div class="wcard"><div class="wthumb">${w.thumb ? `<img src="${w.thumb}" alt="">` : '<div class="wthumb-ph"></div>'}</div><div class="wcap">地形与水系</div>
-      <div class="wbody"><span class="badge">已保存</span><h4><span data-wname="${i}" title="双击改名">${esc(w.name)}</span> <code>${w.state.seed}</code></h4>
+      <div class="wbody"><span class="badge">${hooks.currentRecord(w) ? '已保存' : '旧规则 · 请用原版本打开'}</span><h4><span data-wname="${i}" title="双击改名">${esc(w.name)}</span> <code>${w.state.seed}</code></h4>
       <p class="wmeta">${w.ms ? '用时 ' + (w.ms / 1000).toFixed(1) + ' 秒 · ' : ''}${new Date(w.updated).toLocaleString('zh-CN', { hour12: false })}${w.summary ? '<br>' + esc(w.summary) : ''}</p>
       <p class="wfile" data-fileinfo="${esc(w.key)}" hidden>世界文件：<b></b></p>
       <button class="wlink" data-open="${i}">打开世界地图 ↗</button></div>
@@ -99,8 +128,8 @@
     const Q = G.Config.Q, cu = st.custom || {};
     const rows = Q.map((q, i) => { const o = q.o.find(x => x[0] === st.a[q.id]) || q.o[0]; const c = cu[q.id] && cu[q.id].on ? ' · 自定义：' + Object.entries(cu[q.id].v || {}).map(([k, v]) => { const f = (G.Config.CUSTOM[q.id] || []).find(x => x.key === k); return (f ? f.label : k) + ' ' + v; }).join('，') : '';
       return `<tr><td>${i + 1}</td><td>${q.t}</td><td><b>${'ABCDE'[q.o.indexOf(o)]}</b> ${o[1]}${o[2] ? ' · ' + o[2] : ''}${c}</td></tr>`; }).join('');
-    const libs = st.libs ? (st.libs.ids === null ? '全部内置文化库' : `${(st.libs.ids || []).length} 个内置库 + ${(st.libs.custom || []).length} 个自定义库`) : '全部内置文化库';
-    return `<table class="settings">${rows}<tr><td>⚙</td><td>种子 / 网格</td><td>${st.seed} · ${(g => g.W + '×' + g.H)(G.Config.gridOf(st))}（由星球大小决定）</td></tr><tr><td>📚</td><td>文化库</td><td>${libs}</td></tr><tr><td>✦</td><td>宗教库</td><td>${st.rlibs ? (st.rlibs.ids === null ? '全部内置宗教库' : `${(st.rlibs.ids || []).length} 个内置库 + ${(st.rlibs.custom || []).length} 个自定义库`) : '全部内置宗教库'}</td></tr></table>`;
+    const libs = st.libs ? (st.libs.ids === null ? '全部内置文化库' : `${(st.libs.ids || []).length + (st.libs.custom || []).length} 个库`) : '全部内置文化库';
+    return `<table class="settings">${rows}<tr><td>⚙</td><td>种子 / 网格</td><td>${st.seed} · ${(g => g.W + '×' + g.H)(G.Config.gridOf(st))}（由星球大小决定）</td></tr><tr><td>📚</td><td>文化库</td><td>${libs}</td></tr><tr><td>✦</td><td>宗教库</td><td>${st.rlibs ? (st.rlibs.ids === null ? '全部内置宗教库' : `${(st.rlibs.ids || []).length + (st.rlibs.custom || []).length} 个库`) : '全部内置宗教库'}</td></tr><tr><td>◉</td><td>种族库</td><td>${st.slibs ? (st.slibs.libraries || []).length + ' 个种族' : '默认种族'}</td></tr></table>`;
   }
   function modal(title, body, foot = '') { $('libModalBody').innerHTML = `<header class="lm-head"><h3>${title}</h3><button class="x" data-lm-close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header><div class="lm-body">${body}</div>${foot ? `<footer class="lm-foot">${foot}</footer>` : ''}`; $('libModal').hidden = false; }
   function closeModal() { $('libModal').hidden = true; }
@@ -120,13 +149,15 @@
     const shown = libs.filter(l => libCat === 'all' || l.cat === libCat);
     $('libGrid').innerHTML = shown.map(l => { const on = sel.includes(l.id), n = l.n || {}; const total = KEYS.reduce((s, [k]) => s + (n[k] || []).length, 0);
       return `<div class="lcard${on ? ' on' : ''}"><label class="lcheck"><input type="checkbox" data-sel="${esc(l.id)}" ${on ? 'checked' : ''}><span></span></label>
-        <div class="lmain"><b>${esc(l.label)}</b><small>${CAT_LABEL[l.cat] || l.cat} · ${l.builtin ? (MODE_LABEL[l.mode] || '内置') + (l.edited ? ' · 已修改' : '') : '自定义'} · ${total} 个名称</small>
+        <div class="lmain"><b>${esc(l.label)}</b><small>${esc(CAT_LABEL[l.cat] || l.cat)} · ${l.builtin ? (MODE_LABEL[l.mode] || '内置') + (l.edited ? ' · 已修改' : '') : '自定义'} · ${total} 个名称</small>
         <p>${esc(((n.states || []).slice(0, 4).concat((n.cities || []).slice(0, 4))).join('、'))}…</p>
+        ${G.TraitEditor.chips('culture', l.traits, 4)}
         <div class="lact"><button data-view="${esc(l.id)}">查看</button><button data-edit="${esc(l.id)}">编辑</button><button data-copy="${esc(l.id)}">复制为自定义</button>${l.builtin ? (l.edited ? `<button data-reset="${esc(l.id)}">恢复默认</button>` : '') : `<button class="danger" data-del="${esc(l.id)}">删除</button>`}</div></div></div>`; }).join('');
   }
   function viewLib(l) {
     const n = l.n || {}, t = l.t || {};
     modal(esc(l.label), `<p class="lm-note">${CAT_LABEL[l.cat] || ''} · ${l.builtin ? MODE_LABEL[l.mode] || '' : '自定义'}库。名称用尽后按词根组合生成新名称。</p>`
+      + G.TraitEditor.view('culture', l.traits)
       + KEYS.map(([k, lab]) => `<h5>${lab} <small>${(n[k] || []).length}</small></h5><p class="names">${esc((n[k] || []).join('、')) || '—'}</p>`).join('')
       + `<h5>国家后缀</h5><p class="names">${TITLE_KEYS.map(([k, lab]) => `${lab}：${esc((t[k] || []).join('、'))}`).join('<br>')}</p>`
       + (() => { const x = xOf(l); if (!x) return ''; return XFIELDS().map(([g, fs]) => `<h5>${g}</h5><p class="names">${fs.map(([path, lab, ty, opts]) => { let v = getP(x, path); if (ty === 'sel') { const o = (opts || []).find(o => o[0] === v); v = o ? o[1] : v; } return `${lab}：${esc(Array.isArray(v) ? v.join('、') : v || '—')}`; }).join('<br>')}</p>`).join(''); })()
@@ -137,17 +168,20 @@
     modal(isNew ? '新建自定义文化库' : (l.builtin ? '编辑内置库：' : '编辑：') + esc(l.label), `<div class="lform">
       <label>名称<input id="le-label" value="${esc(l.label || '我的文化库')}"></label>
       <label>生计大类<select id="le-cat">${CATS.map(cc => `<option value="${cc[0]}" ${l.cat === cc[0] ? 'selected' : ''}>${cc[1]}</option>`).join('')}</select></label>
+      ${G.TraitEditor.editor('culture', l.traits)}
       ${KEYS.map(([k, lab]) => `<label>${lab}（用顿号、逗号或换行分隔）<textarea data-k="${k}" rows="2">${esc((n[k] || []).join('、'))}</textarea></label>`).join('')}
       ${TITLE_KEYS.map(([k, lab]) => `<label>${lab}后缀<input data-t="${k}" value="${esc((t[k] || []).join('、'))}"${TITLE_PH[k] ? ` placeholder="${esc(TITLE_PH[k])}"` : ''}></label>`).join('')}
       ${(() => { const x = xOf(l); if (!x) return ''; return `<details class="lx"><summary>更多设定：人名与世系、君主称谓、政府组织、起义名号、地名后缀、附加称号</summary><div class="lx-body">` + XFIELDS().map(([g, fs]) => `<h5>${g}</h5>` + fs.map(([path, lab, ty, opts]) => { const v = getP(x, path); return ty === 'sel' ? `<label>${lab}<select data-x="${path}">${opts.map(o => `<option value="${o[0]}" ${o[0] === v ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>` : ty === 'list' ? `<label>${lab}<textarea data-x="${path}" data-xl="1" rows="2">${esc((v || []).join('、'))}</textarea></label>` : `<label>${lab}<input data-x="${path}" value="${esc(v || '')}"></label>`; }).join('')).join('') + '</div></details>'; })()}
       <label>组合前缀<input data-c="prefixes" value="${esc(c.prefixes.join('、'))}"></label><label>组合词根<input data-c="roots" value="${esc(c.roots.join('、'))}"></label><label>组合后缀<input data-c="suffixes" value="${esc(c.suffixes.join('、'))}"></label></div>`,
       `<button class="btn ghost" data-lm-close>取消</button><button class="btn primary" id="le-save">保存</button>`);
+    G.TraitEditor.fitForm($('libModalBody'));
     $('le-save').onclick = () => {
       const split = v => v.split(/[、,，\n\s]+/).map(x => x.trim()).filter(Boolean);
       const lib = { id: l.id && !isNew ? l.id : 'custom-' + Date.now().toString(36), label: $('le-label').value.trim() || '我的文化库', cat: $('le-cat').value, mode: l.builtin && !isNew ? l.mode : 'custom', style: l.style, religion: l.religion, n: {}, t: {}, c: {} };
       document.querySelectorAll('#libModalBody [data-k]').forEach(el => lib.n[el.dataset.k] = split(el.value));
       document.querySelectorAll('#libModalBody [data-t]').forEach(el => lib.t[el.dataset.t] = split(el.value));
       document.querySelectorAll('#libModalBody [data-c]').forEach(el => lib.c[el.dataset.c] = split(el.value));
+      try { lib.traits = G.TraitEditor.read($('libModalBody')); G.HumanRules.validateLibrary(lib, 'culture'); } catch (err) { alert('词条无效：' + err.message); return; }
       { const xs = document.querySelectorAll('#libModalBody [data-x]'); if (xs.length) { lib.x = {}; xs.forEach(el => setP(lib.x, el.dataset.x, el.dataset.xl ? split(el.value) : el.value.trim())); } } // 扩展设定
       if (!KEYS.some(([k]) => lib.n[k].length) && !lib.c.roots.length) { alert('至少填写一类名称或组合词根'); return; }
       if (l.builtin && !isNew) { const o = getOvr(); o[lib.id] = lib; setOvr(o); closeModal(); renderLibrary(); return; }
@@ -161,15 +195,16 @@
   function bind() {
     $('homeCreate').onclick = () => hooks.createWorld();
     $('homeLib').onclick = () => showLibrary();
+    if ($('homeSpecies')) $('homeSpecies').onclick = () => G.SpeciesLib && G.SpeciesLib.show();
     if ($('homeRel')) $('homeRel').onclick = () => G.RelLib && G.RelLib.show();
     if ($('homeNotes')) $('homeNotes').onclick = e => { e.preventDefault(); const note = ([v, title, items]) => `<h5>${v} · ${title}</h5><ul class="notes">${items.map(x => `<li>${x}</li>`).join('')}</ul>`;
-      modal('更新说明', note(NOTES[0]) + (NOTES.length > 1 ? `<details class="notes-old"><summary>1.4.0 更新说明</summary>${NOTES.slice(1).map(note).join('')}</details>` : ''), `<button class="btn primary" data-lm-close>知道了</button>`); };
+      modal('更新说明', note(NOTES[0]) + (NOTES.length > 1 ? `<details class="notes-old"><summary>${NOTES[1][0]} 及更早版本（${NOTES.slice(1).reduce((n, x) => n + x[2].length, 0)} 条）</summary>${NOTES.slice(1).map(note).join('')}</details>` : ''), `<button class="btn primary" data-lm-close>知道了</button>`); };
     $('homeImport').onclick = () => hooks.pickImport ? hooks.pickImport() : $('importFile').click();
     $('homeSaved').addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return; const list = hooks.loadSaved();
       const i = +(b.dataset.open ?? b.dataset.settings ?? b.dataset.export ?? b.dataset.delete), w = list[i]; if (!w) return;
-      if (b.dataset.open !== undefined) { hide(); hooks.openWorld(w); }
-      if (b.dataset.settings !== undefined) modal('生成设置 · ' + esc(w.name), settingsHtml(w.state), `<button class="btn ghost" data-lm-close>关闭</button><button class="btn primary" data-recreate="${i}">用此设置换种子再推演</button>`);
+      if (b.dataset.open !== undefined && hooks.openWorld(w)) hide();
+      if (b.dataset.settings !== undefined && hooks.checkWorld(w)) modal('生成设置 · ' + esc(w.name), settingsHtml(w.state), `<button class="btn ghost" data-lm-close>关闭</button><button class="btn primary" data-recreate="${i}">用此设置换种子再推演</button>`);
       if (b.dataset.export !== undefined) hooks.exportWorld(w);
       if (b.dataset.delete !== undefined && confirm(`删除「${w.name}」？该世界的标记与改名也会一起删除。`)) { hooks.deleteWorld(w); renderHome(); }
     });
@@ -190,8 +225,17 @@
     $('libNew').onclick = () => editLib({ cat: 'agrarian', n: {}, t: { monarchy: ['王国'], empire: ['帝国'], republic: ['共和国'], cityRepublic: ['城邦共和国'], nomadic: ['部族邦联'], chiefdom: ['酋邦'], league: ['联盟'], jimi: ['羁縻州', '土司'], nomad: ['部', '部落'], tribe: ['部落', '氏族'] }, c: { roots: [], prefixes: [], suffixes: [] } }, true);
     $('libExport').onclick = () => { const sel = getSel() || allLibs().map(l => l.id); const data = { schema: 'planet-culture-libraries-v1', libraries: allLibs().filter(l => sel.includes(l.id)).map(({ builtin: b, ...l }) => l) }; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' })); a.download = '文化库.json'; a.click(); };
     $('libImport').onclick = () => $('libFile').click();
-    $('libFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { const d = JSON.parse(await f.text()); const arr = (d.libraries || d).filter(l => l && l.n); if (!arr.length) throw new Error('文件里没有文化库'); const custom = getCustom(); const sel = getSel() || allLibs().map(l => l.id); arr.forEach(l => { const lib = { ...l, id: 'custom-' + Math.random().toString(36).slice(2, 9), cat: CAT_LABEL[l.cat] ? l.cat : 'agrarian', mode: 'custom' }; custom.push(lib); sel.push(lib.id); }); setCustom(custom); setSel(sel); renderLibrary(); } catch (err) { alert('导入失败：' + err.message); } };
-    $('libModal').addEventListener('click', e => { if (e.target.closest('[data-lm-close]') || e.target === $('libModal')) closeModal(); const r = e.target.closest('[data-recreate]'); if (r) { const w = hooks.loadSaved()[+r.dataset.recreate]; closeModal(); hide(); hooks.recreate(w); } });
+    $('libFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try {
+      const d = JSON.parse(await f.text()), arr = d.libraries || d;
+      if (!Array.isArray(arr) || !arr.length || arr.some(l => !l || !l.n || !l.id)) throw new Error('文件里没有有效文化库');
+      const seen = new Set(allLibs().map(l => l.id));
+      for (const l of arr) { if (seen.has(l.id)) throw new Error('库 ID 已存在：' + l.id + '；已存在的库不会被覆盖。可复制为自定义库或使用其他 ID。'); seen.add(l.id); G.HumanRules.validateLibrary(l, 'culture'); }
+      const custom = getCustom(), sel = getSel() || allLibs().map(l => l.id);
+      for (const { builtin, edited, ...l } of arr) { custom.push(l); sel.push(l.id); }
+      setCustom(custom); setSel(sel); renderLibrary();
+    } catch (err) { alert('导入失败：' + err.message); } };
+
+    $('libModal').addEventListener('click', e => { if (e.target.closest('[data-lm-close]') || e.target === $('libModal')) closeModal(); const r = e.target.closest('[data-recreate]'); if (r) { const w = hooks.loadSaved()[+r.dataset.recreate]; if (hooks.recreate(w)) { closeModal(); hide(); } } });
   }
 
   G.Home = { init, show, hide, setJob, renderHome, showLibrary, snapshot, selectedCount, loadBuiltin, settingsHtml };

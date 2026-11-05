@@ -85,25 +85,10 @@
     return idx;
   }
 
-  // 全分辨率区块编号图上的界线：按区块对（a < b）把像素边连成折线，取边中点去掉一像素的台阶，再削一次角
+  // 全分辨率区块编号图上的界线：与现在的地图同一套界线算法（edges.js）
   function segments(F, FW, FH) {
-    const groups = new Map(), vid = (x, y) => y * FW + ((x % FW) + FW) % FW;
-    const push = (a, b, v0, v1) => { if (a <= 0 || b <= 0 || a === b) return; const k = a < b ? a * 65536 + b : b * 65536 + a; let g = groups.get(k); if (!g) groups.set(k, g = []); g.push(v0, v1); };
-    for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) { const i = y * FW + x, a = F[i];
-      const b = F[y * FW + (x + 1) % FW]; if (a !== b) push(a, b, vid(x + 1, y), vid(x + 1, y + 1));
-      if (y + 1 < FH) { const c = F[i + FW]; if (a !== c) push(a, c, vid(x, y + 1), vid(x + 1, y + 1)); } }
-    const segPts = [], segOff = [0], segA = [], segB = [];
-    const emit = (a, b, vs) => { const n = vs.length; if (n < 2) return; const X = [], Y = []; let px = vs[0] % FW;
-      for (let i = 0; i < n; i++) { let x = vs[i] % FW; while (x - px > FW / 2) x -= FW; while (px - x > FW / 2) x += FW; X.push(x); Y.push(Math.floor(vs[i] / FW)); px = x; }
-      let QX = [X[0]], QY = [Y[0]]; for (let i = 0; i < n - 1; i++) { QX.push((X[i] + X[i + 1]) / 2); QY.push((Y[i] + Y[i + 1]) / 2); } QX.push(X[n - 1]); QY.push(Y[n - 1]);
-      const m = QX.length; segPts.push(QX[0], QY[0]); for (let i = 0; i < m - 1; i++) { if (i > 0) segPts.push(QX[i] * 0.75 + QX[i + 1] * 0.25, QY[i] * 0.75 + QY[i + 1] * 0.25); if (i < m - 2) segPts.push(QX[i] * 0.25 + QX[i + 1] * 0.75, QY[i] * 0.25 + QY[i + 1] * 0.75); } segPts.push(QX[m - 1], QY[m - 1]);
-      segOff.push(segPts.length); segA.push(a); segB.push(b); };
-    for (const [k, E] of groups) { const a = Math.floor(k / 65536), b = k % 65536, ne = E.length / 2, at = new Map(), used = new Uint8Array(ne);
-      for (let e = 0; e < ne; e++) for (const v of [E[2 * e], E[2 * e + 1]]) { let l = at.get(v); if (!l) at.set(v, l = []); l.push(e); }
-      const walk = (start, v0) => { const vs = [v0]; let e = start, v = v0; for (;;) { used[e] = 1; v = E[2 * e] === v ? E[2 * e + 1] : E[2 * e]; vs.push(v); const l = at.get(v); let nx = -1; if (l.length === 2) for (const x of l) if (!used[x]) { nx = x; break; } if (nx < 0) break; e = nx; } return vs; };
-      for (const [v, l] of at) if (l.length !== 2) for (const e of l) if (!used[e]) emit(a, b, walk(e, v)); // 先从端点（交汇处）出发
-      for (let e = 0; e < ne; e++) if (!used[e]) emit(a, b, walk(e, E[2 * e])); } // 剩下的是闭环
-    return { segPts: Float32Array.from(segPts), segOff: Int32Array.from(segOff), segA: Int32Array.from(segA), segB: Int32Array.from(segB) };
+    const C = G.Edges.chains(F, FW, FH, (a, b) => a > 0 && b > 0);
+    return { segPts: C.pts, segOff: C.off, segA: C.A, segB: C.B };
   }
 
   G.HistoryOutline = { build, rasterize, segments };

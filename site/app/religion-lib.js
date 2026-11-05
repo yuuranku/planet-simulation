@@ -18,12 +18,14 @@
   }
   function all() { const o = get(OVR, {}); return (builtin || []).map(l => o[l.id] ? { ...o[l.id], builtin: true, edited: true } : { ...l, builtin: true }).concat(get(CUS, []).map(l => ({ ...l, builtin: false }))); }
   function getSel() { const v = get(SEL, null); return Array.isArray(v) ? v : null; }
-  // 快照：所选内置库 id + 所选自定义库与改过的内置库的完整内容
   function snapshot() {
-    const sel = getSel(), o = get(OVR, {}), ids = sel || (builtin ? builtin.map(l => l.id) : null);
-    const edited = Object.values(o).filter(l => !ids || ids.includes(l.id));
-    if (!sel) return { ids: edited.length && builtin ? builtin.map(l => l.id).filter(id => !o[id]) : null, custom: edited };
-    return { ids: sel.filter(id => !id.startsWith('rcustom-') && !o[id]), custom: get(CUS, []).filter(l => sel.includes(l.id)).concat(edited) };
+    if (!builtin) builtin = G.RELIGION_LIBRARIES;
+    if (!builtin) throw new Error('宗教库尚未载入');
+    const libs = all(), sel = getSel() || libs.map(l => l.id);
+    const custom = libs.filter(l => sel.includes(l.id)).map(({ builtin, edited, ...l }) => JSON.parse(JSON.stringify(l)));
+    if (!custom.length) throw new Error('至少选择一个宗教库');
+    custom.forEach(l => G.HumanRules.validateLibrary(l, 'religion'));
+    return { ids: [], custom };
   }
   function selectedCount() { const s = getSel(); return s ? s.length : (builtin ? builtin.length : (window.RELIGION_LIBRARIES || []).length || 15); }
   function modal(title, body, foot) { $('libModalBody').innerHTML = `<header class="lm-head"><h3>${title}</h3><button class="x" data-lm-close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header><div class="lm-body">${body}</div>${foot ? `<footer class="lm-foot">${foot}</footer>` : ''}`; $('libModal').hidden = false; }
@@ -37,11 +39,13 @@
       return `<div class="lcard${on ? ' on' : ''}"><label class="lcheck"><input type="checkbox" data-rsel="${esc(l.id)}" ${on ? 'checked' : ''}><span></span></label>
         <div class="lmain"><b><span style="color:rgb(${(l.color || [120, 100, 160]).join(',')})">${esc(l.symbol || '✦')}</span> ${esc(l.label)}</b><small>${esc(T[l.type] || l.type || '')} · ${esc((SPREADS()[l.spread] || '').split(' · ')[0])} · ${l.builtin ? (l.mode === 'fantasy' ? '架空' : '写实化名') + (l.edited ? ' · 已修改' : '') : '自定义'}</small>
         <p>${esc((nm.faiths || []).slice(0, 4).join('、'))} · 派别：${esc((nm.branches || []).slice(0, 3).join('、'))}…</p>
+        ${G.TraitEditor.chips('religion', l.traits, 4)}
         <div class="lact"><button data-rview="${esc(l.id)}">查看</button><button data-redit="${esc(l.id)}">编辑</button><button data-rcopy="${esc(l.id)}">复制为自定义</button>${l.builtin ? (l.edited ? `<button data-rreset="${esc(l.id)}">恢复默认</button>` : '') : `<button class="danger" data-rdel="${esc(l.id)}">删除</button>`}</div></div></div>`; }).join('');
   }
   function view(l) {
     const nm = l.names || {}, cl = l.clergy || {};
-    modal(esc((l.symbol || '') + ' ' + l.label), `<p class="lm-note">${esc(TYPES()[l.type] || '')} · ${esc(SPREADS()[l.spread] || '')} · 适合的文明：${(l.cats || []).map(c => CAT[c] || c).join('、') || '不限'} · 圣物：${esc(l.relic || '—')}</p>`
+    modal(esc((l.symbol || '') + ' ' + l.label), `<p class="lm-note">${esc(TYPES()[l.type] || '')} · ${esc(SPREADS()[l.spread] || '')} · 适合的文明：${esc((l.cats || []).map(c => CAT[c] || c).join('、') || '不限')} · 圣物：${esc(l.relic || '—')}</p>`
+      + G.TraitEditor.view('religion', l.traits)
       + NAME_KEYS.map(([k, lab]) => `<h5>${lab} <small>${(nm[k] || []).length}</small></h5><p class="names">${esc((nm[k] || []).join('、')) || '—'}</p>`).join('')
       + `<h5>圣职与神权</h5><p class="names">${CLERGY_KEYS.map(([k, lab]) => `${lab}：${esc(cl[k] || '—')}`).join('<br>')}</p>`
       + `<h5>象征色</h5><p class="names"><i style="display:inline-block;width:40px;height:14px;border-radius:4px;background:rgb(${(l.color || [0, 0, 0]).join(',')})"></i> ${esc((l.color || []).join(', '))}</p>`);
@@ -55,17 +59,20 @@
       <label>传播方式<select id="re-spread">${opt(SPREADS(), l.spread || 'missionary')}</select></label>
       <label>风格<select id="re-mode"><option value="realistic" ${l.mode !== 'fantasy' ? 'selected' : ''}>写实化名</option><option value="fantasy" ${l.mode === 'fantasy' ? 'selected' : ''}>架空</option></select></label>
       <label>适合的文明（生计大类，可多选）<span class="re-cats">${Object.entries(CAT).map(([k, n]) => `<label class="inl"><input type="checkbox" data-rcat="${k}" ${(l.cats || []).includes(k) ? 'checked' : ''}> ${n}</label>`).join('')}</span></label>
+      ${G.TraitEditor.editor('religion', l.traits)}
       ${NAME_KEYS.map(([k, lab]) => `<label>${lab}（用顿号、逗号或换行分隔）<textarea data-rn="${k}" rows="2">${esc((nm[k] || []).join('、'))}</textarea></label>`).join('')}
       ${CLERGY_KEYS.map(([k, lab]) => `<label>${lab}<input data-rc="${k}" value="${esc(cl[k] || '')}"></label>`).join('')}
       <label>圣徽符号<input id="re-symbol" value="${esc(l.symbol || '✦')}" maxlength="2"></label><label>圣物<input id="re-relic" value="${esc(l.relic || '')}"></label>
       <label>象征色<input type="color" id="re-color" value="${hex(l.color)}"></label></div>`,
       `<button class="btn ghost" data-lm-close>取消</button><button class="btn primary" id="re-save">保存</button>`);
+    G.TraitEditor.fitForm($('libModalBody'));
     $('re-save').onclick = () => {
       const split = v => v.split(/[、,，\n]+/).map(x => x.trim()).filter(Boolean), c = $('re-color').value;
       const lib = { id: l.id && !isNew ? l.id : 'rcustom-' + Date.now().toString(36), label: $('re-label').value.trim() || '我的宗教', mode: $('re-mode').value, type: $('re-type').value, spread: $('re-spread').value,
         cats: [...document.querySelectorAll('#libModalBody [data-rcat]')].filter(x => x.checked).map(x => x.dataset.rcat), color: [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)), symbol: $('re-symbol').value.trim() || '✦', relic: $('re-relic').value.trim(), names: {}, clergy: {} };
       document.querySelectorAll('#libModalBody [data-rn]').forEach(el => lib.names[el.dataset.rn] = split(el.value));
       document.querySelectorAll('#libModalBody [data-rc]').forEach(el => lib.clergy[el.dataset.rc] = el.value.trim());
+      try { lib.traits = G.TraitEditor.read($('libModalBody')); G.HumanRules.validateLibrary(lib, 'religion'); } catch (err) { alert('词条无效：' + err.message); return; }
       if (!lib.names.faiths.length && !lib.names.suffix.length) { alert('至少填写教名或教名后缀'); return; }
       if (l.builtin && !isNew) { const o = get(OVR, {}); o[lib.id] = lib; put(OVR, o); close(); render(); return; }
       const cu = get(CUS, []).filter(x => x.id !== lib.id); cu.push(lib); put(CUS, cu);
@@ -81,13 +88,21 @@
       if (b.dataset.redit) edit(find(b.dataset.redit), false);
       if (b.dataset.rcopy) { const src = find(b.dataset.rcopy); edit({ ...JSON.parse(JSON.stringify(src)), id: null, builtin: false, label: src.label.replace(/（.*?）$/, '') + '（副本）' }, true); }
       if (b.dataset.rreset && confirm('恢复这个内置宗教库的默认内容？已推演的世界不受影响。')) { const o = get(OVR, {}); delete o[b.dataset.rreset]; put(OVR, o); render(); }
-      if (b.dataset.rdel && confirm('删除这个自定义宗教库？已推演的世界不受影响（保存时已冻结快照）。')) { put(CUS, get(CUS, []).filter(l => l.id !== b.dataset.rdel)); put(SEL, (getSel() || []).filter(x => x !== b.dataset.rdel)); render(); } });
+      if (b.dataset.rdel && confirm('删除这个自定义宗教库？已推演的世界不受影响（保存时已冻结快照）。')) { const sel = getSel() || all().map(l => l.id); if (sel.includes(b.dataset.rdel) && sel.length <= 1) { alert('至少保留一个已选择的宗教库'); return; } put(CUS, get(CUS, []).filter(l => l.id !== b.dataset.rdel)); put(SEL, sel.filter(x => x !== b.dataset.rdel)); render(); } });
     $('relAll').onclick = () => { put(SEL, all().map(l => l.id)); render(); };
     $('relNew').onclick = () => edit({ type: 'polytheist', spread: 'missionary', mode: 'fantasy', cats: ['agrarian'], names: {}, clergy: {} }, true);
     $('relExport').onclick = () => { const sel = getSel() || all().map(l => l.id); const data = { schema: 'planet-religion-libraries-v1', libraries: all().filter(l => sel.includes(l.id)).map(({ builtin: b, edited: e, ...l }) => l) }; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })); a.download = '宗教库.json'; a.click(); };
     $('relImport').onclick = () => $('relFile').click();
-    $('relFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { const d = JSON.parse(await f.text()); const arr = (d.libraries || d).filter(l => l && l.names); if (!arr.length) throw new Error('文件里没有宗教库');
-      const cu = get(CUS, []), sel = getSel() || all().map(l => l.id); arr.forEach((l, i) => { const lib = { ...l, id: 'rcustom-' + Date.now().toString(36) + i }; cu.push(lib); sel.push(lib.id); }); put(CUS, cu); put(SEL, sel); render(); alert(`已导入 ${arr.length} 个宗教库`); } catch (err) { alert('导入失败：' + err.message); } };
+    $('relFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try {
+      const d = JSON.parse(await f.text()), arr = d.libraries || d;
+      if (!Array.isArray(arr) || !arr.length || arr.some(l => !l || !l.names || !l.id)) throw new Error('文件里没有有效宗教库');
+      const seen = new Set(all().map(l => l.id));
+      for (const l of arr) { if (seen.has(l.id)) throw new Error('库 ID 已存在：' + l.id + '；已存在的库不会被覆盖。可复制为自定义库或使用其他 ID。'); seen.add(l.id); G.HumanRules.validateLibrary(l, 'religion'); }
+      const cu = get(CUS, []), sel = getSel() || all().map(l => l.id);
+      for (const { builtin, edited, ...l } of arr) { cu.push(l); sel.push(l.id); }
+      put(CUS, cu); put(SEL, sel); render(); alert(`已导入 ${arr.length} 个宗教库`);
+    } catch (err) { alert('导入失败：' + err.message); } };
+
   }
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', bind) : bind();
   load();

@@ -7,7 +7,20 @@
   'use strict';
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   const INF = 1e9;
-  const STEP = 50;                     // 人口曲线的采样间隔（年）
+  const STEP = 50;                     // 人口曲线的采样间隔（年）：推演用这一套，改了会让同一颗星球的历史变样
+  const roadRecord = (rd, id, year) => ({id, imp:rd.imp, year, lines:rd.lines, ferries:rd.ferries, sa:rd.sa, sb:rd.sb});
+  // 事件引用城市 ID，等命名沿革完成后按事件年解析，不替换可能同名的国家或其他文字。
+  const reference = (id, year) => `\u0001city:${id}${year === undefined ? '' : ':' + year}\u0002`;
+  function resolveEvent(event, cities) {
+    event.text = event.text.replace(/\u0001city:(\d+)(?::(-?\d+(?:\.\d+)?))?\u0002/g, (_, id, fixedYear) => {
+      const city = cities[+id], year = fixedYear === undefined ? event.year : +fixedYear;
+      let name = city.names[0][1];
+      for (const entry of city.names) { if (entry[0] > year) break; name = entry[1]; }
+      return event.kind === 'found' && !city.lost && name !== city.name ? `${name}（今${city.name}）` : name;
+    });
+    return event;
+  }
+  const FSTEP = 10;                    // 展示用的细采样（年）：只给面板上的曲线与读数，末点正好落在“今年”
   const SF = [0.006, 0.03, 0.07, 0.16, 0.3, 0.48, 0.56, 0.78, 1];  // 各发展阶段的城市规模（相对）
   const RF = [0.03, 0.12, 0.2, 0.3, 0.4, 0.5, 0.58, 0.74, 1];       // 各发展阶段的人口密度（相对，乡村比城市增长平缓）
   const CAUSE = { sand: '被黄沙掩埋', river: '因河流改道而荒废', war: '毁于战火', abandon: '人去城空' };
@@ -20,7 +33,7 @@
     const rnd = mulberry32((h.seed | 0) + 9090);
     const used = D.usedNames;
     const events = [];
-    const ev = (year, kind, text, r, extra) => events.push(Object.assign({ year: Math.round(year), kind, text, r: r || 0 }, extra || {}));
+    const ev = (year, kind, text, r, extra) => events.push(Object.assign({ year: G.HistoryDate.ceil(year), kind, text, r: r || 0 }, extra || {}));
     const stageYear = (s, r) => Y[s * NN + r];
     const stageAt = (r, y) => { let s = 0; for (let k = 1; k <= 8; k++) if (Y[k * NN + r] <= y) s = k; else break; return s; };
     // 连续的“规模”：在两个阶段之间按几何插值，避免台阶
@@ -37,8 +50,7 @@
     const cities = S.map((s, k) => {
       const r = R.regionOf[s.cell] || 0, q = hash(k * 7919 + (h.seed | 0)), rank = scoreRank(s.score || 0);
       let need, jit;
-      if (s.role === 'military-post') { need = 4; jit = 100 + 300 * q; }                  // 要塞关隘：有了领土国家才设防
-      else if (s.newSeat) { need = Math.min(D.maxStage, 5); jit = 80 + 420 * q; }       // 新设县城：设治以后才有，多半在帝国、封建时代
+      if (s.newSeat) { need = Math.min(D.maxStage, 5); jit = 80 + 420 * q; }       // 新设县城：设治以后才有，多半在帝国、封建时代
       else if (s.type === 'market') { need = 4; jit = 60 + 500 * q; }                     // 集镇商镇：王国以后的市集
       else if (s.type === 'port' || s.type === 'island-port') { need = rank < 0.3 ? 2 : 3; jit = 40 + 300 * q + 300 * rank; }
       else { need = rank < 0.15 ? 2 : 3; jit = 30 + 260 * q + 320 * rank; }               // 今天的城镇多半早年就是村落
@@ -48,7 +60,7 @@
       f = f < INF ? f + jit : E - 80 - 260 * q;
       if (f > E - 120 && r && stageYear(2, r) < E - 400) f = stageYear(2, r) + (E - 120 - stageYear(2, r)) * (0.45 + 0.55 * q); // 推算太晚：在有人定居以后的时段里摊开
       f = clamp(f, r ? Math.min(stageYear(1, r), E - 200) : 0, E - 40); // 荒漠里的要塞：所在地从未有过农业，也要有个建城年份
-      return { k, r, name: s.name, x: X[k] ? X[k].x : (R.cx[r] || 0), y: X[k] ? X[k].y : (R.cy[r] || 0), final: s.pop || 0, founded: Math.round(f), ruined: null, cause: null, type: s.type, tier: s.tier, role: s.role, fort: s.role === 'military-post', lost: false };
+      return { k, r, name: s.name, x: X[k] ? X[k].x : (R.cx[r] || 0), y: X[k] ? X[k].y : (R.cy[r] || 0), final: s.pop || 0, founded: G.HistoryDate.ceil(f), ruined: null, cause: null, type: s.type, tier: s.tier, role: s.role, fort: false, lost: false };
     });
 
     // ---------- 2. 古城：古文明故地上没能活到今天的城市 ----------
@@ -63,9 +75,9 @@
       pick.forEach((r, i) => {
         const q = hash((ai + 1) * 104729 + i * 31 + (h.seed | 0));
         const lib = a.libObj; let nm = ''; for (const c of (lib.n && lib.n.cities) || []) if (!used.has(c)) { nm = c; break; } if (!nm) nm = G.NameGen.make(lib, 'city', used, () => hash(r * 31 + i * 7 + used.size)); used.add(nm);
-        const founded = Math.round(clamp(stageYear(3, r) + 40 + 200 * q, stageYear(2, r), a.fall - 200));
+        const founded = G.HistoryDate.ceil(clamp(stageYear(3, r) + 40 + 200 * q, stageYear(2, r), a.fall - 200));
         const cause = R.arid[r] + R.semiArid[r] * 0.6 > 0.4 ? 'sand' : R.river[r] >= 3 && q < 0.6 ? 'river' : q < 0.75 ? 'war' : 'abandon';
-        const ruined = Math.round(clamp(a.fall + (cause === 'war' ? 0 : 60 + 380 * hash(r * 13 + i)), founded + 300, E - 300));
+        const ruined = G.HistoryDate.ceil(clamp(a.fall + (cause === 'war' ? 0 : 60 + 380 * hash(r * 13 + i)), founded + 300, E - 300));
         const y0 = (R.center[r] / h.W) | 0, x0 = R.center[r] - y0 * h.W;
         cities.push({ k: -1, r, name: nm, x: (x0 + 0.5) * 2, y: (y0 + 0.5) * 2, final: 0, peak: Math.round(bigPop * (0.25 + 0.6 * q) / 10) * 10, founded, ruined, cause, type: 'ancient', tier: 'city', role: 'lost', fort: false, lost: true, ancient: ai });
       });
@@ -76,7 +88,7 @@
     { const cont = (opt.labels || []).filter(l => l.type === 'continent');
       const nP = 3, at = [0.56, 0.73, 0.87];
       for (let i = 0; i < nP; i++) {
-        const yP = Math.round(E * at[i] + (rnd() - 0.5) * E * 0.06);
+        const yP = G.HistoryDate.ceil(E * at[i] + (rnd() - 0.5) * E * 0.06);
         // 震中：当年人口最稠密、发展最高的区块之一
         let best = 0, bv = -1; for (let r = 1; r <= nR; r++) { const s = stageAt(r, yP); if (s < 4) continue; if (plagues.some(p => h.gdist(R.center[p.r], R.center[r]) * h.cellKm < 0.12 * 2 * Math.PI * h.R)) continue; const v = R.weight[r] * (1 + s) * (0.6 + 0.8 * hash(r * 17 + i)); if (v > bv) { bv = v; best = r; } }
         if (!best) continue;
@@ -101,17 +113,19 @@
       m *= plagueMul(r, y);
       return m;
     };
-    cities.forEach((c, i) => {
+    const fillCityPop = (pop, nT, T) => cities.forEach((c, i) => {
       if (!c.lost) { const end = rawAt(c, E) || 1e-6; for (let j = 0; j < nT; j++) pop[i * nT + j] = Math.round(c.final * rawAt(c, T(j)) / end); pop[i * nT + nT - 1] = c.final; return; }
       // 古城：盛于古文明，衰于其覆灭，废弃后归零
       let mx = 0; const raw = new Float64Array(nT); for (let j = 0; j < nT; j++) { const y = T(j); raw[j] = y < c.founded || y >= c.ruined ? 0 : rawAt(c, y) * (y > D.ancient[c.ancient].fall ? Math.max(0.15, 1 - (y - D.ancient[c.ancient].fall) / Math.max(60, c.ruined - D.ancient[c.ancient].fall)) : 1); if (raw[j] > mx) mx = raw[j]; }
       for (let j = 0; j < nT; j++) pop[i * nT + j] = mx ? Math.round(c.peak * raw[j] / mx) : 0;
     });
+    fillCityPop(pop, nT, T);
+    const nTf = Math.ceil(E / FSTEP) + 1, Tf = j => Math.min(E, j * FSTEP), popF = new Float32Array(nC * nTf); fillCityPop(popF, nTf, Tf);
     const popAt = (i, y) => { const t = y / STEP, j = Math.min(nT - 2, Math.floor(t)), f = t - j; return pop[i * nT + j] * (1 - f) + pop[i * nT + j + 1] * f; };
     cities.forEach((c, i) => { let mx = 0, my = 0; for (let j = 0; j < nT; j++) if (pop[i * nT + j] > mx) { mx = pop[i * nT + j]; my = T(j); } c.peakPop = Math.round(mx); c.peakYear = my; });
 
     // ---------- 4b. 各区块的总人口曲线（城乡合计）：随发展阶段增长，古文明覆灭与大瘟疫留下低谷；终点严格等于现在的人口 ----------
-    const regionPop = new Float32Array((nR + 1) * nT);
+    const regionPop = new Float32Array((nR + 1) * nT), regionPopF = new Float32Array((nR + 1) * nTf);
     { const popTotal = h.popTotal || 0;
       const denAt = (r, y) => {
         const s = stageAt(r, y); let d;
@@ -126,7 +140,8 @@
         return d;
       };
       for (let r = 1; r <= nR; r++) { const now = R.weight[r] * popTotal; if (!(now > 0)) continue; const dE = denAt(r, E) || 1e-9;
-        for (let j = 0; j < nT; j++) regionPop[r * nT + j] = now * denAt(r, T(j)) / dE; regionPop[r * nT + nT - 1] = now; } }
+        for (let j = 0; j < nT; j++) regionPop[r * nT + j] = now * denAt(r, T(j)) / dE; regionPop[r * nT + nT - 1] = now;
+        for (let j = 0; j < nTf; j++) regionPopF[r * nTf + j] = now * denAt(r, Tf(j)) / dE; regionPopF[r * nTf + nTf - 1] = now; } }
 
     // ---------- 5. 道路年代 ----------
     // 干道（王道、驿道）王国时代就修，最早连起各大城；支线随王国、帝国的设治铺开；乡道随城镇建立陆续出现
@@ -139,24 +154,24 @@
       if (!(sy < INF)) sy = Math.max(ra ? stageYear(3, ra) : 0, rb ? stageYear(3, rb) : 0);
       let y = Math.max(lo, sy < INF ? sy : lo + 150) + lag[0] + (lag[1] - lag[0]) * q;
       if (y > E - 20) y = lo >= E - 60 ? lo + (E - 10 - lo) * (0.3 + 0.5 * q2) : lo + 30 + (E - 25 - lo - 30) * (0.15 + 0.85 * q2); // 推算晚于现在：摊到建城与现在之间，不挤在最后
-      return { imp: rd.imp, year: Math.round(Math.min(y, E - 5)), lines: rd.lines, sa: rd.sa, sb: rd.sb };
-    }).filter(r => r.lines && r.lines.length).sort((a, b) => a.year - b.year);
+      return roadRecord(rd, k, G.HistoryDate.ceil(Math.min(y, E - 5)));
+    }).filter(r => r.lines.length || r.ferries.length).sort((a, b) => a.year - b.year);
 
     // ---------- 6. 编年史 ----------
     const real = cities.map((c, i) => [c, i]).filter(([c]) => !c.fort);
     // 最古老的城市
-    { const old = real.filter(([c]) => !c.lost).sort((a, b) => a[0].founded - b[0].founded)[0]; if (old) ev(old[0].founded, 'found', `${old[0].name}建城，这是世上延续至今最古老的城市`, old[0].r, { city: old[1] }); }
+    { const old = real.filter(([c]) => !c.lost).sort((a, b) => a[0].founded - b[0].founded)[0]; if (old) ev(old[0].founded, 'found', `${reference(old[1])}建城，这是世上延续至今最古老的城市`, old[0].r, { city: old[1] }); }
     // 今天最大的二十座城市的建城
-    real.filter(([c]) => !c.lost).sort((a, b) => b[0].final - a[0].final).slice(0, 20).forEach(([c, i]) => { if (events.some(e => e.city === i)) return; ev(c.founded, 'found', `${c.name}建城`, c.r, { city: i }); });
+    real.filter(([c]) => !c.lost).sort((a, b) => b[0].final - a[0].final).slice(0, 20).forEach(([c, i]) => { if (events.some(e => e.city === i)) return; ev(c.founded, 'found', `${reference(i)}建城`, c.r, { city: i }); });
     // 古城的兴与废
-    real.filter(([c]) => c.lost).forEach(([c, i]) => { ev(c.founded, 'found', `${c.name}建城（${D.ancient[c.ancient].name}）`, c.r, { city: i }); ev(c.ruined, 'ruin', `${c.name}${CAUSE[c.cause]}，沦为废墟`, c.r, { city: i }); });
+    real.filter(([c]) => c.lost).forEach(([c, i]) => { ev(c.founded, 'found', `${reference(i)}建城（${D.ancient[c.ancient].name}）`, c.r, { city: i }); ev(c.ruined, 'ruin', `${reference(i)}${CAUSE[c.cause]}，沦为废墟`, c.r, { city: i }); });
     // 大瘟疫
-    plagues.forEach(p => { let big = -1, bp = 0; real.forEach(([c, i]) => { if (c.r === p.r) { const v = popAt(i, p.year); if (v > bp) { bp = v; big = i; } } }); ev(p.year, 'plague', `大瘟疫自${big >= 0 ? cities[big].name : '某地'}蔓延${p.cont ? '，' + p.cont + '一带' : '，各地'}城市人口锐减`, p.r); });
+    plagues.forEach(p => { let big = -1, bp = 0; real.forEach(([c, i]) => { if (c.r === p.r) { const v = popAt(i, p.year); if (v > bp) { bp = v; big = i; } } }); ev(p.year, 'plague', `大瘟疫自${big >= 0 ? reference(big) : '某地'}蔓延${p.cont ? '，' + p.cont + '一带' : '，各地'}城市人口锐减`, p.r); });
     // 现在的等级门槛（用于按人口推算各年代的城市等级）
     const tierMin = t => { let m = Infinity; S.forEach(s => { if (s.tier === t && s.pop < m) m = s.pop; }); return m < Infinity ? m : null; };
     return {
       cities: cities.map(c => ({ name: c.name, x: c.x, y: c.y, r: c.r, founded: c.founded, ruined: c.ruined, cause: c.cause ? CAUSE[c.cause] : null, type: c.type, tier: c.tier, fort: c.fort, lost: c.lost, ancient: c.lost ? c.ancient : -1, idx: c.k, peakPop: c.peakPop, peakYear: c.peakYear, final: c.final })),
-      pop, popStep: STEP, popN: nT, E, roads, regionPop, plagues: plagues.map(p => ({ year: p.year, x: R.cx[p.r], y: R.cy[p.r], cont: p.cont })), events,
+      pop, popStep: STEP, popN: nT, E, roads, regionPop, popF, popStepF: FSTEP, popNF: nTf, regionPopF, plagues: plagues.map(p => ({ year: p.year, x: R.cx[p.r], y: R.cy[p.r], cont: p.cont })), events,
       tiers: { metropolis: tierMin('metropolis'), city: tierMin('city') }
     };
   }
@@ -168,12 +183,14 @@
     const real = cities.map((c, i) => [c, i]).filter(([c]) => !c.fort);
     const marks = [[1e5, '十万'], [5e5, '五十万'], [1e6, '百万']]; let lead = -1, leadSince = 0;
     for (let j = 0; j < nT; j++) { const y = T(j); let b = -1, bv = 0; for (const [, i] of real) { const v = pop[i * nT + j]; if (v > bv) { bv = v; b = i; } }
-      const at = (i, v) => { if (!j) return y; const a = pop[i * nT + j - 1], b = pop[i * nT + j]; return Math.round(T(j - 1) + (y - T(j - 1)) * Math.max(0, Math.min(1, b > a ? (v - a) / (b - a) : 1))); }; // 采样之间按人口曲线插值出确切的年份
-      const cross = (i, k) => { if (!j) return y; const d0 = pop[i * nT + j - 1] - pop[k * nT + j - 1], d1 = pop[i * nT + j] - pop[k * nT + j]; return Math.round(T(j - 1) + (y - T(j - 1)) * (d1 > d0 && d0 < 0 ? Math.max(0, Math.min(1, -d0 / (d1 - d0))) : 1)); };
-      for (const m of marks) if (!m.done && bv >= m[0]) { m.done = true; out.push({ year: at(b, m[0]), kind: 'milestone', text: `${cities[b].name}人口突破${m[1]}，是世上第一座这样的城市`, r: cities[b].r, city: b }); }
-      if (b >= 0 && b !== lead && bv > 2e4) { if (lead >= 0 && y - leadSince < 150) { lead = b; leadSince = y; continue; } if (lead >= 0) out.push({ year: cross(b, lead), kind: 'leader', text: `${cities[b].name}超过${cities[lead].name}，成为世界第一大城（约 ${fmtPop(bv)}）`, r: cities[b].r, city: b }); lead = b; leadSince = y; } }
+      const at = (i, v) => { if (!j) return y; const a = pop[i * nT + j - 1], b = pop[i * nT + j]; return G.HistoryDate.ceil(T(j - 1) + (y - T(j - 1)) * Math.max(0, Math.min(1, b > a ? (v - a) / (b - a) : 1))); }; // 采样之间按人口曲线插值出确切的年份
+      const cross = (i, k) => { if (!j) return y; const d0 = pop[i * nT + j - 1] - pop[k * nT + j - 1], d1 = pop[i * nT + j] - pop[k * nT + j]; return G.HistoryDate.ceil(T(j - 1) + (y - T(j - 1)) * (d1 > d0 && d0 < 0 ? Math.max(0, Math.min(1, -d0 / (d1 - d0))) : 1)); };
+      for (const m of marks) if (!m.done && bv >= m[0]) { m.done = true; out.push({ year: at(b, m[0]), kind: 'milestone', text: `${reference(b)}人口突破${m[1]}，是世上第一座这样的城市`, r: cities[b].r, city: b }); }
+      if (b >= 0 && b !== lead && bv > 2e4) { if (lead >= 0 && y - leadSince < 150) { lead = b; leadSince = y; continue; } if (lead >= 0) out.push({ year: cross(b, lead), kind: 'leader', text: `${reference(b)}超过${reference(lead)}，成为世界第一大城（约 ${fmtPop(bv)}）`, r: cities[b].r, city: b }); lead = b; leadSince = y; } }
+    // 面板上的鼎盛按细采样重算（与城市曲线一致）；上面的编年史仍按推演用的粗采样，同一颗星球的大事不变
+    if (C.popF) { const n = C.popNF, F = C.popF, Tf = j => Math.min(C.E, j * C.popStepF); cities.forEach((c, i) => { let mx = 0, my = 0; for (let j = 0; j < n; j++) if (F[i * n + j] > mx) { mx = F[i * n + j]; my = Tf(j); } c.peakPop = Math.round(mx); c.peakYear = my; }); }
     return out;
   }
 
-  G.HistoryCities = { run, milestones };
+  G.HistoryCities = { roadRecord, reference, resolveEvent, run, milestones };
 })(typeof self !== 'undefined' ? self : this);

@@ -7,3 +7,5 @@ Third-party components included in the Android package:
 - Noto Sans SC: see site/fonts/OFL.txt.
 - Cloud texture: see site/globe/cloud-texture-license.txt.
 - Celestial assets and modifications: see site/globe/celestial/manifest.json and sun-color-LICENSE.txt.
+
+- fflate, fast-png and iobuffer: see site/licenses/*-MIT.txt.

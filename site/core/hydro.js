@@ -26,9 +26,11 @@
 
   function simulate(P, Cl, cfg, progress) {
     const W = P.W, H = P.H, N = W * H; let e = P.elev;
+    const imported = P.terrainImport, locked = imported && imported.lock, inputLakes = imported && imported.lakes;
+    if (imported) G.TerrainImport.bind(P);
     const nb = (i, k) => { const y = (i / W) | 0, yy = y + DY[k]; if (yy < 0 || yy >= H) return -1; let xx = i - y * W + DX[k]; if (xx < 0) xx += W; else if (xx >= W) xx -= W; return yy * W + xx; };
     // 海平面以下但与世界海洋不连通的小洼地不是海：抬成近海平面的低平地（之后按填洼规则成湖或湿地），避免内陆出现零碎“海水”与断头河
-    { const comp = new Int32Array(N).fill(-1), minSea = Math.max(400, Math.round(N * 0.0015)); let id = 0;
+    if (!imported) { const comp = new Int32Array(N).fill(-1), minSea = Math.max(400, Math.round(N * 0.0015)); let id = 0;
       for (let s0 = 0; s0 < N; s0++) { if (e[s0] > 0 || comp[s0] >= 0) continue; const list = [s0]; comp[s0] = id;
         for (let h = 0; h < list.length; h++) for (let k = 0; k < 8; k++) { const j = nb(list[h], k); if (j >= 0 && e[j] <= 0 && comp[j] < 0) { comp[j] = id; list.push(j); } }
         if (list.length < minSea) { let mn = 0; for (const i of list) mn = Math.min(mn, e[i]); for (const i of list) e[i] = 1 + 0.05 * (e[i] - mn); }
@@ -36,7 +38,7 @@
     // 之后的汇流在副本上计算：湖泊出口的下切只用于确定水流路径，不改写显示用的地形
     const eD = P.elev; // 显示地表（河口、岸线几何都按它求）
     e = Float32Array.from(P.elev);
-    const ocean = new Uint8Array(N); for (let i = 0; i < N; i++) ocean[i] = e[i] <= 0 ? 1 : 0;
+    const ocean = new Uint8Array(N); for (let i = 0; i < N; i++) ocean[i] = e[i] <= 0 && !(inputLakes && inputLakes[i]) ? 1 : 0;
 
     // ---------- 1. 填洼（真实地形）+ 按水量平衡定湖面 ----------
     progress('水系汇流', 0.8);
@@ -49,7 +51,7 @@
       while (heap.n) { const i = heap.pop(), fi = filled[i]; if (track) popOrder[nPop++] = i;
         for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j < 0 || done[j]) continue; done[j] = 1; filled[j] = e[j] > fi ? e[j] : fi; if (track) from[j] = i; heap.push(j, filled[j]); } }
     }
-    priorityFlood(i => ocean[i] ? e[i] : NaN, true);
+    priorityFlood(i => ocean[i] ? e[i] : inputLakes && inputLakes[i] ? 0 : NaN, true);
     // ---- 湖泊：水量平衡（参照真实湖泊：湖面约占无冰陆地 1.8%，≥1 万 km² 的湖约 20 个） ----
     // 集水区来水：沿填洼排水树（水流向淹没父格）累积年径流；单位 mm·km²
     const cellKm0 = 2 * Math.PI * cfg.radius / W, cellA = new Float32Array(H); for (let y = 0; y < H; y++) cellA[y] = cellKm0 * cellKm0 * P.F.cosLat[y];
@@ -59,12 +61,15 @@
     for (let k = nPop - 1; k >= 0; k--) { const i = popOrder[k], f = from[i]; if (f >= 0 && !ocean[f]) Q0[f] += Q0[i]; }
     const lakeFactor = cfg.lakeFactor || 1;
     const lake = new Uint8Array(N), endo = new Uint8Array(N), lakeLevel = new Float32Array(N), carvedLake = [];
+    if (inputLakes) for (let i = 0; i < N; i++) if (inputLakes[i] && e[i] <= 0) { lake[i] = 1; endo[i] = 1; lakeLevel[i] = 0; }
     { const comp = new Int32Array(N).fill(-1); let id = 0;
       for (let s0 = 0; s0 < N; s0++) {
-        if (ocean[s0] || comp[s0] >= 0 || filled[s0] - e[s0] <= 0.5) continue;
+        if (ocean[s0] || inputLakes && inputLakes[s0] || comp[s0] >= 0 || filled[s0] - e[s0] <= 0.5) continue;
         const lv = filled[s0], list = [s0]; comp[s0] = id;
-        for (let h = 0; h < list.length; h++) for (let k = 0; k < 8; k++) { const j = nb(list[h], k); if (j >= 0 && comp[j] < 0 && !ocean[j] && filled[j] - e[j] > 0.5 && Math.abs(filled[j] - lv) < 0.01) { comp[j] = id; list.push(j); } }
+        for (let h = 0; h < list.length; h++) for (let k = 0; k < 8; k++) { const j = nb(list[h], k); if (j >= 0 && comp[j] < 0 && !ocean[j] && !(inputLakes && inputLakes[j]) && filled[j] - e[j] > 0.5 && Math.abs(filled[j] - lv) < 0.01) { comp[j] = id; list.push(j); } }
         id++;
+        // 受保护盆地保留内流终点；不得在独立排水层强行开出穿过锁定山口的河谷。
+        if (locked && list.some(i => locked[i])) { let low = list[0]; for (const i of list) if (e[i] < e[low]) low = i; endo[low] = 1; lakeLevel[low] = e[low]; continue; }
         if (list.length < 5) continue;
         let emin = Infinity, pm = 0, tm = 0, AD = 0, Qin = 0, low = list[0];
         for (const i of list) { if (e[i] < emin) { emin = e[i]; low = i; } pm += Cl.Pann[i]; tm += Cl.Tann[i]; AD += cellA[(i / W) | 0]; if (Q0[i] > Qin) Qin = Q0[i]; }
@@ -89,8 +94,9 @@
         }
       } }
     // 出口下切：从洼地最低处沿排水树走向出口，把高出湖面的格削到湖面以下，形成真实的出口河谷
+    const breach = []; // 保留成湖的外流湖：出口被下切的格（显示地表也要沿它开出河谷）
     for (const c of carvedLake) { let x = c.low, k = 0, g = 0;
-      while (x >= 0 && !ocean[x] && g++ < 4000) { const tgt = c.L - 0.05 * (k + 1); if (e[x] > c.L - 0.01) { if (e[x] > tgt) { e[x] = tgt; k++; } } else if (k > 0 && e[x] < tgt && filled[x] < c.lv - 0.01) break; x = from[x]; } } // 只在离开本洼地、到达更低处后停止
+      while (x >= 0 && !ocean[x] && g++ < 4000) { if (locked && locked[x]) break; const tgt = c.L - 0.05 * (k + 1); if (e[x] > c.L - 0.01) { if (e[x] > tgt) { e[x] = tgt; k++; if (c.keep) breach.push(x); } } else if (k > 0 && e[x] < tgt && filled[x] < c.lv - 0.01) break; x = from[x]; } } // 只在离开本洼地、到达更低处后停止
     priorityFlood(i => ocean[i] ? e[i] : endo[i] ? lakeLevel[i] : NaN, false);
     if (G.LAKEDBG) for (const c of carvedLake) if (c.list.length > 900) G.LAKEDBG.push({ carved: c.list.length, L: Math.round(c.L), lowE: Math.round(e[c.low]), filledLow: Math.round(filled[c.low]), keep: c.keep });
     for (const c of carvedLake) if (c.keep) for (const i of c.list) if (filled[i] - e[i] > 0.3) { lake[i] = 1; lakeLevel[i] = filled[i]; }
@@ -100,13 +106,13 @@
         if (c.length < 6 && !c.some(i => endo[i])) for (const i of c) { lake[i] = 0; endo[i] = 0; } } } // 尾闾湖（水流终点）不论大小都保留
     heap.k = null; heap.v = null;
     // 湖面显示场：湖泊范围羽化（3×3 平均两次），配合三次插值得到圆滑湖岸；所有“是否湖面”的判断都用它
-    const lakeSoft = new Float32Array(N); { let A = Float32Array.from(lake); for (let it = 0; it < 2; it++) { const B = new Float32Array(N); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let s2 = 0, n = 0; for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -1; dx <= 1; dx++) { s2 += A[yy * W + ((x + dx) % W + W) % W]; n++; } } B[y * W + x] = s2 / n; } A = B; } for (let i = 0; i < N; i++) lakeSoft[i] = lake[i] ? Math.max(A[i], 0.55) : Math.min(A[i], 0.45); }
+    const lakeSoft = new Float32Array(N); const softLake = (M) => { let A = Float32Array.from(M); for (let it = 0; it < 2; it++) { const B = new Float32Array(N); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let s2 = 0, n = 0; for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -1; dx <= 1; dx++) { s2 += A[yy * W + ((x + dx) % W + W) % W]; n++; } } B[y * W + x] = s2 / n; } A = B; } for (let i = 0; i < N; i++) lakeSoft[i] = M[i] ? Math.max(A[i], 0.55) : Math.min(A[i], 0.45); }; softLake(lake);
     // ---------- 2. 流向：最陡下降；平地按到出水口的加权距离 ----------
     const down = new Int32Array(N).fill(-1);
     const flatDist = new Int32Array(N).fill(-1);
     const fh = new Heap(1 << 18);
     for (let i = 0; i < N; i++) {
-      if (ocean[i]) continue;
+      if (ocean[i] || imported && endo[i]) continue;
       let best = 0, bj = -1;
       for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j < 0) continue; const d = (filled[i] - filled[j]) / DL[k]; if (d > best || (d === best && bj >= 0 && false)) { best = d; bj = j; } }
       if (bj >= 0 && best > 0) { down[i] = bj; flatDist[i] = 0; fh.push(i, 0); }
@@ -117,7 +123,7 @@
       for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j < 0 || ocean[j] || filled[j] !== filled[i]) continue; const nd = di + DC[k]; if (flatDist[j] < 0 || nd < flatDist[j]) { flatDist[j] = nd; fh.push(j, nd); } }
     }
     for (let i = 0; i < N; i++) {
-      if (ocean[i] || down[i] >= 0 || flatDist[i] < 0) continue;
+      if (ocean[i] || imported && endo[i] || down[i] >= 0 || flatDist[i] < 0) continue;
       let best = flatDist[i], bj = -1;
       for (let k = 0; k < 8; k += 1) { const j = nb(i, k); if (j < 0 || ocean[j] || filled[j] !== filled[i] || flatDist[j] < 0) continue; const v = flatDist[j] + (k & 1 ? 1 : 0); if (flatDist[j] < flatDist[i] && v < best + 1) { best = v; bj = j; } }
       down[i] = bj;
@@ -214,8 +220,24 @@
     function root(first, last, f) { let a = 0, b = 1, fa = f(first[0], first[1]); if (fa <= 0) return first;
       { let k = 1; while (k < 3 && f(first[0] + (last[0] - first[0]) * k, first[1] + (last[1] - first[1]) * k) > 0) k += 0.25; last = [first[0] + (last[0] - first[0]) * k, first[1] + (last[1] - first[1]) * k]; } /* 亚格网岸线可能比格心更靠外：沿流向延伸到真正入水 */
       for (let it = 0; it < 30; it++) { const m = (a + b) / 2, v = f(first[0] + (last[0] - first[0]) * m, first[1] + (last[1] - first[1]) * m); if (v > 0) a = m; else b = m; } const t = (a + b) / 2; return [first[0] + (last[0] - first[0]) * t, first[1] + (last[1] - first[1]) * t]; }
+    // 湖岸显示形状：湖格上做一次 3×3 闭运算（先膨胀再腐蚀），只补进不走河、与湖面大致齐平的陆格。
+    // 填掉单格宽的细颈、缺口和湖边一格之隔的小水洼：湖岸不再是“一串圆泡＋细颈”、被两侧陆地掐断的样子。
+    // 只用于显示（lakeView）：推演、河口、城市选址仍按原湖岸 lakeSoft，同一种子的河流、城市、国名不变；河流流经的格不补
+    const lakeView = new Float32Array(N);
+    if (imported) { for (let i = 0; i < N; i++) lakeSoft[i] = lakeView[i] = lake[i]; G.Noise.bindTerrain(lakeSoft, imported); G.Noise.bindTerrain(lakeView, imported); }
+    else { const dil = new Uint8Array(N); for (let i = 0; i < N; i++) if (lake[i]) { dil[i] = 1; for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j >= 0) dil[j] = 1; } }
+      const M = Uint8Array.from(lake); let add = 0;
+      for (let i = 0; i < N; i++) { if (lake[i] || ocean[i] || !dil[i] || stream[i]) continue; let all = true, lvl = -Infinity;
+        for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j < 0 || !dil[j]) { all = false; break; } if (lake[j] && lakeLevel[j] > lvl) lvl = lakeLevel[j]; }
+        if (all && eD[i] <= lvl + 25) { M[i] = 1; add++; } }
+      // 不留“湖中孤岛”：补水后被水四面围住的陆格（河流入湖处、高出湖面的小丘）把它四周补进的格退回陆地，保持原来的湖湾
+      for (let pass = 0; pass < 3; pass++) { let n = 0;
+        for (let i = 0; i < N; i++) { if (M[i] || ocean[i]) continue; let enc = true, nAdd = 0; for (let k = 0; k < 8; k += 2) { const j = nb(i, k); if (j < 0 || !M[j]) { enc = false; break; } if (!lake[j]) nAdd++; }
+          if (enc && nAdd) for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j >= 0 && M[j] && !lake[j]) { M[j] = 0; n++; } } }
+        if (!n) break; }
+      const keep = Float32Array.from(lakeSoft); softLake(M); lakeView.set(lakeSoft); lakeSoft.set(keep); }
     const BS = G.Noise.bspline, seaF = (x, y) => G.Noise.coastSurface(eD, W, H, x, y);
-    const lakeF = (x, y) => 0.5 - G.Noise.surface(lakeSoft, W, H, x, y);
+    const lakeF = (x, y) => inputLakes && bil(inputLakes, x, y) > 0 ? seaF(x, y) : 0.5 - G.Noise.surface(lakeSoft, W, H, x, y);
     const inc = incomingS();
     const lakeIn = new Uint8Array(N); for (let i = 0; i < N; i++) if (lake[i] && down[i] >= 0 && stream[down[i]]) lakeIn[down[i]] = 1;
     // 潮汐（第 8 题）：一颗大卫星潮差大，河口多成喇叭口三角湾、潮滩盐沼；无卫星或仅星环时潮差小，河口三角洲更发育
@@ -356,13 +378,13 @@
     // 每项 [x, y, 半径(格), 种子, 层级]：层级 1 = 区域级起显示，2 = 地方级起显示
     const small = [];
     { const rr = G.Noise.mulberry32(cfg.seed + 4040), nL = G.Noise.simplex2(cfg.seed + 4041), lf = cfg.lakeFactor || 1;
-      const okAt = (x, y, r) => { for (let k = 0; k < 8; k++) { const a = k / 8 * 6.283, px = x + Math.cos(a) * r * 1.2, py = y + Math.sin(a) * r * 1.2; const yy = Math.min(H - 1, Math.max(0, py | 0)), xx = ((px | 0) % W + W) % W, j = yy * W + xx; if (e[j] <= 3 || lake[j] || stream[j] && q[j] > qth * 3) return false; } return true; };
+      const okAt = (x, y, r) => { for (let k = 0; k < 8; k++) { const a = k / 8 * 6.283, px = x + Math.cos(a) * r * 1.2, py = y + Math.sin(a) * r * 1.2; const yy = Math.min(H - 1, Math.max(0, py | 0)), xx = ((px | 0) % W + W) % W, j = yy * W + xx; if (e[j] <= 3 || lake[j] || locked && locked[j] || stream[j] && q[j] > qth * 3) return false; } return true; };
       const occ = new Set(), cellKey = (x, y) => ((y / 1.5) | 0) * 100000 + ((x / 1.5) | 0);
       const placed = new Map(), gk = (gx, gy) => gy * 100000 + gx; // 已放小湖的空间网格：小湖之间必须留出间距，不互相重叠（否则像“湖中湖”）
       const clear = (x, y, r) => { const gx = Math.floor(x / 2), gy = Math.floor(y / 2); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const L = placed.get(gk(((gx + dx) % (W >> 1) + (W >> 1)) % (W >> 1), gy + dy)); if (L) for (const o of L) { let ddx = Math.abs(o[0] - x); ddx = Math.min(ddx, W - ddx); if (Math.hypot(ddx, o[1] - y) < (o[2] + r) * 1.6 + 0.25) return false; } } return true; };
       const add = (x, y, r, tier) => { const key = cellKey(x, y); if (occ.has(key) || !okAt(x, y, r) || !clear(x, y, r)) return; occ.add(key); const g = gk(Math.floor(x / 2) % (W >> 1), Math.floor(y / 2)); (placed.get(g) || placed.set(g, []).get(g)).push([x, y, r]); small.push(x, y, r, (rr() * 1e6) | 0, tier); };
       for (let i = 0; i < N; i += 1) {
-        if (ocean[i] || lake[i]) continue; const y = (i / W) | 0, x = i - y * W, t = Cl.Tann[i], p = Cl.Pann[i], h = e[i];
+        if (ocean[i] || lake[i] || locked && locked[i]) continue; const y = (i / W) | 0, x = i - y * W, t = Cl.Tann[i], p = Cl.Pann[i], h = e[i];
         { let nearLake = false; for (let dy = -2; dy <= 2 && !nearLake; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -2; dx <= 2; dx++) { const j = yy * W + ((x + dx) % W + W) % W; if (lake[j] || ocean[j]) { nearLake = true; break; } } } if (nearLake) continue; } // 不放在大湖的湖心岛上
         if (Cl.snow[i] === 2) continue;
         let rel = 0; for (let k = 0; k < 8; k += 2) { const j = nb(i, k); if (j >= 0) rel = Math.max(rel, Math.abs(e[j] - h)); }
@@ -383,8 +405,26 @@
       } }
     const termLake = new Uint8Array(N); meta.forEach((m, k) => { if (m.kind === 'lake' && m.cell >= 0 && tiers[k] <= 2) termLake[m.cell] = 1; });
     const lakeSize = new Uint16Array(N); { const seen = new Uint8Array(N); for (let s0 = 0; s0 < N; s0++) { if (!lake[s0] || seen[s0]) continue; const c = [s0]; seen[s0] = 1; for (let h = 0; h < c.length; h++) for (let k = 0; k < 8; k += 2) { const j = nb(c[h], k); if (j >= 0 && lake[j] && !seen[j]) { seen[j] = 1; c.push(j); } } const keep = c.some(i => termLake[i]); for (const i of c) lakeSize[i] = keep ? 65535 : Math.min(65535, c.length); } } // 有河流注入的湖、尾闾湖在任何缩放都显示，河流不会“断在陆地上”
+    // ---------- 10. 显示地表与水系对齐（湖面、出口河谷、封闭洼地） ----------
+    // 汇流只在副本上下切、填洼，显示地表若原样保留，湖边会露出一圈比湖面还低的湖床（双线性插值把湖底带到岸上，形成绿色洼环与一圈圈闭合等高线），
+    // 未成湖的洼地成了“坑”，河流也像是翻过山脊流出。这里把显示地表改成与水系一致：
+    //  1) 湖面格取湖面高度：岸边插值不再掉进湖底；缩小时隐藏的小湖显示为与湖面齐平的低地；
+    //  2) 保留成湖的外流湖沿出口下切线开出 V 形河谷（半宽约 2.5 格），湖水经河谷流出；
+    //  3) 其余封闭洼地以湖面、海洋为出口填平到溢出高度（泥沙充填的平地），河流经溢出口流出，与汇流一致。
+    let dispElev = imported && imported.faithful ? eD : null;
+    if (!dispElev) { const disp = Float32Array.from(eD), isW = new Uint8Array(N);
+      for (let i = 0; i < N; i++) { if (ocean[i]) { isW[i] = 1; continue; } if (lake[i] && lakeLevel[i] > 0) { disp[i] = Math.max(0.5, lakeLevel[i]); isW[i] = 1; } }
+      const RB = 2.5;
+      for (const x of breach) { const base = Math.max(0.5, e[x]), cut = eD[x] - base; if (!(cut > 0)) continue; const y = (x / W) | 0, xx = x - y * W;
+        for (let dy = -2; dy <= 2; dy++) { const yy = y + dy; if (yy < 0 || yy >= H) continue; for (let dx = -2; dx <= 2; dx++) { const j = yy * W + ((xx + dx) % W + W) % W; if (isW[j]) continue;
+          const t = Math.hypot(dx, dy) / RB; if (t > 1) continue; const v = base + (eD[j] - base) * t * t; if (v < disp[j]) disp[j] = Math.max(0.5, v); } } }
+      const hp = new Heap(1 << 16), done = new Uint8Array(N);
+      for (let i = 0; i < N; i++) { const y = (i / W) | 0; if (isW[i] || y === 0 || y === H - 1) { done[i] = 1; if (!ocean[i] || hasLandNb(i)) hp.push(i, disp[i]); } }
+      while (hp.n) { const i = hp.pop(), fi = disp[i]; for (let k = 0; k < 8; k++) { const j = nb(i, k); if (j < 0 || done[j]) continue; done[j] = 1; if (disp[j] < fi + 0.01) disp[j] = fi + 0.01; hp.push(j, disp[j]); } }
+      dispElev = disp; } // 只用于显示设色、晕渲与等高线：推演（城市、国家、地名）仍用原地表，同一种子推演结果不变
+    if (imported) { for (let i = 0; i < N; i++) { if (locked[i]) dispElev[i] = eD[i]; if (inputLakes[i]) lakeSize[i] = 65535; } G.Noise.bindTerrain(dispElev, imported); }
     return {
-      smallLakes: Float32Array.from(small), lakeSize, lakeSoft,
+      smallLakes: Float32Array.from(small), lakeSize, lakeSoft, lakeView, dispElev,
       deltas, plume, wetland, wetSoft, deltaSoft, filled,
       down, lake, q, basinId, basinCount: topB.length, qth,
       rivers: { pts: Float32Array.from(out), offs: Int32Array.from(offs), tiers, stems },

@@ -146,7 +146,7 @@
       history.replaceState(null, '', url);
     } catch (error) {
       status.textContent = error.message;
-    } finally { setBusy(false); }
+    } finally { setBusy(false); if (embedPending) void drainEmbed(); }
   }
   function download(content, filename, type) {
     const url = URL.createObjectURL(new Blob([content], {type}));
@@ -234,16 +234,22 @@
   });
   // ---- 星球推演：嵌入模式。由世界地图通过 postMessage 送来城市输入（与“导入城市输入”同一格式） ----
   const EMBED = new URLSearchParams(location.search).has('embed');
-  const embedPlaces = new Map();
+  const embedPlaces = new Map(); let embedPending = null, embedDraining = false;
+  async function drainEmbed() {
+    if (embedDraining || busy) return; embedDraining = true;
+    try { while (embedPending && !busy) { const place=embedPending; embedPending=null; select.value=place.id; await openCity(place); } }
+    finally { embedDraining=false; }
+  }
   window.addEventListener('message', async event => {
+    if (!EMBED || event.source !== parent || event.origin !== location.origin) return;
     const msg = event.data; if (!msg || msg.type !== 'planet-city') return;
     try {
       const payload = validateInput(msg.payload);
       let place = embedPlaces.get(payload.recipe.id);
       if (!place) { place = addImported(payload, msg.label || '世界地图城市'); embedPlaces.set(payload.recipe.id, place); }
       else payloads.set(place.id, payload);
-      select.value = place.id;
-      await openCity(place);
+      embedPending = place;
+      await drainEmbed();
     } catch (error) { status.textContent = `载入失败：${error.message}`; }
   });
   async function start() {

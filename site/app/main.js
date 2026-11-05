@@ -10,7 +10,7 @@
 
   const TOPICS = {
     geo: [['terrain', '地形与水系'], ['koppen', '柯本气候分类'], ['biome', '生物群系'], ['basin', '水文流域'], ['agri', '农业潜力'], ['habit', '宜居度'], ['veg', '植被覆盖']],
-    human: [['pop', '人口分布'], ['culture', '文明影响范围'], ['language', '语言影响范围'], ['religion', '宗教影响范围'], ['country', '国家疆域'], ['govern', '实际治理'], ['system', '行政制度'], ['province', '省份疆域'], ['heritage', '遗迹地图']]
+    human: [['pop', '人口分布'], ['species', '种族分布'], ['culture', '文明影响范围'], ['language', '语言影响范围'], ['religion', '宗教影响范围'], ['country', '国家疆域'], ['govern', '实际治理'], ['system', '行政制度'], ['province', '省份疆域'], ['heritage', '遗迹地图']]
   };
   const TOPIC_NAME = Object.fromEntries([...TOPICS.geo, ...TOPICS.human, ['sprecip', '季节降水'], ['stemp', '季节气温'], ['plates', '板块构造']]);
   const AUX = [['elev', '高程'], ['depth', '海深'], ['grid', '经纬线'], ['coast', '海岸与等高线'], ['lakes', '湖泊'], ['snow', '积雪与海冰（估计）'], ['landform', '地貌符号'], ['frost', '冻土潜势'], ['polar', '极圈与极点'], ['rivers', '河流'], ['names', '地理名称（山脉、湖海、河流）'], ['cities', '城市聚落'], ['roads', '交通网络'], ['borders', '国界与国名'], ['nominal', '名义势力范围']];
@@ -59,8 +59,9 @@
   };
   // ---------- 名称：任何地名、国名、自然名都可双击改名（按世界保存） ----------
   app.names = {};
+  app.people = [];
+  app.savePeople = async () => { const rec = await saveWorld(); if (!rec || !app._lastSaveSucceeded) throw new Error('人物未写入本机存档，请导出世界文件保存'); return rec; };
   const NAME_SRC = { country: 'countries', province: 'provinces', city: 'cities', label: 'labels', river: 'riverNames', tribe: 'tribes', jimi: 'jimis', plate: 'plates', culture: 'cultures', language: 'languages', religion: 'religions' };
-  const namesKey = () => 'planet-names-' + (app.state ? G.Config.encode(app.state) : '');
   function objOf(id) { const [k, i] = id.split(':'); const arr = app.data && app.data[NAME_SRC[k]]; return arr ? arr[+i] : null; }
   app.nameOf = (id, def) => app.names[id] || def;
   function applyNames() {
@@ -90,14 +91,13 @@
     value = (value || '').trim();
     if (id === 'world') { if (value) app.names.world = value; else delete app.names.world; $('worldName').textContent = app.names.world || (app.data.stats.worldName + '星'); }
     else { const o = objOf(id); if (!o) return; if (o._orig === undefined) o._orig = o.name; if (value && value !== o._orig) { app.names[id] = value; o.name = value; } else { delete app.names[id]; o.name = o._orig; } }
-    try { localStorage.setItem(namesKey(), JSON.stringify(app.names)); } catch (e) { /* 存储满 */ }
     applyPrefix();
     buildIndex(); renderLegend(); renderInfo(); map.draw(); saveWorld(); globeSent = false; if (G.City) G.City.refresh();
   }
   let nameEditor = null;
   app.objName = id => { if (id === 'world') return $('worldName').textContent; const o = objOf(id); return o ? o.name : null; };
   app.worldKey = () => G.Config.encode(app.state);
-  app.setRaw = (id, v) => { app.names[id] = v; try { localStorage.setItem(namesKey(), JSON.stringify(app.names)); } catch (e) { /* */ } saveWorld(); };
+  app.setRaw = (id, v) => { app.names[id] = v; saveWorld(); };
   app.editName = (current, cx, cy, onSave) => {
     if (nameEditor) nameEditor.remove();
     const box = document.createElement('div'); box.className = 'name-editor';
@@ -127,27 +127,27 @@
   // ---------- Worker ----------
   let worker = null, seq = 0;
   const pending = new Map(), strips = new Map();
-  let shim = null;
   function startWorker() {
-    try {
-      worker = new Worker('core/worker.js');
-      worker.onmessage = e => onMsg(e.data);
-      worker.onerror = e => { console.warn('worker error', e.message); };
-    } catch (err) { worker = null; }
+    worker = new Worker('core/worker.js');
+    worker.onmessage = e => onMsg(e.data);
+    worker.onerror = e => {
+      const error = new Error('推演线程失败：' + e.message);
+      pendingGeneration = null; $('progress').hidden = true;
+      for (const request of pending.values()) request.reject(error);
+      pending.clear(); strips.clear();
+      toast(error.message, 9000);
+    };
   }
-  async function loadShim() {
-    if (shim) return shim;
-    for (const f of ['noise', 'libraries', 'culture-ext', 'religions', 'planet', 'climate', 'hydro', 'society', 'borders', 'citysite', 'render', 'history/regions', 'history/dawn', 'history/cities', 'history/polity', 'history/outline', 'history/heritage', 'history/apply', 'history/index', 'worker']) {
-      await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'core/' + f + '.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
-    }
-    shim = window.TerrainWorkerShim; return shim;
-  }
-  function post(m) {
-    if (worker) worker.postMessage(m);
-    else loadShim().then(s => setTimeout(() => s.handle(m, onMsg), 0));
-  }
-  function call(type, payload) { return new Promise(res => { const id = ++seq; pending.set(id, res); post({ type, id, ...payload }); }); }
+  function post(m) { worker.postMessage(m); }
+  function call(type, payload) { return new Promise((resolve,reject) => { const id = ++seq; pending.set(id, {resolve,reject}); post({ type, id, ...payload }); }); }
   app.call = call;
+  app.generatePerson = async request => {
+    const worldKey = app.worldKey();
+    if (request.worldKey !== worldKey) throw new Error('人物请求不属于当前世界。');
+    const response = await call('personGenerate', { request });
+    if (app.worldKey() !== worldKey) throw new Error('生成期间已切换世界，请在当前世界重新生成人物。');
+    return G.Life.validateRecord(response.data, worldKey);
+  };
   function onMsg(m) {
     if (m.type === 'progress') return onProgress(m);
     if (m.type === 'histProgress') return G.Timeline && G.Timeline.progress(m);
@@ -155,12 +155,19 @@
     if (m.type === 'overlays') return onOverlays(m);
     if (m.type === 'strip' || m.type === 'stripEnd') { const cb = strips.get(m.id); if (cb) { if (m.type === 'strip') cb(m); else strips.delete(m.id); } return; }
     if (m.type === 'contoursFine') { if (app.data) { app.data.contoursFine = m.contours; if (map.paths) { map.paths.cont.fine = null; map.draw(); } } return; }
-    if (m.type === 'error') { console.error(m.message); toast('推演出错：' + m.message.split('\n')[0]); $('progress').hidden = true; return; }
-    const r = pending.get(m.id); if (r) { pending.delete(m.id); r(m); }
+    if (m.type === 'error') {
+      if (m.requestType === 'generate') { pendingGeneration = null; $('progress').hidden = true; }
+      const request = pending.get(m.id); strips.delete(m.id);
+      if (request) { pending.delete(m.id); request.reject(new Error(m.message)); }
+      // 人物条件错误由人物表单呈现，不应误报为整个世界推演失败。
+      if (request && m.requestType === 'personGenerate') return;
+      console.error(m.message); toast('推演出错：' + m.message.split('\n')[0]); return;
+    }
+    const r = pending.get(m.id); if (r) { pending.delete(m.id); r.resolve(m); }
   }
   app.render = function (req, onStrip) {
     const id = ++seq;
-    const p = new Promise(res => { pending.set(id, res); if (onStrip) strips.set(id, onStrip); });
+    const p = new Promise((resolve,reject) => { pending.set(id, {resolve,reject}); if (onStrip) strips.set(id, onStrip); });
     post({ type: 'render', id, req });
     const out = p.then(m => {
       const img = new ImageData(new Uint8ClampedArray(m.buf.buffer || m.buf), req.w, req.h);
@@ -187,17 +194,26 @@
     [/等高线|气象场|渲染|图/, ['正在给地图上色', '正在描绘等高线']]
   ];
   let funKey = '';
-  let genCfg = null, spinT = 0, progMax = 0;
+  let genCfg = null, pendingGeneration = null, spinT = 0, progMax = 0;
   // restore：从存档 / 世界文件打开时传入 { name, ms }，进度卡说明这是按存档设置重新推演
-  function generate(st, restore) {
+  async function generate(st, restore, preparedTerrain) {
+    if (pendingGeneration) { toast('当前世界仍在推演，请等待完成'); return; }
+    pendingGeneration = { state:st };
+    try {
+    await Promise.all([G.Home.loadBuiltin(), G.RelLib.load()]);
     if (G.City && G.City.current !== null) G.City.close();
     strips.clear(); // 上一个世界的条带回调一律作废
     if (!st.libs) st.libs = G.Home.snapshot();
     if (!st.rlibs && G.RelLib) st.rlibs = G.RelLib.snapshot();
+    if (!st.slibs) st.slibs = G.SpeciesLib.snapshot();
+    if (!restore) await G.MapImport.ensureGrid(st);
+    G.Config.validateState(st);
+    const terrainRaster = st.terrainInput ? preparedTerrain || await G.MapImport.prepare(st.terrainInput) : undefined;
+    delete st.requiresLibraries;
     G.Home.hide(); $('libPage').hidden = true;
-    app.state = st; genCfg = G.Config.toCfg(st);
+    genCfg = G.Config.toCfg(st);
+    pendingGeneration.cfg = genCfg;
     G.Home.setJob({ name: '新世界', seed: st.seed, stage: '准备推演', f: 0 });
-    history.replaceState(null, '', '#' + G.Config.encode(st));
     $('progress').hidden = false;
     progMax = 0;
     $('progBar').style.width = '0%'; $('progStage').textContent = '准备推演…'; funKey = '';
@@ -205,13 +221,14 @@
     const note = $('progNote');
     if (note) { note.hidden = true; note.textContent = ''; } if (restore) funKey = 'restore';
     spinT = performance.now(); spinGlobe();
-    post({ type: 'generate', cfg: genCfg });
+    post({ type: 'generate', cfg: genCfg, terrainRaster });
+    } catch (error) { pendingGeneration = null; $('progress').hidden = true; toast('无法开始推演：' + error.message, 8000); }
   }
   function onProgress(m) {
     // 进度只进不退：各阶段的报告值偶有交错，界面上取已到达的最大值
     const f = progMax = Math.max(progMax, Math.min(1, m.f || 0));
     $('progStage').textContent = m.stage; $('progBar').style.width = Math.floor(f * 100) + '%';
-    G.Home.setJob({ name: '新世界', seed: app.state.seed, stage: m.stage, f });
+    G.Home.setJob({ name: '新世界', seed: pendingGeneration?.state.seed ?? app.state?.seed, stage: m.stage, f });
     const k = funKey !== 'restore' && FUN.find(([re]) => re.test(m.stage)); if (k && k[0].source !== funKey) { funKey = k[0].source; const list = k[1]; const t = $('progTitle'); t.style.opacity = 0; setTimeout(() => { t.textContent = list[Math.floor(Math.random() * list.length)]; t.style.opacity = 1; }, 160); }
   }
   function spinGlobe() {
@@ -226,15 +243,19 @@
     requestAnimationFrame(spinGlobe);
   }
   function onReady(m) {
+    if (!pendingGeneration) return;
+    app.state = pendingGeneration.state; genCfg = pendingGeneration.cfg; pendingGeneration = null;
+    const stored = loadSaved().find(w => w.key === G.Config.encode(app.state) && currentRecord(w));
+    app.people = stored?.people || []; app.history = null;
+    history.replaceState(null, '', '#' + G.Config.encode(app.state));
     if (G.Timeline) G.Timeline.reset();
     m.cfg = genCfg; app.data = m;
-    try { app.names = JSON.parse(localStorage.getItem(namesKey()) || '{}'); } catch (e) { app.names = {}; }
+    app.names = stored?.names || {};
     $('progress').hidden = true;
     const s = m.stats;
-    { const sv = loadSaved().find(w => w.key === G.Config.encode(app.state)); if (sv && sv.name && !app.names.world && sv.name !== s.worldName + '星') app.names.world = sv.name; $('worldName').textContent = app.names.world || s.worldName + '星'; }
+    { const sv = loadSaved().find(w => w.key === G.Config.encode(app.state) && currentRecord(w)); if (sv && sv.name && !app.names.world && sv.name !== s.worldName + '星') app.names.world = sv.name; $('worldName').textContent = app.names.world || s.worldName + '星'; }
     $('worldStats').textContent = `${s.countries} 个国家 · ${s.provinces} 个省份 · ${s.settlements} 处聚落`;
     document.title = s.worldName + '星 · 星球推演';
-    try { app.names = JSON.parse(localStorage.getItem(namesKey()) || '{}'); } catch (e) { app.names = {}; }
     applyNames();
     applyPrefix();
     buildIndex();
@@ -246,7 +267,7 @@
     makeThumbs();
     setTimeout(() => { saveWorld(); G.Home.setJob({ name: $('worldName').textContent, seed: app.state.seed, stage: '推演完成 · 用时 ' + (m.info.ms / 1000).toFixed(1) + ' 秒', f: 1, done: true, thumb: worldThumb() }); }, 1500);
     toast(`推演完成 · 用时 ${(m.info.ms / 1000).toFixed(1)} 秒 · 网格 ${m.W}×${m.H}`);
-    offerUpgrade(); renderFileInfo();
+     renderFileInfo();
   }
 
   // 覆盖层（等高线 / 气象场 / 国界省界 / 专题注记）在 ready 之后补算完成，合并进数据并重画
@@ -264,7 +285,7 @@
     // 把主要河流画进球体纹理
     if (app.aux.rivers && map.paths) { const k = img.width / app.data.W; x.setTransform(k, 0, 0, k, 0, 0); x.strokeStyle = '#4b8fc6'; x.lineCap = 'round'; const rp = map.riverPaths(null); [0, 1].forEach(t => [1, 2, 3, 4].forEach(i => { x.lineWidth = (0.5 + i * 0.35) / k; x.stroke(rp.byTier[t].cls[i]); })); }
     app.texCanvas = c;
-    if (app.state && app.topic() === 'terrain') { const rec = loadSaved().find(w => w.key === G.Config.encode(app.state)); if (rec && !rec.thumb) { saveWorld(); G.Home.setJob({ name: $('worldName').textContent, seed: app.state.seed, stage: '推演完成 · 用时 ' + (app.data.info.ms / 1000).toFixed(1) + ' 秒', f: 1, done: true, thumb: worldThumb() }); } }
+    if (app.state && app.topic() === 'terrain') { const rec = loadSaved().find(w => w.key === G.Config.encode(app.state) && currentRecord(w)); if (rec && !rec.thumb) { saveWorld(); G.Home.setJob({ name: $('worldName').textContent, seed: app.state.seed, stage: '推演完成 · 用时 ' + (app.data.info.ms / 1000).toFixed(1) + ' 秒', f: 1, done: true, thumb: worldThumb() }); } }
     const t = document.createElement('canvas'); t.width = 152; t.height = 152; const tx = t.getContext('2d');
     tx.drawImage(c, c.width * 0.18, 0, c.height * 1.0, c.height, 0, 0, 152, 152);
     $('layerThumb').src = t.toDataURL('image/jpeg', 0.8);
@@ -343,8 +364,8 @@
             <span><svg viewBox="0 0 28 14"><rect width="28" height="14" rx="3" fill="rgba(150,186,170,.25)"/><path d="M2 4h5M4 5.5h2M14 4h5M8 10h6M20 10h6" stroke="#447d8c" stroke-width="1.1"/></svg>湿地范围（地貌符号）</span>
       <span><svg viewBox="0 0 28 14"><path d="M11 4h6M11 10h6" stroke="#5b4636" stroke-width="1.4"/></svg>桥梁（地方级起）</span>
       <span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#463428" stroke-width="1.6"/></svg>国界</span>
-      <span>${G.MapIcons.svgFort('fort')}边堡 / 边塞（区域级起）</span>
-      <span>${G.MapIcons.svgFort('pass-fort')}关隘（山口与干道过境）</span>
+      <span>${G.MapIcons.svgFort('fort')}边境关塞（区域级起）</span>
+      <span>${G.MapIcons.svgRuin()}撤守或废弃旧关（细部级）</span>
       <span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#6e503c" stroke-width="1.2" stroke-dasharray="1.5 2.5"/></svg>国家与部族边疆</span>
       <span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#be5532" stroke-width="2"/></svg>干道</span>
       <span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#b9734b" stroke-width="1.2"/></svg>区域与地方道路</span>
@@ -376,6 +397,8 @@
     else if (t === 'sprecip') h += `<h5>${SEASONS[app.season]} · 季节降水（mm/季）</h5><div class="ramp" style="background:${grad([[0, '#f3e6c4'], [40, '#ece0a4'], [120, '#c4df9c'], [260, '#7cc8ae'], [500, '#4c9ad4'], [900, '#3561bd'], [1500, '#2b3f93']], 0, 1500)}"></div><div class="ramp-l"><span>0</span><span>260</span><span>900</span><span>1500</span></div>` + seasonSym();
     else if (t === 'stemp') h += `<h5>${SEASONS[app.season]} · 季节气温（°C）</h5><div class="ramp" style="background:${grad([[-45, '#323a8f'], [-25, '#5774cc'], [-8, '#9fc4ec'], [3, '#d8ecf2'], [12, '#f4f1c6'], [20, '#f6cd82'], [28, '#ec8d55'], [36, '#c9433d'], [44, '#8a1b35']], -45, 44)}"></div><div class="ramp-l"><span>-45</span><span>0</span><span>20</span><span>44</span></div>` + seasonSym();
     else if (t === 'plates') {
+      if (d.info.geologyStatus==='not-generated') h += '<p>这张图纸未定义板块构造；当前仅展示地图范围。</p>';
+      else if (d.info.geologyStatus==='hypothetical') h += '<p>假想构造：依照导入地形生成，并非从图片反推出真实板块历史。</p>';
       h += `<h5>构造边界</h5><div class="sym"><span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#2f5b4f" stroke-width="2.4"/><path d="M9 7l3-5 3 5z" fill="#2f5b4f"/></svg>汇聚边界（造山 / 海沟 / 岛弧）</span><span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#d14b42" stroke-width="2"/></svg>离散边界（洋中脊 / 裂谷）</span><span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#e09a37" stroke-width="1.7" stroke-dasharray="5 3"/></svg>转换断层</span></div>`;
       h += `<h5>板块</h5><div class="sw">${d.plates.map((p, i) => `<span data-name-id="plate:${i}"><i style="background:${palColor(pal.plate, i)}"></i><em>${p.name}</em></span>`).join('')}</div>`;
     } else if (t === 'heritage') {
@@ -393,7 +416,7 @@
         h += `<h5><i class="sys-sw" style="background:rgb(${col})"></i>${A.NAME[c]} <small>${cnt[c]} 国 · ${Math.round(area[c] / Math.max(1, tot) * 100)}% 国土</small></h5><p class="sys-desc">${A.DESC[c]}</p><div class="sw">${top.map(([k, i]) => `<span data-name-id="country:${i}" title="${esc(k.gov || '')}"><i style="background:${palColor(pal.system, i)}"></i><em>${k.name}</em></span>`).join('')}${list[c].length > 4 ? `<span><em>等 ${list[c].length} 国</em></span>` : ''}</div>`; }
       h += `<div class="sw" style="margin-top:8px"><span><i style="background:#efe6d2"></i><em>无国家的部落与游牧空间</em></span><span><i style="background:#f3efe6;border:1px solid #ddd"></i><em>无人荒野 / 冰盖</em></span></div>`;
     } else {
-      const map2 = { country: ['country', d.countries], govern: ['country', d.countries], province: ['province', d.provinces], culture: ['culture', d.cultures], language: ['language', d.languages], religion: ['religion', d.religions] }[t];
+      const map2 = { country: ['country', d.countries], govern: ['country', d.countries], province: ['province', d.provinces], species: ['species',d.species], culture: ['culture', d.cultures], language: ['language', d.languages], religion: ['religion', d.religions] }[t];
       const [pk, list] = map2;
       const items = list.map((x, i) => [x, i]);
       if (pk === 'country') items.sort((a, b) => b[0].pop - a[0].pop);
@@ -414,7 +437,7 @@
     const d = app.data; if (!d) return;
     const c = d.cfg, s = d.stats, st = app.state;
     const q = id => { const qq = G.Config.Q.find(x => x.id === id); const o = qq.o.find(x => x[0] === st.a[id]); return o[1] + (o[2] ? ' · ' + o[2] : ''); };
-    const polarName = { land: '有大陆', ocean: '以海洋为主', separate: '单独大陆' };
+    const polarName = { land: '有大陆', ocean: '以海洋为主', separate: '单独大陆', imported:'按导入图纸' };
     const kv = (a) => `<dl class="kv">${a.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
     const pal = d.pal;
     const topK = d.countries.map((k, i) => [k, i]).sort((a, b) => b[0].pop - a[0].pop).slice(0, 12);
@@ -424,7 +447,8 @@
       <h3>天文</h3>
       ${kv([['恒星', q('star')], ['半径', c.radius + ' km'], ['一天', c.day + ' 小时'], ['自转', c.retro ? '逆行' : '顺行'], ['公转', `${c.yearDays} 日 · 轴倾角 ${c.tilt}°`], ['卫星与星环', q('moons')], ['环流带', `哈德来 ${d.info.hE}° · 费雷尔 ${d.info.fE}°`]])}
       <h3>地质</h3>
-      ${kv([['板块', `${d.info.plates} 块 · ${q('plates').split(' · ')[1]}`], ['陆地占比', Math.round(c.land * 100) + '%'], ['北极', polarName[d.info.polar.N]], ['南极', polarName[d.info.polar.S]], ['新大陆', d.info.newWorld ? '有' : '无'], ['最高峰', Math.round(d.info.maxE) + ' m'], ['最深海沟', Math.round(-d.info.minE) + ' m']])}
+      ${d.info.terrain ? kv([['原始图纸',esc((st.terrainInput.source?.asset || st.terrainInput.asset).name)],['算法介入',d.info.terrain.intervention+' / 100'],['高程依据',st.terrainInput.processing ? '根据上传图片自动估算' : '原始灰度高度图']]) : ''}
+      ${kv([['板块', d.info.geologyStatus==='not-generated'?'图纸未提供构造信息':d.info.geologyStatus==='hypothetical'?`${d.info.plates} 块 · 假想构造`:`${d.info.plates} 块 · ${q('plates').split(' · ')[1]}`], ['陆地占比', c.terrainInput?'依导入图纸及介入设置':Math.round(c.land * 100) + '%'], ['北极', polarName[d.info.polar.N]], ['南极', polarName[d.info.polar.S]], ['新大陆', d.info.newWorld ? '有' : '无'], ['最高峰', Math.round(d.info.maxE) + ' m'], ['最深海沟', Math.round(-d.info.minE) + ' m']])}
       <h3>文明</h3>
       ${kv([['时代', s.endYear ? `文明纪元第 ${s.endYear} 年 · ${G.Config.ageLabel(s.endYear)}` : q('era')], ['人口规模', q('era')], ['总人口', fmtPop(s.population)], ['环境承载区间', fmtPop(s.supportRange[0]) + ' – ' + fmtPop(s.supportRange[1])], ['道路 / 海运航线 / 桥梁', `${s.roads} / ${s.seaRoutes} / ${s.bridges}`], ['边疆部族', s.tribes], ['国家', s.countries], ['省份', s.provinces], ['聚落', s.settlements], ['文化圈 / 语言 / 宗教', `${s.cultures} / ${s.languages} / ${s.religions}`], ['部族与非国家空间', Math.round(s.tribalShare * 100) + '%']])}
       <h3>人口最多的国家</h3>
@@ -452,8 +476,9 @@
   function buildIndex() {
     const d = app.data; index = [];
     d.countries.forEach(k => { if (k.lx !== undefined) index.push({ n: k.name, t: '国家', x: k.lx, y: k.ly, z: 4 }); });
-    const TIER = { metropolis: '大都会', city: '城市', town: '城镇', site: '要塞' };
-    d.cities.forEach((c, ci) => index.push({ ci, n: c.name, t: c.capital !== undefined ? '首都' : c.seat !== undefined ? '省会' : c.role === 'military-post' ? (c.type === 'pass-fort' ? '边关' : '要塞') : TIER[c.tier] || '城镇', x: c.x, y: c.y, z: 10, pop: c.pop }));
+    const TIER = { metropolis: '大都会', city: '城市', town: '城镇', site: '聚落' };
+    d.cities.forEach((c, ci) => index.push({ ci, n: c.name, t: c.capital !== undefined ? '首都' : c.seat !== undefined ? '省会' : c.tier === 'site' ? '聚落' : TIER[c.tier] || '城镇', x: c.x, y: c.y, z: 10, pop: c.pop }));
+    (d.forts||[]).forEach(f=>{const info=G.FortLifecycle.search(f,Infinity,d.cities,false);if(info)index.push({fort:f.id,n:app.nameOf('fort:'+f.id,f.name),...info});});
     d.provinces.forEach(p => { const c = d.cities[p.seat]; if (c) index.push({ n: p.name, t: '省份', x: c.x, y: c.y, z: 7 }); });
     const tn = { ridge: '山岭', hills: '丘陵', range: '山脉', plateau: '高原', plain: '平原', basin: '盆地', peninsula: '半岛', bay: '海湾', snow: '雪山', peak: '山峰', ocean: '大洋', sea: '海域', continent: '大陆', island: '岛屿', lake: '湖泊' };
     d.labels.forEach(l => index.push({ n: l.name, t: tn[l.type] || '地貌', x: l.x, y: l.y, z: l.type === 'ocean' || l.type === 'continent' ? 1.6 : l.type === 'peak' || l.type === 'snow' ? 12 : 4, pop: l.h }));
@@ -466,9 +491,11 @@
   $('q').addEventListener('input', () => {
     const v = $('q').value.trim();
     if (!v || !app.data) { $('results').hidden = true; return; }
-    resList = index.filter(r => r.n.includes(v)).sort((a, b) => (a.n.indexOf(v) - b.n.indexOf(v)) || ((b.pop || 1e9) - (a.pop || 1e9))).slice(0, 9);
+    const history = G.Timeline && G.Timeline.on ? G.Timeline.data : null, selectedYear = history ? G.Timeline.year : Infinity;
+    resList = index.map(r => { if (!history || !r.fort) return r; const f = (history.forts || []).find(x => x.id === r.fort), info = f && G.FortLifecycle.search(f,selectedYear,history.cities,true); return info ? {...r,...info} : null;
+    }).filter(r => r && r.n.includes(v)).sort((a, b) => (a.n.indexOf(v) - b.n.indexOf(v)) || ((b.pop || 1e9) - (a.pop || 1e9))).slice(0, 9);
     resSel = 0;
-    $('results').innerHTML = resList.length ? resList.map((r, i) => `<button data-i="${i}" class="${i ? '' : 'on'}"><span>${r.n}</span><small>${r.t}</small></button>`).join('') : '<button disabled><span>没有找到</span></button>';
+    $('results').innerHTML = resList.length ? resList.map((r, i) => `<button data-i="${i}" class="${i ? '' : 'on'}"><span>${esc(r.n)}</span><small>${esc(r.t)}</small></button>`).join('') : '<button disabled><span>没有找到</span></button>';
     $('results').hidden = false;
   });
   $('q').addEventListener('keydown', e => {
@@ -482,13 +509,14 @@
     $('results').hidden = true; $('q').value = r.n;
     if (r.plate && app.tab !== 'plates') { app.tab = 'plates'; renderPanel(); onTopicChange(); }
     if (r.t === '国家' && !app.aux.borders && !(app.tab === 'human' && G.POLITICAL_TOPIC[app.topic()])) { app.aux.borders = true; renderPanel(); map.refreshRaster(); }
-    if (r.ci !== undefined && !app.aux.cities) { app.aux.cities = true; renderPanel(); } // 搜到的城市要看得见：当前专题关着城市时为它打开
+    if ((r.ci !== undefined || r.fort) && !app.aux.cities) { app.aux.cities = true; renderPanel(); } // 搜到的城市要看得见：当前专题关着城市时为它打开
     if (r.t === '河流' && !app.aux.rivers) { app.aux.rivers = true; renderPanel(); }
     if (/山|高原|平原|盆地|半岛|海|湾|湖|岛|大陆|大洋|丘陵|岭|地貌/.test(r.t) && !app.aux.names) { app.aux.names = true; renderPanel(); }
     showGlobe(false);
     map.flyTo(r.x, r.y, r.z);
     app.highlight = { x: r.x, y: r.y, t: performance.now(), n: r.n };
-    if (r.ci !== undefined && G.City) G.City.open(r.ci);
+    if (r.fort && G.City) { const f = (app.data.forts || []).find(x => x.id === r.fort); if (f) G.City.openFort(f,G.Timeline && G.Timeline.on ? G.Timeline.year : Infinity); }
+    else if (r.ci !== undefined && G.City) G.City.open(r.ci);
     const tick = () => { map.draw(); if (performance.now() - app.highlight.t < 2600) requestAnimationFrame(tick); };
     tick();
   }
@@ -618,8 +646,10 @@
       tools.markers.push({ x: ((gx % d.W) + d.W) % d.W, y: gy, n: '标记 ' + (tools.markers.length + 1) });
       saveMarkers(); updateToolCard(true); map.draw();
     } else if (G.Timeline && G.Timeline.on) {
-      G.Timeline.click(sx, sy); // 时间线：点城市看它的兴衰
+      const fort = G.Timeline.fortAt(sx,sy); if(fort) G.City.openFort(fort,G.Timeline.year);
+      else G.Timeline.click(sx, sy); // 时间线：点城市看它的兴衰
     } else if (G.City) {
+      const fort = map.fortAt(sx,sy); if(fort){G.City.openFort(fort,Infinity);return;}
       // 点城市：打开城市详情（街道、城墙、城门、港口）
       const id = map.cityAt(sx, sy);
       if (id) G.City.open(+id.split(':')[1]);
@@ -650,14 +680,14 @@
         <div class="row" style="flex-wrap:wrap;margin:0 0 8px">${modes}</div>`;
       h += `<datalist id="navCities">${app.data.cities.filter(c => c.tier !== 'site').map(c => `<option value="${c.name}">`).join('')}</datalist>`;
       if (tools.pick >= 0) h += `<p class="nav-hint">在地图上点击一个城市或任意位置，作为${tools.pick === 0 ? '起点' : tools.pick === last ? '终点' : '途经点'}。</p>`;
-      if (tools.busy) h += '<p class="nav-hint">正在沿道路网规划…</p>';
-      else if (res && res.fail) h += `<p class="nav-hint">第 ${(res.leg || 0) + 1} 段没有该交通方式可通行的道路或航线。</p>`;
+      if (tools.busy) h += '<p class="nav-hint">正在比较道路与可通行地形…</p>';
+      else if (res && res.fail) h += `<p class="nav-hint">第 ${(res.leg || 0) + 1} 段没有该交通方式可通行的路线；海湖需要可用渡运或航线。</p>`;
       else if (res) {
-        const segs = []; let cur = null; const CLS = { trunk: '干道', regional: '区域道路', local: '地方道路', sea: res.shipName + '航线', rail: '铁路', path: '小路' };
+        const segs = []; let cur = null; const CLS = { trunk: '干道', regional: '区域道路', local: '地方道路', sea: res.shipName + '渡运', rail: '铁路', path: '小路', offroad:'越野' };
         for (const p of res.passed) { const nm = app.data.cities[p.city].name; if (!cur || cur.cls !== p.cls) { cur = { cls: p.cls, towns: [] }; segs.push(cur); } if (cur.towns[cur.towns.length - 1] !== nm) cur.towns.push(nm); }
         h += `<div class="big">${fmtDays(res.days)}</div>${res.mode} · 全程 ${res.km.toLocaleString()} km${res.seaKm > 20 ? ` · 其中${res.shipName} ${res.seaKm.toLocaleString()} km` : ''}${res.railKm > 20 ? ` · 铁路 ${res.railKm.toLocaleString()} km` : ''}`;
         if (res.legs.length > 1) h += `<div class="nav-legs">${res.legs.map((L, k) => `<span>第 ${k + 1} 段 ${L.km.toLocaleString()} km · ${fmtDays(L.days)}</span>`).join('')}</div>`;
-        h += `<ol class="nav-steps">${segs.slice(0, 14).map(sg => `<li><b>${CLS[sg.cls] || sg.cls}</b> 经 ${sg.towns.slice(0, 6).join('、')}${sg.towns.length > 6 ? ' 等' : ''}</li>`).join('')}</ol><p class="nav-note">${tp.note}</p>`;
+        h += `<ol class="nav-steps">${segs.slice(0,14).map(sg=>`<li><b>${CLS[sg.cls]||sg.cls}</b> 经 ${sg.towns.slice(0,6).join('、')}${sg.towns.length>6?' 等':''}</li>`).join('')}</ol><p class="nav-note">${(res.segments||[]).slice(0,20).map(sg=>`${CLS[sg.cls]||sg.cls} ${fmtDays(sg.endDay-sg.startDay)}`).join(' · ')}<br>${tp.note} 越野按实际地形和坡度减速。</p>`;
       } else h += '<p class="nav-hint">填好起点和终点后自动规划；可添加多个途经点，按顺序经过。</p>';
       card.innerHTML = h;
     } else if (app.tool === 'measure') {
@@ -684,9 +714,8 @@
     const ci = d.cities.findIndex(c => c.name === v); if (ci < 0) { if (v) toast('没有找到「' + v + '」，请从下拉中选择或在地图上点选'); return; }
     const c = d.cities[ci]; tools.route[+i] = { x: c.x, y: c.y, n: c.name, city: ci }; tools.routeRes = null; updateToolCard(); map.draw(); if (tools.route.every(Boolean)) runRoute(); });
   $('toolCard').addEventListener('input', e => { const i = e.target.dataset.mk; if (i !== undefined) { tools.markers[+i].n = e.target.value; saveMarkers(); map.draw(); } });
-  const mkKey = () => 'planet-markers-' + (app.state ? G.Config.encode(app.state) : '');
-  function saveMarkers() { try { localStorage.setItem(mkKey(), JSON.stringify(tools.markers)); } catch (e) { /* 忽略 */ } }
-  function loadMarkers() { try { tools.markers = JSON.parse(localStorage.getItem(mkKey()) || '[]'); } catch (e) { tools.markers = []; } }
+  function saveMarkers() { saveWorld(); }
+  function loadMarkers() { tools.markers = loadSaved().find(w => w.key === G.Config.encode(app.state) && currentRecord(w))?.markers || []; }
 
   app.drawTools = (c, mv, ks) => {
     const d = app.data, W = d.W;
@@ -732,7 +761,7 @@
   // ---------- 悬浮信息 ----------
   let hoverBusy = false, hoverNext = null;
   app.onHover = (e) => {
-    if (!e || !app.hover || !app.data || app.tool) { $('tip').hidden = true; return; }
+    if (!e || (!app.hover && !e.force) || !app.data || app.tool) { $('tip').hidden = true; return; }
     hoverNext = e; if (!hoverBusy) doHover();
   };
   async function doHover() {
@@ -742,21 +771,23 @@
     const m = await call('probe', { gx, gy, season: app.season });
     hoverBusy = false;
     const p = m.data;
-    if (!p || !app.hover) { $('tip').hidden = true; } else showTip(p, e);
+    if (!p || (!app.hover && !e.force)) { $('tip').hidden = true; } else showTip(p, e);
     if (hoverNext) doHover();
   }
   const TOUCH = matchMedia('(hover: none)').matches || matchMedia('(pointer: coarse)').matches;
   function showTip(p, e) {
     const d = app.data, tip = $('tip');
     if (app.tab === 'human' && app.topic() === 'heritage' && d.heritage) { const hi = map.heritageAt(e.offsetX, e.offsetY); if (hi >= 0) { const o = d.heritage[hi], CATN = { religious: '宗教遗迹', war: '战争遗迹', culture: '人文遗迹' }, KN = { holy: '圣地', mountain: '圣山', tomb: '圣墓', siege: '围城', battle: '古战场', ruin: '遗址', fort: '旧关塞', revolt: '起事处', capital: '古都', mausoleum: '帝王陵', cradle: '文明摇篮' };
-      const rows2 = [['类别', CATN[o.cat] + ' · ' + (KN[o.kind] || '')]]; if (o.year != null) rows2.push(['年代', '第 ' + Math.round(o.year) + ' 年']); if (o.rel >= 0 && d.religions[o.rel]) rows2.push(['宗教', d.religions[o.rel].name]); if (o.city >= 0 && d.cities[o.city]) rows2.push(['所在', d.cities[o.city].name]);
+      const rows2 = [['类别', CATN[o.cat] + ' · ' + (KN[o.kind] || '')]]; if (o.year != null) rows2.push(['年代', G.HistoryDate.label(o.year)]); if (o.rel >= 0 && d.religions[o.rel]) rows2.push(['宗教', d.religions[o.rel].name]); if (o.city >= 0 && d.cities[o.city]) rows2.push(['所在', d.cities[o.city].name]);
       const esc = x => String(x ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
       tip.innerHTML = `<h4>${esc(app.nameOf ? app.nameOf('heritage:' + hi, o.name) : o.name)}</h4><div class="sub">${esc(rows2[0][1])}</div><dl>${rows2.slice(1).map(([a, b]) => `<dt>${a}</dt><dd>${esc(b)}</dd>`).join('')}</dl><p style="margin:6px 0 0;max-width:280px;line-height:1.55;font-size:12px;color:#5a5048">${esc(o.text)}</p>`;
       placeTip(tip, e); return; } }
     const ll = `${Math.abs(p.lat).toFixed(1)}°${p.lat >= 0 ? 'N' : 'S'} · ${Math.abs(p.lon).toFixed(1)}°${p.lon >= 0 ? 'E' : 'W'}`;
     let title, rows = [];
     if (app.tab === 'plates') {
-      title = d.plates[p.plate].name; rows = [['板块类型', d.plates[p.plate].continental ? '大陆板块' : '大洋板块'], ['运动速度', d.plates[p.plate].speed.toFixed(1) + ' cm/年'], [p.land ? '海拔' : '水深', Math.abs(p.elev) + ' m']];
+      const plate = d.plates[p.plate];
+      title = plate ? plate.name : '未设定板块构造'; rows = plate ? [['板块类型', plate.continental ? '大陆板块' : '大洋板块'], ['运动速度', plate.speed.toFixed(1) + ' cm/年'], [p.land ? '海拔' : '水深', Math.abs(p.elev) + ' m']] : [['依据','导入图纸只定义了地形'],[p.land ? '海拔' : '水深', Math.abs(p.elev) + ' m']];
+      if (d.info.geologyStatus==='hypothetical') rows.unshift(['构造来源','依据导入地形生成的假想板块']);
     } else if (!p.land) {
       title = p.lake ? '湖泊' : '海洋'; rows = [['水深', Math.abs(p.elev) + ' m'], ['海表气温', p.ts.toFixed(1) + ' °C']];
       if (p.snow >= 3) rows.push(['海冰', p.snow === 4 ? '常年海冰' : '季节性海冰']);
@@ -775,6 +806,21 @@
         if (p.language >= 0) rows.push(['语言', d.languages[p.language].name]);
         if (p.religion >= 0) { const RG = d.religions[p.religion], TY = { monotheist: '一神天启', dualist: '光暗二元', polytheist: '多神信仰', dharmic: '轮回觉悟', ancestral: '祖灵礼教', shamanic: '萨满万灵', philosophy: '哲学教化' }; rows.push(['宗教', RG.name + (TY[RG.type] ? ' · ' + TY[RG.type] : '') + (RG.parent >= 0 && d.religions[RG.parent] ? '（' + d.religions[RG.parent].name + '的一派）' : '')]); }
         rows.push(['人口密度', p.pop < 1 ? '< 1 人/km²' : Math.round(p.pop) + ' 人/km²']);
+        if (p.human && p.human.groups.length) {
+          const total = p.human.groups.reduce((s,g)=>s+g.population,0);
+          for (const [field,label,defs] of [['species','区域种族',d.species],['culture','区域文化',d.cultures],['religion','区域信仰',d.religions]]) {
+            const counts=new Map(); for(const g of p.human.groups)counts.set(g[field],(counts.get(g[field])||0)+g.population);
+            const nameOf=id=>(field==='culture'&&id<=-2?p.human.groups.find(g=>g.culture===id)?.cultureName:null)||defs[id]?.name||defs[id]?.label||(field==='religion'?'未归属宗教':'早期文化');
+            rows.push([label,[...counts].sort((a,b)=>b[1]-a[1]).map(([id,n])=>`${nameOf(id)} ${(100*n/total).toFixed(1)}%`).join('、')]);
+          }
+          const food=p.human.economy;
+          if(food && (app.topic()==='pop'||app.topic()==='species')) {
+            const number=n=>Math.round(n).toLocaleString('zh-CN');
+            rows.push(['区域年度粮食',`可用 ${number(food.available)} / 需求 ${number(food.demand)} 人年粮`],['粮食来源',`本地产出 ${number(food.production)} + 输入 ${number(food.imported)} − 输出 ${number(food.exported)}`]);
+            if(Number.isFinite(food.hoursPerFoodYear))rows.push(['单位供粮劳动',`${food.hoursPerFoodYear.toFixed(1)} 工时/人年粮`]);
+          }
+          if(food?.guards>0)rows.push(['要塞驻守',`${Math.round(food.guards).toLocaleString('zh-CN')} 人 · 供养后余粮 ${Math.round(food.afterFort-food.demand).toLocaleString('zh-CN')} 人年粮`]);
+        }
         if (p.country >= 0) rows.push(['政体', k.formLabel + (k.liege !== undefined && d.countries[k.liege] ? ' · 宗主 ' + d.countries[k.liege].name : '')], ...(G.AdminSys ? [['行政制度', G.AdminSys.NAME[k.sys || G.AdminSys.classOfCountry(k)]]] : []), ...(k.gov ? [['政府组织', k.gov]] : []), ...(k.ideas && k.ideas.length ? [['思潮', `已接纳 ${k.ideas.length} 条 · 最新：${k.ideas[k.ideas.length - 1]}${k.ideas.includes('远洋航海') ? ' · 可远洋殖民' : ''}`], ['军事 / 治理', `${'●'.repeat(Math.round(k.mil * 2))}${'○'.repeat(7 - Math.round(k.mil * 2))} / ${'●'.repeat(Math.round(k.adm * 2))}${'○'.repeat(6 - Math.round(k.adm * 2))}`]] : []), ...(k.ruler ? [['在位君主', k.ruler[2] + ' ' + k.ruler[1] + (k.house ? ' · ' + k.house : '') + ' · 第 ' + k.ruler[0] + ' 年即位']] : []), ['实际治理', Math.round(p.gov * 100) + '%' + (isFinite(p.govDays) ? ` · 距首都 ${p.govDays < 1 ? '<1' : Math.round(p.govDays)} 日` : '')]);
         else if (p.tribe >= 0 && d.tribes[p.tribe]) rows.push(['生计', { pastoral: '游牧', highland: '山地', forest: '林地狩猎', maritime: '海岸', foraging: '采集渔猎' }[d.tribes[p.tribe].livelihood]]);
       } else if (app.topic() === 'agri') rows.push(['农业潜力', Math.round(p.agri * 100) + '%']);
@@ -783,7 +829,15 @@
       if (p.frost) rows.push(['冻土潜势', p.frost === 2 ? '连续' : '不连续']);
     }
     if (G.Timeline && G.Timeline.on && p.land && !p.lake) { const ht = G.Timeline.tip(map.toGrid(e.offsetX, e.offsetY)); if (ht) { title = ht.title; rows = ht.rows.concat(rows.filter(r => r[0] === '海拔' || r[0] === '气候')); } } // 时间线：显示当年的情况
-    tip.innerHTML = `<h4>${title}</h4><div class="sub">${ll}</div><dl>${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>`;
+    const historical=G.Timeline&&G.Timeline.on, fort=historical?G.Timeline.fortAt(e.offsetX,e.offsetY):map.fortAt(e.offsetX,e.offsetY);
+    if(fort){const info=app.fortInfo(fort,historical?G.Timeline.year:Infinity);title=info.title;rows=info.rows;}
+    else {
+      const cityHit = historical ? G.Timeline.dots().find(dot => Math.hypot(dot.x-e.offsetX,dot.y-e.offsetY) < dot.r+4)?.i : (() => {const id=map.cityAt(e.offsetX,e.offsetY);return id ? +id.split(':')[1] : undefined;})();
+      if(cityHit !== undefined) { const when=historical?G.Timeline.year:Infinity, source=historical?G.Timeline.data:app.data;
+        for(const [old,st] of G.FortLifecycle.linked(source.forts||[],cityHit,when,!!historical)) rows.push(['旧关沿革',`${app.nameOf('fort:'+old.id,old.name)} · ${G.HistoryDate.label(old.year)}建造，${G.HistoryDate.label(st.since)}并入已有聚落`]);
+      }
+    }
+    tip.innerHTML = `<h4>${esc(title)}</h4><div class="sub">${ll}</div><dl>${rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>`;
     placeTip(tip, e);
   }
   function placeTip(tip, e) {
@@ -796,6 +850,22 @@
     if (y + th > innerHeight - 8) y = e.offsetY + r.top - th - 16;
     tip.style.left = x + 'px'; tip.style.top = y + 'px';
   }
+  app.fortInfo=(fort,year=Infinity)=>{
+    let entry=null;for(const log of fort.log){if(log[0]>year)break;entry=log;}
+    const state=G.FortLifecycle.at(fort,year), history=G.Timeline && G.Timeline.on ? G.Timeline.data : null;
+    const city=state && state.status==='settlement' ? (history ? history.cities[state.cityIndex] : app.data.cities[state.settlementIndex]) : null;
+    return {title:app.nameOf('fort:'+fort.id,fort.name),rows:[
+      ['建造年代',`${G.HistoryDate.label(fort.year)}`],
+      ['当前状态',state?`${G.FortLifecycle.label(fort,year)} · 第 ${state.since} 年起`:'尚未建成'],
+      ...(state && G.FortLifecycle.reasons[state.reason] ? [['变更缘由',G.FortLifecycle.reasons[state.reason]]] : []),
+      ...(city ? [['关联聚落',history && city.names ? city.names.filter(n=>n[0]<=year).at(-1)?.[1] || city.name : city.name]] : []),
+      ['选址依据','当年道路、边界威胁、绕行代价与供养能力'],
+      ['额外绕行',fort.detourDisconnected?'区域陆路图上无替代路径':`${fort.detourDays.toFixed(1)} 日（区域陆路估计）`],
+      ['筑防劳动',`${Math.round(fort.constructionPersonDays).toLocaleString('zh-CN')} 人日`],
+      ['当期驻守',entry?`${entry[1].toLocaleString('zh-CN')} 人 · 第 ${entry[0]} 年记录`:'尚未建成'],
+      ['额外供养',entry?`${entry[2].toLocaleString('zh-CN')} 人年粮/年`:'—']
+    ]};
+  };
   function windStr([u, v]) {
     const sp = Math.hypot(u, v); if (sp < 0.5) return '静风';
     const from = (Math.atan2(-u, -v) / D2R + 360) % 360;
@@ -803,25 +873,26 @@
   }
 
   // ---------- 世界保存（浏览器本地 + 文件导入导出） ----------
-  // 推演是确定性的：保存 21 题答案、种子与精度即可在任何设备上完整还原同一颗星球。
-  // 世界文件可以存到用户自选的位置，并与该世界关联：之后“保存到世界文件”直接更新同一个文件。
-  // 读到旧版本写出的文件时，按其中的设置迁移到当前版本、重新推演，再由用户决定是否把新版本写回原文件。
-  const SAVE_KEY = 'planet-forge-worlds-v1';
   const VER = G.Config.VERSION;
-  const RESTORE_NOTE = '这份世界文件记录生成设置（21 题答案、种子、精度、文化与宗教库快照）以及你的改名与标记，不含渲染好的地图。打开时按同样设置重新推演；同一版本结果与保存时完全一致，读到旧版本文件时会按其中的设置用新版本重新推演。';
-  const loadSaved = () => { try { return JSON.parse(localStorage.getItem(SAVE_KEY) || '[]'); } catch (e) { return []; } };
-  const storeSaved = list => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(list)); return true; } catch (e) { toast('浏览器存储已满，请先导出或删除一些世界'); return false; } };
-  const stateOf = w => G.Config.migrate(w.state).st; // 本机旧存档同样补齐到当前版本
+  const RESTORE_NOTE = '文件包含生成设定、原始地图、人物与标记；打开时用同版规则重新推演世界，不含完整自然网格快照。';
+  const loadSaved = () => G.WorldStore.list();
+  const storeSaved = list => G.WorldStore.save(list).then(()=>true).catch(error=>{ toast('世界保存失败：'+error.message+'，请导出世界文件',9000); return false; });
+  const currentRecord = w => !!w && w.engineVersion === VER && w.rulesVersion === G.HumanRules.VERSION;
+  const requireCurrent = w => { if (!currentRecord(w)) throw new Error('该世界使用旧版或未知规则，请用原版本打开；原记录已保留'); };
+  const stateOf = w => { requireCurrent(w); return G.Config.validateState(JSON.parse(JSON.stringify(w.state))); };
+  const checkWorld = w => { try { stateOf(w); return true; } catch (e) { toast(e.message, 8000); return false; } };
   function worldThumb() { const c = app.texCanvas; if (!c) return ''; const t = document.createElement('canvas'); t.width = 224; t.height = 112; t.getContext('2d').drawImage(c, 0, 0, 224, 112); return t.toDataURL('image/jpeg', 0.72); }
-  function saveWorld(silent = true) {
+  async function saveWorld(silent = true) {
     if (!app.data || !app.state) return;
     const key = G.Config.encode(app.state), list = loadSaved(), s = app.data.stats;
-    const existing = list.find(w => w.key === key);
-    const rec = { key, state: app.state, names: app.names, name: app.names.world || existing?.name || s.worldName + '星', created: existing?.created || Date.now(), updated: Date.now(), thumb: worldThumb() || existing?.thumb || '',
+    const existing = list.find(w => w.key === key && currentRecord(w));
+    const rec = { key, engineVersion: VER, rulesVersion: G.HumanRules.VERSION, state: app.state, names: app.names, markers:tools.markers, people: app.people, name: app.names.world || existing?.name || s.worldName + '星', created: existing?.created || Date.now(), updated: Date.now(), thumb: worldThumb() || existing?.thumb || '',
       summary: `${s.countries} 国 · ${s.provinces} 省 · ${s.settlements} 聚落 · ${fmtPop(s.population)}人 · ${app.data.W}×${app.data.H}`, ms: app.data.info.ms, ver: VER };
-    const next = [rec, ...list.filter(w => w.key !== key)].slice(0, 40);
-    if (storeSaved(next) && !silent) toast('已保存到“我的世界”');
+    const next = [rec, ...list.filter(w => w.key !== key || !currentRecord(w))];
+    app._lastSaveSucceeded = await storeSaved(next);
+    if (app._lastSaveSucceeded && !silent) toast('已保存到“我的世界”');
     if (!$('savedPanel').hidden) renderSaved();
+    return rec;
   }
 
   // 关联的世界文件句柄（File System Access）：按世界 key 存在 IndexedDB，刷新页面后仍记得保存位置
@@ -832,44 +903,45 @@
     return { get: k => tx('readonly', s => s.get(k)).catch(() => null), set: (k, h) => tx('readwrite', s => s.put(h, k)).catch(() => null), del: k => tx('readwrite', s => s.delete(k)).catch(() => null) };
   })();
   const canPick = () => typeof window.showSaveFilePicker === 'function';
-  const FILE_TYPES = [{ description: '星球推演世界文件', accept: { 'application/json': ['.json'] } }];
+  const FILE_TYPES = [{ description: '星球推演世界文件', accept: { 'application/zip': ['.zip'] } }];
   async function writeHandle(h, text) {
     if (h.queryPermission && (await h.queryPermission({ mode: 'readwrite' })) !== 'granted' && (await h.requestPermission({ mode: 'readwrite' })) !== 'granted') throw new Error('没有获得写入这个文件的权限');
     const w = await h.createWritable(); await w.write(text); await w.close();
   }
-  function worldFile(rec, extra) {
-    const markers = (() => { try { return JSON.parse(localStorage.getItem('planet-markers-' + rec.key) || '[]'); } catch (e) { return []; } })();
-    const names = (() => { try { return JSON.parse(localStorage.getItem('planet-names-' + rec.key) || '{}'); } catch (e) { return {}; } })();
-    const file = Object.assign({ schema: 'planet-forge-world-v1', format: 2, engineVersion: VER, name: rec.name, note: RESTORE_NOTE, state: rec.state, markers, names, summary: rec.summary, created: rec.created, exported: Date.now(), ms: rec.ms || null,
-      engine: `星球推演 ${VER} · 规则移植自世界生成器 1.4.0.dev164` }, extra || {});
-    return { json: JSON.stringify(file, null, 1), markers, names };
+  async function worldFile(rec, extra) {
+    stateOf(rec);
+    const markers = rec.markers || [], names = rec.names || {};
+    const file = Object.assign({ engineVersion: rec.engineVersion, rulesVersion: rec.rulesVersion, name: rec.name, note: RESTORE_NOTE, state: rec.state, people:rec.people || [], markers, names, summary: rec.summary, created: rec.created, exported: Date.now(), ms: rec.ms || null,
+      engine: `星球推演 ${VER} · 规则移植自世界生成器 1.4.0.dev164` }, extra || {}, {engineVersion:rec.engineVersion,rulesVersion:rec.rulesVersion});
+    return { blob: await G.WorldPackage.encode(file, G.WorldAssets), markers, names };
   }
   const secs = ms => Math.max(1, Math.round(ms / 1000));
   // mode：undefined = 有关联文件就直接更新，否则选位置；'saveAs' = 总是重新选位置
   async function exportWorld(rec, mode, extra) {
-    const { json, markers, names } = worldFile(rec, extra);
-    const what = ['生成设置与种子', Object.keys(names).length ? '改名' : '', markers.length ? `${markers.length} 个标记` : ''].filter(Boolean).join('、');
+    let data; try { data = await worldFile(rec, extra); } catch (e) { toast(e.message, 8000); return false; }
+    const { blob, markers, names } = data;
+    const what = ['生成设置与种子', rec.state.terrainInput ? '原始地图' : '', rec.people?.length ? `${rec.people.length} 位人物` : '', Object.keys(names).length ? '改名' : '', markers.length ? `${markers.length} 个标记` : ''].filter(Boolean).join('、');
     const tail = `记录了${what}；打开时会按同样设置重新推演${rec.ms ? `（约 ${secs(rec.ms)} 秒）` : ''}。`;
     const linked = mode === 'saveAs' ? null : await files.get(rec.key);
     if (linked) {
-      try { await writeHandle(linked, json); toast(`已更新世界文件「${linked.name}」（${VER}）：${tail}`, 6500); renderFileInfo(); return true; }
+      try { await writeHandle(linked, blob); toast(`已更新世界文件「${linked.name}」（${VER}）：${tail}`, 6500); renderFileInfo(); return true; }
       catch (e) { if (e.name === 'AbortError') return false; toast('原位置写不进去（' + (e.message || e.name) + '），请重新选择保存位置'); }
     }
     if (canPick()) {
       try {
-        const h = await window.showSaveFilePicker({ suggestedName: `${rec.name}.planet.json`, types: FILE_TYPES, id: 'planet-world' });
-        await writeHandle(h, json); await files.set(rec.key, h); renderFileInfo();
+        const h = await window.showSaveFilePicker({ suggestedName: `${rec.name}.planet.zip`, types: FILE_TYPES, id: 'planet-world' });
+        await writeHandle(h, blob); await files.set(rec.key, h); renderFileInfo();
         toast(`已保存到你选的位置「${h.name}」（${VER}）：${tail}之后“保存到世界文件”会直接更新这个文件。`, 7000); return true;
       } catch (e) {
         if (e.name === 'AbortError') return false; // 用户取消
-        download(json, rec.name);
+        download(blob, rec.name);
         toast(`当前环境不允许选择保存位置（例如页面嵌在其他页面中），已下载到浏览器默认的下载文件夹；在新标签页打开本页即可自选位置。${tail}`, 8000); return true;
       }
     }
-    download(json, rec.name);
+    download(blob, rec.name);
     toast(`这个浏览器不支持自选保存位置，已下载到默认的下载文件夹（${VER}）：${tail}`, 7000); return true;
   }
-  function download(json, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = `${name}.planet.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+  function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${name}.planet.zip`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 30000); }
   // 各处显示“已关联的世界文件”
   async function fileInfo(key) { const h = await files.get(key); return h ? h.name : ''; }
   function renderFileInfo() {
@@ -887,53 +959,29 @@
     }
     $('importFile').click();
   }
-  let upgrade = null; // { key, from, name, changes, handle }
   async function importWorld(fileObj, handle) {
     try {
-      const f = JSON.parse(await fileObj.text());
-      if (f.schema !== 'planet-forge-world-v1' || !f.state || !f.state.a) throw new Error('不是星球推演导出的世界文件');
-      const from = G.Config.verOf(f), cmp = G.Config.verCmp(from, VER);
-      const { st, changes } = G.Config.migrate(f.state), key = G.Config.encode(st), name = f.name || '导入的世界';
-      if (Array.isArray(f.markers)) localStorage.setItem('planet-markers-' + key, JSON.stringify(f.markers));
-      if (f.names && typeof f.names === 'object') localStorage.setItem('planet-names-' + key, JSON.stringify(f.names));
-      const list = loadSaved(); storeSaved([{ key, state: st, name, created: f.created || Date.now(), updated: Date.now(), thumb: '', summary: f.summary || '', ms: f.ms || null, ver: VER }, ...list.filter(w => w.key !== key)]);
+      const f = await G.WorldPackage.decode(fileObj, { engineVersion:VER, rulesVersion:G.HumanRules.VERSION, validateState:G.Config.validateState, validatePeople: (people,state) => {
+        if (people.length>10000) throw new Error('人物数量超过本版存档上限');
+        const ids=new Set(), key=G.Config.encode(state);
+        for (const p of people) { G.Life.validateRecord(p,key); if (ids.has(p.id)) throw new Error('人物编号重复'); ids.add(p.id); }
+      }, assets:G.WorldAssets });
+      const st = G.Config.validateState(f.state), key = G.Config.encode(st), name = f.name || '导入的世界';
+      const terrainRaster = st.terrainInput ? await G.MapImport.prepare(st.terrainInput) : undefined;
+      const list = loadSaved();
+      if (!await storeSaved([{ key, engineVersion: f.engineVersion, rulesVersion: f.rulesVersion, state: st, names:f.names || {}, markers:f.markers || [], people:f.people, name, created: f.created || Date.now(), updated: Date.now(), thumb: '', summary: f.summary || '', ms: f.ms || null, ver: VER }, ...list.filter(w => w.key !== key || !currentRecord(w))])) return;
       if (handle) await files.set(key, handle);
-      upgrade = cmp < 0 ? { key, from, name, changes, handle: handle || null } : null;
-      $('savedPanel').hidden = true; G.Wizard.close(); hideUpgrade();
-      generate(st, { name, ms: f.ms, from: cmp < 0 ? from : null });
-      if (cmp > 0) toast(`这份文件来自更新的版本 ${from}，当前是 ${VER}，个别新设置可能无法识别`, 6000);
-    } catch (e) { toast('导入失败：' + e.message); }
+      $('savedPanel').hidden = true; G.Wizard.close();
+      await generate(st, { name, ms: f.ms }, terrainRaster);
+    } catch (e) { toast('导入失败：' + e.message,8000); }
   }
-  // 旧版本文件重新推演完成后：提示写回原文件或另存为新版本
-  function offerUpgrade() {
-    if (!upgrade || !app.state || G.Config.encode(app.state) !== upgrade.key) { hideUpgrade(); return; }
-    const u = upgrade, bar = $('upgradeBar');
-    const ch = u.changes.length ? `设置已补齐到 ${VER}：${u.changes.slice(0, 3).join('、')}${u.changes.length > 3 ? ` 等 ${u.changes.length} 项` : ''}。` : '设置原样沿用。';
-    bar.innerHTML = `<div><b>「${esc(u.name)}」已按 ${VER} 重新推演</b><small>世界文件来自 ${esc(u.from)}。${esc(ch)}地图、历史与人文都按新版本规则生成；改名与标记已带过来。</small></div>
-      <div class="row">${u.handle ? `<button class="btn primary" data-up="write">更新原文件「${esc(u.handle.name)}」</button><button class="btn ghost" data-up="saveAs">另存为…</button>` : `<button class="btn primary" data-up="saveAs">保存为 ${VER} 世界文件…</button>`}<button class="btn ghost" data-up="later">以后再说</button></div>`;
-    bar.hidden = false;
-  }
-  function hideUpgrade() { const b = $('upgradeBar'); if (b) b.hidden = true; }
-  $('upgradeBar').addEventListener('click', async e => {
-    const b = e.target.closest('[data-up]'); if (!b || !upgrade) return;
-    if (b.dataset.up === 'later') { upgrade = null; hideUpgrade(); return; }
-    saveWorld(); const rec = loadSaved().find(w => w.key === upgrade.key); if (!rec) return;
-    const extra = { upgradedFrom: upgrade.from };
-    if (b.dataset.up === 'write' && upgrade.handle) {
-      try { await writeHandle(upgrade.handle, worldFile(rec, extra).json); await files.set(rec.key, upgrade.handle); toast(`已把「${upgrade.handle.name}」更新为 ${VER}`, 5000); upgrade = null; hideUpgrade(); renderFileInfo(); }
-      catch (err) { if (err.name !== 'AbortError') toast('写回原文件失败（' + (err.message || err.name) + '），可以改用“另存为”'); }
-      return;
-    }
-    if (await exportWorld(rec, 'saveAs', extra)) { upgrade = null; hideUpgrade(); }
-  });
-
   function renderSaved() {
     const list = loadSaved();
-    $('savedBody').innerHTML = (list.length ? list.map((w, i) => `<div class="saved-item"><img src="${w.thumb || ''}" alt=""><div><b>${w.name}</b><small>${w.summary || ''}<br>种子 ${w.state.seed} · 保存于 ${new Date(w.updated).toLocaleString('zh-CN', { hour12: false })}</small>
+    $('savedBody').innerHTML = (list.length ? list.map((w, i) => `<div class="saved-item"><img src="${esc(/^data:image\/(jpeg|png);base64,/.test(w.thumb || '') ? w.thumb : '')}" alt=""><div><b>${esc(w.name)}</b><small>${esc(w.summary || '')}<br>种子 ${w.state.seed} · 保存于 ${new Date(w.updated).toLocaleString('zh-CN', { hour12: false })}</small>
       <small class="file-info" data-fileinfo="${w.key}" hidden>世界文件：<b></b></small>
       <div class="row"><button class="chip primary" data-open="${i}">打开</button><button class="chip" data-rename="${i}">改名</button><button class="chip" data-export="${i}">保存到文件</button><button class="chip" data-saveas="${i}">另存为…</button><button class="chip" data-delete="${i}">删除</button></div></div></div>`).join('')
       : '<p class="saved-empty">还没有保存的世界。每次推演完成都会自动保存在这个浏览器里；也可以从菜单导入之前导出的世界文件。</p>')
-      + '<p class="saved-note">存档与世界文件只记录生成设置、种子、改名与标记，不含渲染好的地图；打开时按同样设置重新推演，结果与保存时一致。保存到文件时可以自选位置，之后会直接更新同一个文件。</p>'
+      + '<p class="saved-note">世界文件包含生成设置、原始地图、人物、改名与标记；打开时按同版规则重新推演世界。保存到文件时可以自选位置。</p>'
       + '<div class="row" style="display:flex;gap:8px;margin-top:6px"><button class="btn ghost" id="savedImport">导入世界文件…</button></div>';
     renderFileInfo();
   }
@@ -942,7 +990,7 @@
     const list = loadSaved(), b = e.target.closest('button'); if (!b) return;
     if (b.id === 'savedImport') { pickImport(); return; }
     const i = +(b.dataset.open ?? b.dataset.rename ?? b.dataset.export ?? b.dataset.saveas ?? b.dataset.delete), w = list[i]; if (!w) return;
-    if (b.dataset.open !== undefined) { $('savedPanel').hidden = true; G.Wizard.close(); generate(stateOf(w), { name: w.name, ms: w.ms }); }
+    if (b.dataset.open !== undefined && checkWorld(w)) { $('savedPanel').hidden = true; G.Wizard.close(); generate(stateOf(w), { name: w.name, ms: w.ms }); }
     if (b.dataset.rename !== undefined) { const n = prompt('新的名称', w.name); if (n && n.trim()) { w.name = n.trim(); storeSaved(list); renderSaved(); if (app.state && G.Config.encode(app.state) === w.key) $('worldName').textContent = w.name; } }
     if (b.dataset.export !== undefined) exportWorld(w);
     if (b.dataset.saveas !== undefined) exportWorld(w, 'saveAs');
@@ -952,18 +1000,19 @@
   $('wizSaved').addEventListener('click', openSaved);
 
   // ---------- 菜单 ----------
-  $('menu').addEventListener('click', e => {
+  $('menu').addEventListener('click', async e => {
     const b = e.target.closest('[data-act]'); if (!b) return; $('menu').hidden = true;
     const act = b.dataset.act;
     if (act === 'home') G.Home.show();
     if (act === 'library') G.Home.showLibrary();
     if (act === 'religions') G.RelLib.show();
-    if ((act === 'export' || act === 'saveAs') && app.data) { saveWorld(); const rec = loadSaved().find(w => w.key === G.Config.encode(app.state)); if (rec) exportWorld(rec, act === 'saveAs' ? 'saveAs' : undefined); }
+    if (act === 'species') G.SpeciesLib.show();
+    if ((act === 'export' || act === 'saveAs') && app.data) { const rec = await saveWorld(); if (rec) exportWorld(rec, act === 'saveAs' ? 'saveAs' : undefined); }
     if (act === 'import') pickImport();
-    if (act === 'wizard') G.Wizard.open(app.state ? JSON.parse(JSON.stringify(app.state)) : G.Config.defaults(), st => { st.libs = G.Home.snapshot(); st.rlibs = G.RelLib ? G.RelLib.snapshot() : null; generate(st); }, true);
+    if (act === 'wizard') G.Wizard.open(app.state ? JSON.parse(JSON.stringify(app.state)) : G.Config.defaults(), st => { st.libs = G.Home.snapshot(); st.rlibs = G.RelLib.snapshot(); st.slibs = G.SpeciesLib.snapshot(); generate(st); }, true);
     if (act === 'reseed' && app.state) { const st = JSON.parse(JSON.stringify(app.state)); st.seed = (Math.random() * 1e9) | 0; generate(st); }
     if (act === 'png' && app.data) { $('map').toBlob(b2 => { const a = document.createElement('a'); a.href = URL.createObjectURL(b2); a.download = `${app.data.stats.worldName}星.png`; a.click(); }); }
-    if (act === 'share') { navigator.clipboard && navigator.clipboard.writeText(location.href).then(() => toast('分享链接已复制：打开即按同样的 21 题与种子推演'), () => toast(location.href)); }
+    if (act === 'share' && app.data) { const rec=await saveWorld(); if(rec) exportWorld(rec,'saveAs'); }
   });
 
   let toastT = 0;
@@ -971,19 +1020,30 @@
   function toast(s, ms) { const t = $('toast'); t.textContent = s; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ms || 3200); }
 
   // ---------- 启动 ----------
+  async function boot() {
+  await Promise.all([G.WorldStore.init(), G.Home.loadBuiltin(), G.RelLib.load()]);
   startWorker();
   map.resize();
   const fromHash = G.Config.decode(location.hash);
   if (G.City) G.City.init(app);
+  if (G.Person) G.Person.init(app);
+  if (G.MilitaryMap) G.MilitaryMap.init(app);
   if (G.Timeline) G.Timeline.init(app);
   G.Home.init({
-    loadSaved, exportWorld, pickImport, fileInfo,
-    openWorld: w => { generate(stateOf(w), { name: w.name, ms: w.ms }); },
-    recreate: w => { const st = stateOf(w); st.seed = (Math.random() * 1e9) | 0; generate(st); },
-    deleteWorld: w => { files.del(w.key); storeSaved(loadSaved().filter(x => x.key !== w.key)); ['planet-names-', 'planet-markers-'].forEach(p => localStorage.removeItem(p + w.key)); },
-    renameWorld: (w, n) => { const list = loadSaved(); const r = list.find(x => x.key === w.key); if (r) { r.name = n; storeSaved(list); } let nm = {}; try { nm = JSON.parse(localStorage.getItem('planet-names-' + w.key) || '{}'); } catch (e) { /* */ } nm.world = n; localStorage.setItem('planet-names-' + w.key, JSON.stringify(nm)); if (app.state && G.Config.encode(app.state) === w.key) { app.names.world = n; $('worldName').textContent = n; } },
-    createWorld: () => G.Wizard.open(app.state ? JSON.parse(JSON.stringify(app.state)) : G.Config.defaults(), st => { st.libs = G.Home.snapshot(); st.rlibs = G.RelLib ? G.RelLib.snapshot() : null; generate(st); }, true)
+    loadSaved, exportWorld, pickImport, fileInfo, currentRecord, checkWorld,
+    openWorld: w => { if (!checkWorld(w)) return false; generate(stateOf(w), { name: w.name, ms: w.ms }); return true; },
+    recreate: w => { if (!checkWorld(w)) return false; const st = stateOf(w); st.seed = (Math.random() * 1e9) | 0; generate(st); return true; },
+    deleteWorld: w => { files.del(w.key); storeSaved(loadSaved().filter(x => x.key !== w.key)); },
+    renameWorld: (w, n) => { const list = loadSaved(); const r = list.find(x => x.key === w.key); if (r) { r.name = n; r.names={...r.names,world:n}; storeSaved(list); } if (app.state && G.Config.encode(app.state) === w.key) { app.names.world = n; $('worldName').textContent = n; } },
+    createWorld: () => G.Wizard.open(app.state ? JSON.parse(JSON.stringify(app.state)) : G.Config.defaults(), st => { st.libs = G.Home.snapshot(); st.rlibs = G.RelLib.snapshot(); st.slibs = G.SpeciesLib.snapshot(); generate(st); }, true)
   });
-  if (fromHash) generate(fromHash);
-  else G.Home.show();
+  if (fromHash) {
+    const records=loadSaved().filter(w=>w.key===G.Config.encode(fromHash));
+    const rec=records.find(currentRecord) || records[0];
+    if(rec && checkWorld(rec)) await generate(stateOf(rec),{name:rec.name,ms:rec.ms});
+    else if(rec) G.Home.show();
+    else { G.Home.show(); toast('此链接缺少本机世界设定，请导入完整世界文件或创建世界',8000); }
+  } else { G.Home.show(); if(location.hash) toast('世界链接不完整，请导入完整世界文件',7000); }
+  }
+  boot().catch(error=>toast('启动失败：'+error.message,9000));
 })(window);

@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const inWorker = typeof document === 'undefined' && typeof importScripts === 'function';
-  if (inWorker) importScripts('noise.js', 'libraries.js', 'culture-ext.js', 'admin.js', 'religions.js', 'planet.js', 'climate.js', 'hydro.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js', 'history/regions.js', 'history/dawn.js', 'history/cities.js', 'history/polity.js', 'history/outline.js', 'history/heritage.js', 'history/apply.js', 'history/index.js');
+  if (inWorker) importScripts('noise.js', 'edges.js', 'libraries.js', 'culture-ext.js', 'admin.js', 'religions.js', 'human-rules.js', 'human-anchors.js', 'human-population.js', 'human-economy.js', 'human-fortifications.js', 'holy-war.js', 'history/date.js', 'military.js', 'terrain-coast.js', 'terrain-import.js', 'planet.js', 'climate.js', 'hydro.js', 'navigation-overland.js', 'navigation.js', 'history/query.js', 'life-paths.js', 'life-story.js', 'life.js', 'life-text.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js', 'history/regions.js', 'history/dawn.js', 'history/cities.js', 'history/administration.js', 'history/territory.js', 'history/polity.js', 'history/outline.js', 'history/heritage.js', 'history/apply.js', 'history/index.js');
   const G = self;
   let world = null, R = null;
 
@@ -60,7 +60,7 @@
   // 等高线按海岸地表裁剪：陆上等高线只留在陆上、海深线只留在海里。
   // 设色海岸用 coastSurface（带格下小岬、小湾），等高线取自格网高程，二者在近岸会错开——不裁剪时低等高线会伸出海岸、漂在海面上。
   function clipCoast(list, A, W, H, STEP) {
-    const out = [], cs = (x, y) => G.Noise.coastSurface(A, W, H, x, y);
+    const out = [], cs = (x, y) => G.Noise.coastSurface(A, W, H, x, y, true);
     for (const c of list) {
       // 陆上等高线还要落在近岸收口后的地表上（与设色、晕渲的岸坡一致），不再一头扒到海岸线上
       const a = c.pts, want = c.level > 0, L = c.level, ok = want ? (v, x, y) => G.Noise.coastKeeps(L, v, A, W, H, x, y) : v => v <= 0;
@@ -182,31 +182,25 @@
       for (let i = 0; i < N; i++) if (bas[i] >= 0 && !named.has(bas[i])) bas[i] = -1;
       Z.basin = zoneLabels(bas, cw, ch, MIN, 160).map(z => Object.assign(z, { ri: named.get(z.c) })); });
   }
-  function generate(cfg, post) {
+  function generate(cfg, post, terrainRaster) {
     const t0 = Date.now();
     STRIP_JOBS.clear(); // 新世界作废所有在途条带
     const progress = (stage, f) => post({ type: 'progress', stage, f });
-    const P = G.Planet.build(cfg, progress);
+    const P = G.Planet.build(cfg, progress, terrainRaster);
     const K = G.Climate.simulate(P, cfg, progress);
     const Cl = G.Climate.derive(P, K, cfg, progress);
     const Hy = G.Hydro.simulate(P, Cl, cfg, progress);
     const Cv = G.Society.run(P, Cl, Hy, cfg, progress);
     // 历史与现在互为因果：从文明之初自由推演到现在，终局写回现在的地图（国家、省份、文化、宗教、国界省界）
-    let Hc = null;
-    try { Hc = G.History.core({ P, Hy, Cl, Cv, cfg }, progress); G.HistoryApply.apply({ P, Hy, Cl, Cv, cfg }, Hc); }
-    catch (err) { console.warn('历史推演失败，退回原有国界', err); Hc = null; }
-    if (!Hc) { progress('疆界兜底', 0.975);
-      const BF = G.Borders.run(P, Hy, Cv, cfg.seed, Cv.cities, Cl); Cv.countryF = BF.countryF; Cv.provinceF = BF.provinceF;
-      Cv.provinces.forEach((p, k) => { const a = BF.provAnchor[k]; if (a) { p.lx = a.x; p.ly = a.y; p.lsize = a.size; } }); }
+    const Hc = G.History.core({ P, Hy, Cl, Cv, cfg }, progress);
+    G.HistoryApply.apply({ P, Hy, Cl, Cv, cfg }, Hc);
     Cl.Ts = null; Cl.Ps = null; // 释放全分辨率四季场
-    world = { P, K, Cl, Hy, Cv, cfg, Hc }; navGraph = null; roadNet = null;
-    STRIP_JOBS.clear(); OVERLAY_TASKS.length = 0; OVERLAY_DATA = null; overlayPost = null; // 新世界作废所有在途任务
-    R = G.Render.create(world);
+    const nextWorld = { P, K, Cl, Hy, Cv, cfg, Hc }, nextRenderer = G.Render.create(nextWorld);
     // 23 层等高线（原版 hypsometry：24 档、档界按平方递增，低地加密）+ 海深线的档位
     const landLevels = []; for (let k = 1; k <= 23; k++) landLevels.push(Math.max(5, Math.round(P.maxE * (k / 24) * (k / 24))));
     const koppenUsed = new Set(), biomeUsed = new Set();
     for (let i = 0; i < Cl.koppen.length; i += 7) { if (Cl.koppen[i] !== 255) koppenUsed.add(Cl.koppen[i]); if (Cl.biome[i] !== 255) biomeUsed.add(Cl.biome[i]); }
-    const pal = {}; for (const k in R.pal) pal[k] = Array.from(R.pal[k]);
+    const pal = {}; for (const k in nextRenderer.pal) pal[k] = Array.from(nextRenderer.pal[k]);
     // 板块边界：格边连成折线并平滑（buildPaths 无守卫，随 ready 一起发）
     const plateLines = P.bSegs.map(a => {
       const key = (x, y) => Math.round(x * 4) * 100000 + Math.round(y * 4);
@@ -226,11 +220,14 @@
     });
     const info = {
       ms: Date.now() - t0, maxE: P.maxE, minE: P.minE, polar: P.polar, newWorld: P.newWorld,
-      hE: K.hE, fE: K.fE, plates: P.plates.length
+      hE: K.hE, fE: K.fE, plates: P.plates.length,
+      terrain: P.terrainImport ? { sourceHash:P.terrainImport.sourceHash, intervention:P.terrainImport.intervention, elevationSource:P.terrainImport.elevationSource } : null,
+      geologyStatus: P.terrainImport?.geology || 'generated'
     };
     // 地图先就绪：栅格瓦片不依赖覆盖层，越早发 ready 越早开始渲染
     post({
       type: 'ready', W: P.W, H: P.H, info, stats: Cv.stats, pal,
+      species: Cv.speciesLibraries.map(s=>({...s,name:s.label})), forts:Cv.forts,
       rivers: Hy.rivers, qth: Hy.qth, contourLevels: landLevels,
       plateSegs: plateLines, plateMarks: P.bMarks, plates: Cv.plates,
       cities: Cv.cities, countries: Cv.countries, provinces: Cv.provinces, cultures: Cv.cultures, languages: Cv.languages, religions: Cv.religions, heritage: Cv.heritage || [],
@@ -238,10 +235,13 @@
       smallLakes: Hy.smallLakes,
       deltas: Hy.deltas.map(dl => ({ x: dl.x, y: dl.y, size: dl.size, q: dl.q })),
       labels: Cv.labels, symbols: Cv.symbols, roads: Cv.roads,
-      travel: travelProfile(Cv.era, cfg),
+      travel: G.Navigation.travelProfile(Cv.era, cfg),
       koppenUsed: [...koppenUsed].sort((a, b) => a - b), biomeUsed: [...biomeUsed].sort((a, b) => a - b),
       decl: K.decl
     });
+    // 所有准备及消息复制成功后才切换世界；失败时页面和线程仍指向旧世界。
+    world = nextWorld; R = nextRenderer; roadNet = null;
+    STRIP_JOBS.clear(); OVERLAY_TASKS.length = 0; OVERLAY_DATA = null; overlayPost = null;
     // —— 覆盖层后台补算：等高线、气象场、国界省界、专题注记，分块推进 ——
     const D = OVERLAY_DATA = {};
     overlayPost = post;
@@ -283,9 +283,18 @@
     const cw = Cv.W, chh = Cv.H, st = Cv.country, pv = Cv.province, nm = Cv.nominal;
     const cF = Cv.countryF, pF = Cv.provinceF, FW2 = P.W, iceAt = f => { const y = (f / FW2) | 0, x = f - y * FW2; return Cv.ice[(y >> 1) * cw + (x >> 1)]; };
     D.borders = {};
-    OVERLAY_TASKS.push(() => { D.borders.country = boundaryLines(cF, P.W, P.H, (a, b) => a !== b && a >= 0 && b >= 0, 1, true); });
-    OVERLAY_TASKS.push(() => { D.borders.frontier = boundaryLines(cF, P.W, P.H, (a, b, i, j) => a !== b && (a >= 0) !== (b >= 0) && a > -2 && b > -2 && !iceAt(i) && !iceAt(j), 1, true); });
-    OVERLAY_TASKS.push(() => { D.borders.province = boundaryLines(pF, P.W, P.H, (a, b, i, j) => a !== b && a >= 0 && b >= 0 && cF[i] === cF[j], 1, true); });
+    // 国界、边疆线、省界：取自政区填色同一组界线曲线（edges.js，与历史时间线同一套算法），线与填色严丝合缝
+    OVERLAY_TASKS.push(() => { const POL = R.political && R.political();
+      if (!POL) { D.borders.country = boundaryLines(cF, P.W, P.H, (a, b) => a !== b && a >= 0 && b >= 0, 1, true);
+        D.borders.frontier = boundaryLines(cF, P.W, P.H, (a, b, i, j) => a !== b && (a >= 0) !== (b >= 0) && a > -2 && b > -2 && !iceAt(i) && !iceAt(j), 1, true);
+        D.borders.province = boundaryLines(pF, P.W, P.H, (a, b, i, j) => a !== b && a >= 0 && b >= 0 && cF[i] === cF[j], 1, true); return; }
+      const C = POL.C, cOf = m => m >= 0 ? POL.topicOf(m) : -1, country = [], frontier = [], province = [];
+      for (let k = 0; k < C.A.length; k++) { const a = C.A[k], b = C.B[k], ca = cOf(a), cb = cOf(b), o0 = C.off[k], o1 = C.off[k + 1];
+        if (ca >= 0 && cb >= 0) { if (ca !== cb) country.push(C.pts.slice(o0, o1)); else if (a < 2000000 && b < 2000000) province.push(C.pts.slice(o0, o1)); continue; }
+        if ((ca >= 0) === (cb >= 0) || a === -4 || b === -4) continue;
+        const m = o0 + (((o1 - o0) >> 2) << 1), x = Math.floor(C.pts[m]), y = Math.min(P.H - 1, Math.max(0, Math.floor(C.pts[m + 1])));
+        if (!iceAt(y * FW2 + ((x % FW2) + FW2) % FW2)) frontier.push(C.pts.slice(o0, o1)); }
+      Object.assign(D.borders, { country, frontier, province }); });
     OVERLAY_TASKS.push(() => { D.borders.claim = boundaryLines(nm, cw, chh, (a, b, i, j) => a !== b && Cv.land[i] && Cv.land[j] && (st[i] < 0 || st[j] < 0) && (a >= 0 || b >= 0), 2); });
     // 专题注记（逐类）
     const Z = D.zones = {};
@@ -366,7 +375,19 @@
     const ci = Math.min(P.cH - 1, (gy / H * P.cH) | 0) * P.cW + Math.min(P.cW - 1, (gx / W * P.cW) | 0);
     const e = P.elev[fi], land = e > 0;
     const k = Cv.countryF ? Cv.countryF[fi] : Cv.country[vi], pr = Cv.provinceF ? Cv.provinceF[fi] : Cv.province[vi];
+    const human = world.Hc.Pol.human, snapshot = human.snapshots[human.snapshots.length - 1], region = world.Hc.R.regionOf[vi];
+    const groups = [];
+    if (land && region) for (let p = snapshot.offsets[region]; p < snapshot.offsets[region + 1]; p++) {
+      const culture=snapshot.culture[p];
+      groups.push({species:snapshot.species[p],culture,cultureName:culture<=-2?world.Hc.D.ancient[-2-culture].name:null,religion:snapshot.religion[p],population:snapshot.population[p]});
+    }
+    const economy=human.economy;
     return {
+      human: {region,year:snapshot.year,calculatedThroughYear:snapshot.calculatedThroughYear,groups,economy:land&&region?{
+        demand:economy.foodDemand[region],available:economy.foodAvailable[region],
+        production:economy.foodProduction[region],imported:economy.foodImport[region],exported:economy.foodExport[region],
+        hoursPerFoodYear:economy.unitCost[region],guards:economy.guards[region],afterFort:economy.foodAfterFort[region]
+      }:null},
       lat: 90 - gy / H * 180, lon: gx / W * 360 - 180, elev: Math.round(e), land, lake: !!Hy.lake[fi],
       tann: Cl.Tann[fi], pann: Cl.Pann[fi], koppen: Cl.koppen[fi], biome: Cl.biome[fi],
       ts: K.T0[season][ci] - (land ? 0.0065 * e : 0), ps: K.Ps[season][ci], pres: K.Pr[season][ci],
@@ -378,107 +399,18 @@
   }
 
 
-  // ---------- 出行方式（原版 navigation.travel_profile） ----------
-  function travelProfile(era, cfg) {
-    const ship = era === 'industrial' ? ['动力船', 18, 20] : ['帆船', 8, 16];
-    const modes = [{ id: 'walk', label: '步行', speed: 5, daily: 8, grade: 0.45 }, { id: 'horse', label: '骑马', speed: 7, daily: 8, grade: 0.25 }, { id: 'carriage', label: '马车', speed: 6, daily: 8, grade: 0.1 }];
-    if (era === 'industrial') modes.push({ id: 'train', label: '步行＋火车', speed: 40, daily: 18, grade: 0.45, rail: true });
-    modes.forEach(m => { m.ship = ship[1]; m.shipDaily = ship[2]; m.shipName = ship[0]; });
-    return { era, modes, dayHours: cfg.day, note: `地面交通每日行进 8 小时；马车避开超过 10% 的坡度。船程按${ship[0]}平均 ${ship[1]} km/h、每日最多航行 ${ship[2]} 小时估算，在真实港口换乘。` + (era === 'industrial' ? '火车沿干线与区域铁路，平均 40 km/h、每日运营 18 小时。' : '') };
-  }
-  let navGraph = null;
-  function navigation(a, b, modeId) {
-    const { Cv } = world, W = Cv.W, H = Cv.H;
-    const prof = travelProfile(Cv.era, world.cfg), mode = prof.modes.find(m => m.id === modeId) || prof.modes[0];
-    if (!navGraph) {
-      const nodes = new Map(), adj = [];
-      const nid = c => { let k = nodes.get(c); if (k === undefined) { k = adj.length; nodes.set(c, k); adj.push([]); } return k; };
-      Cv.routes.forEach((r, idx) => { const u = nid(r.a), v = nid(r.b); adj[u].push({ to: v, r, rev: false }); adj[v].push({ to: u, r, rev: true }); });
-      navGraph = { nodes, adj, cells: [...nodes.keys()] };
-    }
-    const cellOf = p => Math.min(H - 1, Math.max(0, (p[1] / 2) | 0)) * W + ((((p[0] / 2) | 0) % W) + W) % W;
-    const kmCell = (c1, c2) => { const y1 = (c1 / W) | 0, y2 = (c2 / W) | 0; let dx = Math.abs(c1 - y1 * W - (c2 - y2 * W)); dx = Math.min(dx, W - dx); return Math.hypot(dx * Math.cos((90 - (y1 + 0.5) / H * 180) * Math.PI / 180), y1 - y2) * Cv.cellKm; };
-    const snap = (p) => { const c = cellOf(p); let best = -1, bd = Infinity; for (const cell of navGraph.cells) { const d = kmCell(c, cell); if (d < bd) { bd = d; best = cell; } } return { node: navGraph.nodes.get(best), cell: best, from: c, km: bd }; };
-    const A = snap(a), B = snap(b);
-    if (A.node === undefined || B.node === undefined) return null;
-    const isRail = r => Cv.era === 'industrial' && r.mode === 'road' && r.imp !== 'local';
-    const hours = (r) => {
-      if (r.mode === 'sea') return { h: r.km / mode.ship, d: r.km / mode.ship / mode.shipDaily };
-      if (mode.rail && isRail(r)) return { h: r.km / mode.speed + 1.1, d: (r.km / mode.speed + 1.1) / mode.daily };
-      if (r.grade > mode.grade * 0.25 && mode.id === 'carriage') return null;
-      const climbH = mode.id === 'walk' ? r.climb / 600 : r.climb / 900;
-      const h = r.km / (mode.rail ? 5 : mode.speed) + climbH; return { h, d: h / (mode.rail ? 8 : mode.daily) };
-    };
-    const n = navGraph.adj.length, cost = new Float64Array(n).fill(Infinity), prev = new Array(n);
-    const hp = new G.Hydro.Heap(n * 4); cost[A.node] = 0; hp.push(A.node, 0);
-    while (hp.n) { const u = hp.pop(); if (u === B.node) break;
-      for (const e of navGraph.adj[u]) { const t = hours(e.r); if (!t) continue; const nc = cost[u] + t.d; if (nc < cost[e.to]) { cost[e.to] = nc; prev[e.to] = { from: u, e, t }; hp.push(e.to, nc); } } }
-    if (!isFinite(cost[B.node])) return null;
-    const legs = []; let u = B.node; while (u !== A.node) { const p = prev[u]; legs.push(p); u = p.from; } legs.reverse();
-    const pts = []; let km = 0, seaKm = 0, railKm = 0;
-    const push = c => { const y = (c / W) | 0, x = c - y * W; pts.push((x + 0.5) * 2, (y + 0.5) * 2); };
-    push(A.from);
-    for (const L of legs) { const cells = L.e.rev ? L.e.r.cells.slice().reverse() : L.e.r.cells; cells.forEach(push); km += L.e.r.km; if (L.e.r.mode === 'sea') seaKm += L.e.r.km; else if (mode.rail && isRail(L.e.r)) railKm += L.e.r.km; }
-    push(B.from);
-    const walkKm = A.km + B.km, days = cost[B.node] + walkKm / mode.speed / mode.daily;
-    return { pts: Float32Array.from(pts), km: Math.round(km + walkKm), seaKm: Math.round(seaKm), railKm: Math.round(railKm), days: Math.max(0.1, days), mode: mode.label, shipName: mode.shipName, legs: legs.length };
-  }
-
-  // ---------- 道路网导航：沿实际绘制的道路 / 航线折线寻路，支持途经点 ----------
+  // ---------- 地图与人物共用的道路、渡运及越野导航 ----------
   let roadNet = null;
-  function buildRoadNet() {
-    const { P, Cv } = world, W = P.W, H = P.H, R = world.cfg.radius, e = P.elev;
-    const kmPer = 2 * Math.PI * R / W, nodes = new Map(), nx = [], ny = [], adj = [];
-    const key = (x, y) => Math.round(((x % W) + W) % W * 20) + ',' + Math.round(y * 20);
-    const node = (x, y) => { const k = key(x, y); let id = nodes.get(k); if (id === undefined) { id = nx.length; nodes.set(k, id); nx.push(((x % W) + W) % W); ny.push(y); adj.push([]); } return id; };
-    const segKm = (x0, y0, x1, y1) => { let dx = Math.abs(x1 - x0); dx = Math.min(dx, W - dx); return Math.hypot(dx * Math.cos((90 - (y0 + y1) / 2 / H * 180) * Math.PI / 180), y1 - y0) * kmPer; };
-    const elevAt = (x, y) => e[Math.min(H - 1, Math.max(0, Math.floor(y))) * W + ((Math.floor(x) % W) + W) % W];
-    const addLine = (pts, cls) => {
-      if (pts.length < 4) return; let km = 0, climb = 0, descent = 0;
-      for (let i = 2; i < pts.length; i += 2) { km += segKm(pts[i - 2], pts[i - 1], pts[i], pts[i + 1]); if (cls !== 'sea') { const d = Math.max(0, elevAt(pts[i], pts[i + 1])) - Math.max(0, elevAt(pts[i - 2], pts[i - 1])); if (d > 0) climb += d; else descent -= d; } }
-      const a = node(pts[0], pts[1]), b = node(pts[pts.length - 2], pts[pts.length - 1]); if (a === b) return;
-      const ed = { a, b, pts, cls, km, climb, descent }; adj[a].push(ed); adj[b].push(ed);
-    };
-    for (const cls of ['trunk', 'regional', 'local', 'sea', 'rail']) for (const l of (Cv.roads[cls] || [])) addLine(l, cls);
-    // 城市作为站点：吸附到最近的路网端点（解决细化路线端点的微小错位）
-    const cityNode = Cv.cities.map(c => { let best = -1, bd = 0.9; for (let i = 0; i < nx.length; i++) { const d = segKm(nx[i], ny[i], c.x, c.y) / kmPer; if (d < bd) { bd = d; best = i; } } return best; });
-    // 端点之间 1 格内的小缺口以步道相连
-    const grid = new Map(); nx.forEach((x, i) => { const g = Math.floor(x) + ',' + Math.floor(ny[i]); (grid.get(g) || grid.set(g, []).get(g)).push(i); });
-    for (let i = 0; i < nx.length; i++) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) for (const j of grid.get((((Math.floor(nx[i]) + dx) % W + W) % W) + ',' + (Math.floor(ny[i]) + dy)) || []) {
-      if (j <= i) continue; const km = segKm(nx[i], ny[i], nx[j], ny[j]); if (km > kmPer * 1.1 || adj[i].some(ed => ed.a === j || ed.b === j)) continue;
-      const ed = { a: i, b: j, pts: Float32Array.from([nx[i], ny[i], nx[j], ny[j]]), cls: 'path', km, climb: 0, descent: 0 }; adj[i].push(ed); adj[j].push(ed); }
-    roadNet = { nx, ny, adj, cityNode, segKm, kmPer };
-  }
-  function roadRoute(points, modeId) {
-    if (!roadNet) buildRoadNet();
-    const { Cv } = world, net = roadNet, prof = travelProfile(Cv.era, world.cfg), mode = prof.modes.find(m => m.id === modeId) || prof.modes[0];
-    const CLS = { trunk: 1, regional: 0.92, local: 0.8, path: 0.65 };
-    const cost = (ed) => { // 小时
-      if (ed.cls === 'sea') return { h: ed.km / mode.ship + 2, day: mode.shipDaily };
-      if (ed.cls === 'rail') return mode.rail ? { h: ed.km / mode.speed + 0.5, day: mode.daily } : { h: Infinity };
-      const grade = ed.climb / Math.max(1, ed.km * 1000); if (mode.id === 'carriage' && grade > 0.1) return { h: Infinity };
-      const sp = (mode.rail ? 5 : mode.speed) * CLS[ed.cls]; return { h: ed.km / sp + ed.climb / (mode.id === 'walk' ? 500 : 800), day: mode.rail ? 8 : mode.daily };
-    };
-    const snap = (p) => { if (p.city !== undefined && net.cityNode[p.city] >= 0) return { node: net.cityNode[p.city], km: 0 };
-      let best = -1, bd = Infinity; for (let i = 0; i < net.nx.length; i++) { const d = net.segKm(net.nx[i], net.ny[i], p.x, p.y); if (d < bd) { bd = d; best = i; } } return { node: best, km: bd }; };
-    const legs = [], allPts = []; let km = 0, seaKm = 0, railKm = 0, days = 0; const passed = [];
-    const nodeCity = new Map(); net.cityNode.forEach((n, ci) => { if (n >= 0 && !nodeCity.has(n)) nodeCity.set(n, ci); });
-    for (let L = 0; L < points.length - 1; L++) {
-      const A = snap(points[L]), B = snap(points[L + 1]); if (A.node < 0 || B.node < 0) return null;
-      const n = net.nx.length, dist = new Float64Array(n).fill(Infinity), prev = new Array(n), hp = new G.Hydro.Heap(1024);
-      dist[A.node] = 0; hp.push(A.node, 0);
-      while (hp.n) { const u = hp.pop(); if (u === B.node) break; for (const ed of net.adj[u]) { const v = ed.a === u ? ed.b : ed.a, c = cost(ed); if (!isFinite(c.h)) continue; const nd = dist[u] + c.h / c.day; if (nd < dist[v]) { dist[v] = nd; prev[v] = { u, ed }; hp.push(v, nd); } } }
-      if (!isFinite(dist[B.node])) return { fail: true, leg: L };
-      const seq = []; let v = B.node; while (v !== A.node) { const p = prev[v]; seq.push(p); v = p.u; } seq.reverse();
-      const walk = (A.km + B.km) / mode.speed / mode.daily; let legKm = A.km + B.km;
-      allPts.push(points[L].x, points[L].y);
-      for (const st of seq) { const ed = st.ed, fwd = ed.a === st.u, p = ed.pts; if (fwd) for (let i = 0; i < p.length; i += 2) allPts.push(p[i], p[i + 1]); else for (let i = p.length - 2; i >= 0; i -= 2) allPts.push(p[i], p[i + 1]);
-        legKm += ed.km; if (ed.cls === 'sea') seaKm += ed.km; if (ed.cls === 'rail') railKm += ed.km;
-        const to = fwd ? ed.b : ed.a; if (nodeCity.has(to)) passed.push({ city: nodeCity.get(to), cls: ed.cls, leg: L }); }
-      allPts.push(points[L + 1].x, points[L + 1].y);
-      const legDays = dist[B.node] + walk; km += legKm; days += legDays; legs.push({ km: Math.round(legKm), days: legDays });
+  function roadRoute(points, mode, year) {
+    if (year != null) {
+      if (!world.history) throw Error('请先载入该世界已有历史。');
+      const navigate = G.Navigation.historyRouter(world);
+      if (points.length !== 2) throw Error('历史旅程需要起点与终点。');
+      const place = p => ({kind:p.city == null ? 'rural' : 'city', id:p.city, x:p.x, y:p.y});
+      return navigate(place(points[0]), place(points[1]), year, mode);
     }
-    return { pts: Float32Array.from(allPts), km: Math.round(km), seaKm: Math.round(seaKm), railKm: Math.round(railKm), days: Math.max(0.05, days), mode: mode.label, shipName: mode.shipName, legs, passed };
+    if (!roadNet) roadNet = G.Navigation.buildNetwork(world);
+    return G.Navigation.route(roadNet, points, mode);
   }
 
   // ---------- 城市面板：城市尺度的地形底图 + 城市生成器 + 周边要素 ----------
@@ -505,7 +437,7 @@
       const fs = extent === 'region' ? 0.9 : 0.42, nx2 = Math.ceil(2 * halfKm / fs);
       for (let j = 0; j < nx2; j++) for (let i = 0; i < nx2; i++) { if (fields.length / 8 > 40000) break;
         const kxm = -halfKm + (i + 0.5) * fs, kym = -halfKm + (j + 0.5) * fs, ang = nf(kxm * 0.12, kym * 0.12) * 1.6, x = c.x + kxm / kx, y = c.y + kym / ky;
-        if (G.Noise.coastSurface(P.elev, W, H, x, y) <= 2 || G.Noise.surface(Hy.lakeSoft, W, H, x, y) > 0.4 || inCity(x, y)) continue;
+        if (G.Noise.coastSurface(P.elev, W, H, x, y, true) <= 2 || G.Noise.surface(Hy.lakeView || Hy.lakeSoft, W, H, x, y) > 0.4 || inCity(x, y)) continue;
         const fi = Math.min(H - 1, Math.floor(y)) * W + ((Math.floor(x) % W) + W) % W; if (P.elev[fi] > 2200 || Cl.snow[fi] >= 1) continue;
         { const g = Math.abs(R.sampleElev(x + 0.25 * fs / kx, y, s, 4) - R.sampleElev(x - 0.25 * fs / kx, y, s, 4)) + Math.abs(R.sampleElev(x, y + 0.25 * fs / ky, s, 4) - R.sampleElev(x, y - 0.25 * fs / ky, s, 4)); if (g / (fs * 1000 * 0.5) > 0.06) continue; } // 坡度 > 6% 不开田
         let p = agriAt(x, y) * 0.85 - (FOREST.has(Cl.biome[fi]) ? 0.4 : 0) + 0.25 * nf(kxm * 0.5 + 40, kym * 0.5) - Math.max(0, Math.hypot(kxm, kym) - U.rKm * 4) / (halfKm * 1.5); if (rr() > p) continue;
@@ -516,7 +448,7 @@
       for (const cls of ['regional', 'local', 'trunk']) for (const l of roads[cls]) { let acc = rr() * step;
         for (let q = 2; q < l.length; q += 2) { const dx = (l[q] - l[q - 2]) * kx, dy = (l[q + 1] - l[q - 1]) * ky, L = Math.hypot(dx, dy); acc += L; if (acc < step) continue; acc = 0;
           const side = rr() < 0.5 ? -1 : 1, off = 0.35 + 0.4 * rr(), x = l[q] + (-dy / (L || 1)) * off * side / kx, y = l[q + 1] + (dx / (L || 1)) * off * side / ky;
-          if (G.Noise.coastSurface(P.elev, W, H, x, y) <= 2 || inCity(x, y) || agriAt(x, y) < 0.25) continue; if (towns.some(t => Math.hypot((t.x - x) * kx, (t.y - y) * ky) < 1.5)) continue;
+          if (G.Noise.coastSurface(P.elev, W, H, x, y, true) <= 2 || inCity(x, y) || agriAt(x, y) < 0.25) continue; if (towns.some(t => Math.hypot((t.x - x) * kx, (t.y - y) * ky) < 1.5)) continue;
           const nb = 5 + ((rr() * 10) | 0); for (let b2 = 0; b2 < nb; b2++) { const r2 = 0.18 * Math.sqrt(rr()), a3 = rr() * 6.283, bx = x + Math.cos(a3) * r2 / kx, by = y + Math.sin(a3) * r2 / ky, s2 = 0.018 + 0.012 * rr(), an = ang0(rr);
             for (const [a2, b3] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const lx = a2 * s2 * 1.4, ly = b3 * s2; villB.push(bx + (lx * Math.cos(an) - ly * Math.sin(an)) / kx, by + (lx * Math.sin(an) + ly * Math.cos(an)) / ky); } }
           let name = null; if (rr() < 0.45 && (lib.cities || []).length) { for (let t2 = 0; t2 < 8; t2++) { const nm = lib.cities[(rr() * lib.cities.length) | 0].replace(/(城|州|府|郡|镇|堡)$/, '').slice(0, 3) + (rr() < 0.5 ? '村' : '庄'); if (!usedN.has(nm)) { usedN.add(nm); name = nm; break; } } }
@@ -524,54 +456,12 @@
     function ang0(r) { return r() * Math.PI; }
     // 局部等高线：按当地高差选间距（参考图式：首曲线 + 每五条一条计曲线）
     const cont = []; let interval = 0; { const n = 220, F = new Float32Array(n * n), gx = 2 * hx / (n - 1), gy = 2 * hy / (n - 1); let lo = Infinity, hi = -Infinity;
-      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const x = x0 + i * gx, y = y0 + j * gy, land = G.Noise.coastSurface(P.elev, W, H, x, y) > 0, v = land ? Math.max(1, R.sampleElev(x, y, s, 4)) : -1; F[j * n + i] = v; if (land) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const x = x0 + i * gx, y = y0 + j * gy, land = G.Noise.coastSurface(P.elev, W, H, x, y, true) > 0, v = land ? Math.max(1, R.sampleElev(x, y, s, 4)) : -1; F[j * n + i] = v; if (land) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }
       if (hi > lo) { const steps = [5, 10, 20, 25, 50, 100, 200, 250, 500]; interval = steps.find(v => (hi - lo) / v <= 24) || 500; const lv = []; for (let L = Math.ceil(Math.max(1, lo) / interval) * interval; L < hi; L += interval) lv.push(L);
         for (const c2 of contours(F, n, n, lv, 1, false)) { const a = new Float32Array(c2.pts.length); for (let k = 0; k < a.length; k += 2) { a[k] = x0 + (c2.pts[k] - 0.5) * gx; a[k + 1] = y0 + (c2.pts[k + 1] - 0.5) * gy; } cont.push({ level: c2.level, bold: Math.round(c2.level / interval) % 5 === 0, pts: a }); } } }
     return { idx, img, w: w, h: h, x0, y0, s, halfKm, urban: Object.assign({}, U, { grid: null }), roads, rivers, towns, labels, bridges, contours: cont, interval, fields: Float32Array.from(fields), fTone: Uint8Array.from(fTone), villages: vill, villB: Float32Array.from(villB), cellKm: 2 * Math.PI * world.cfg.radius / W };
   }
   const M2 = Math.max;
-
-  function route(a, b) {
-    const { Cv } = world; const W = Cv.W, H = Cv.H, N = W * H;
-    const cell = p => Math.min(H - 1, Math.max(0, (p[1] / 2) | 0)) * W + ((((p[0] / 2) | 0) % W) + W) % W;
-    const s = cell(a), t = cell(b);
-    const dist = new Float32Array(N).fill(Infinity), pred = new Int32Array(N).fill(-1), days = new Float32Array(N);
-    const hp = new G.Hydro.Heap(N * 3);
-    const lat = y => 90 - (y + 0.5) / H * 180;
-    const ty = (t / W) | 0, tx = t % W;
-    const heur = i => { const y = (i / W) | 0, x = i % W; let dx = Math.abs(x - tx); dx = Math.min(dx, W - dx); return Math.hypot(dx * Math.cos(lat(y) * Math.PI / 180), y - ty) * Cv.cellKm * 0.3; };
-    dist[s] = 0; hp.push(s, heur(s));
-    const DX = [1, 1, 0, -1, -1, -1, 0, 1], DY = [0, 1, 1, 1, 0, -1, -1, -1];
-    const c = i => { let v = Cv.cost[i]; if (Cv.roadTier[i]) v *= [1, 0.3, 0.4, 0.5][Cv.roadTier[i]]; return v; };
-    let found = false, pops = 0;
-    while (hp.n) {
-      const i = hp.pop(); if (i === t) { found = true; break; }
-      if (++pops > N * 2) break;
-      const y = (i / W) | 0, x = i - y * W, cl = Math.max(0.05, Math.cos(lat(y) * Math.PI / 180));
-      for (let k = 0; k < 8; k++) {
-        const yy = y + DY[k]; if (yy < 0 || yy >= H) continue;
-        const j = yy * W + (x + DX[k] + W) % W;
-        const cj = c(j); if (cj === Infinity) continue;
-        const len = Math.hypot(DX[k] * cl, DY[k]) * Cv.cellKm;
-        const nd = dist[i] + len * (c(i) + cj) / 2;
-        if (nd < dist[j]) {
-          dist[j] = nd; pred[j] = i;
-          const sea = !Cv.land[j], speed = sea ? 110 : Cv.roadTier[j] ? 38 : 24;
-          days[j] = days[i] + len / speed;
-          hp.push(j, nd + heur(j));
-        }
-      }
-    }
-    if (!found) return null;
-    const pts = []; let km = 0, i = t, prev = -1, seaKm = 0;
-    while (i >= 0) {
-      const y = (i / W) | 0, x = i - y * W;
-      pts.push((x + 0.5) * 2, (y + 0.5) * 2);
-      if (prev >= 0) { const py = (prev / W) | 0, px = prev - py * W; let dx = Math.abs(px - x); dx = Math.min(dx, W - dx); const l = Math.hypot(dx * Math.cos(lat(y) * Math.PI / 180), py - y) * Cv.cellKm; km += l; if (!Cv.land[i]) seaKm += l; }
-      prev = i; i = pred[i];
-    }
-    return { pts: Float32Array.from(pts.reverse ? pts : pts), km: Math.round(km), seaKm: Math.round(seaKm), days: Math.max(1, Math.round(days[t])) };
-  }
 
   // ---------- 渐进瓦片：先发预览帧（关闭缩放细节，快数倍），再按横条带补全细节 ----------
   // 条带之间会让出控制权：取消的请求不再继续算，悬浮查询等消息也能及时处理
@@ -632,7 +522,7 @@
 
   function handle(m, post) {
     try {
-      if (m.type === 'generate') generate(m.cfg, post);
+      if (m.type === 'generate') generate(m.cfg, post, m.terrainRaster);
       else if (m.type === 'render') {
         if (!R) return;
         if (m.req.strips && m.req.s > 0 && m.req.s < 0.9) { // 放大视图（需要缩放细节）才走预览 + 条带渐进
@@ -650,13 +540,20 @@
       else if (m.type === 'cityMap') { const r = world ? cityMap(m.idx, m.px || 1100, m.extent || 'city') : null; post({ type: 'cityMap', id: m.id, data: r }, r ? [r.img.buffer] : []); }
       else if (m.type === 'urban') { const u = world ? G.Urban.build(world, m.idx, { detail: !!m.detail }) : null; post({ type: 'urban', id: m.id, data: u }); }
       else if (m.type === 'citySite') post({ type: 'citySite', id: m.id, data: world ? G.CitySite.payload(world, m.idx, { cap: m.cap }) : null });
+      else if (m.type === 'fortSite') post({ type: 'fortSite', id: m.id, data: world ? G.CitySite.fortPayload(world, m.fortId, m.year) : null });
       else if (m.type === 'history') { // 历史时间线：按需推演一次，结果缓存在本世界上
         if (!world) post({ type: 'history', id: m.id, data: null });
         else { if (!world.history) world.history = G.History.run(world, (stage, f) => post({ type: 'histProgress', stage, f })); post({ type: 'history', id: m.id, data: world.history }); }
       }
-      else if (m.type === 'route') post({ type: 'route', id: m.id, data: world ? (m.points ? roadRoute(m.points, m.mode) : navigation(m.a, m.b, m.mode)) : null });
+      else if (m.type === 'route') post({ type: 'route', id: m.id, data: world ? roadRoute(m.points, m.mode || 'walk', m.year) : null });
+      else if (m.type === 'personGenerate') {
+        if (!world || !world.history) throw Error('请先载入该世界已有历史。');
+        const person = G.Life.generate(world.history, world.cfg, m.request, G.Navigation.historyRouter(world));
+        G.Life.validateRecord(person, m.request.worldKey);
+        post({ type: 'personGenerate', id: m.id, data: person });
+      }
     } catch (err) {
-      post({ type: 'error', message: String(err && err.stack || err) });
+      post({ type: 'error', id:m.id, requestType:m.type, message: String(err && err.stack || err) });
     }
   }
 

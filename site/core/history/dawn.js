@@ -49,7 +49,15 @@
     { id: 'gunpowder', name: '火药与常备军', s: 7, n: 1, aff: { pastoral: 1.1 }, desc: '火器、棱堡与领饷的常备军' },
     { id: 'navigation', name: '远洋航海', s: 7, n: 1, opt: true, aff: { maritime: 0.55, agrarian: 1.15, pastoral: 2.4, highland: 1.5, tribal: 1.4, 'new-world': 1.6 }, desc: '罗盘、海图与远洋帆船。只有接纳了它的国家才能远渡重洋，殖民新大陆' },
     { id: 'enlight', name: '启蒙思想', s: 8, n: 1, desc: '理性、契约与民权之说' },
-    { id: 'manufactory', name: '工场与蒸汽', s: 8, n: 1, aff: { maritime: 0.85, pastoral: 1.4 }, desc: '工场手工业与最初的蒸汽机' }
+    { id: 'manufactory', name: '工场与蒸汽', s: 8, n: 1, aff: { maritime: 0.85, pastoral: 1.4 }, desc: '工场手工业与最初的蒸汽机' },
+    // 军事思潮（非必需，不决定发展阶段）：决定一国采用哪种军制——怎样募兵、有没有常备军、能不能强攻城池。
+    // 它们在主思潮之后单独推演（独立的随机序列），不改动既有思潮的兴起与传播。
+    { id: 'conscript', name: '编户征兵', s: 4, n: 2, opt: true, mil: true, aff: { agrarian: 0.85, pastoral: 1.5, tribal: 1.3 }, desc: '户籍与丁口簿册，按丁征发服役，宿卫常驻都城' },
+    { id: 'horse', name: '骑兵战法', s: 4, n: 2, opt: true, mil: true, aff: { pastoral: 0.5, highland: 1.2, maritime: 1.3 }, desc: '马具、骑射与车骑并用，骑兵居两翼包抄' },
+    { id: 'siegecraft', name: '攻城器械', s: 5, n: 2, opt: true, mil: true, aff: { pastoral: 1.4, tribal: 1.3 }, desc: '云梯、冲车与抛石机，可以强攻坚城' },
+    { id: 'fubing', name: '府兵制', s: 5, n: 1, opt: true, mil: true, aff: { agrarian: 0.8, pastoral: 1.6, maritime: 1.2, tribal: 1.4 }, desc: '兵农合一：府兵平时务农、农闲操练、轮番宿卫，战时应召' },
+    { id: 'mercenary', name: '募兵与禁军', s: 6, n: 2, opt: true, mil: true, aff: { maritime: 0.8, agrarian: 0.95, tribal: 1.3 }, desc: '招募职业兵领饷常驻：禁军守京师，边军戍边' },
+    { id: 'nation', name: '国民征兵', s: 8, n: 1, opt: true, mil: true, aff: { pastoral: 1.4, tribal: 1.3 }, desc: '常备军为骨干，国民服役后转入后备役，战时大规模动员' }
   ];
 
   function mulberry32(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -66,7 +74,7 @@
     const centerDist = (a, b) => h.gdist(R.center[a], R.center[b]) * h.cellKm;
     const used = new Set(h.usedNames);
     const events = [];
-    const ev = (year, kind, text, r, extra) => events.push(Object.assign({ year: Math.round(year), kind, text, r: r || 0 }, extra || {}));
+    const ev = (year, kind, text, r, extra) => events.push(Object.assign({ year: G.HistoryDate.ceil(year), kind, text, r: r || 0 }, extra || {}));
     const fmtY = y => Math.round(y);
 
     // ---------- 1. 摇篮分数 ----------
@@ -149,9 +157,17 @@
             if (nc < Y[base + b] - 1e-9) { Y[base + b] = nc; src[base + b] = src[base + a]; hp.push(b, nc); } } }
         continue;
       }
-      const ks = []; IDEAS.forEach((o, k) => { if (o.s === s) ks.push(k); }); if (NAV >= 0 && IDEAS[NAV].s === s) { ks.splice(ks.indexOf(NAV), 1); ks.unshift(NAV); } // 远洋航海先算：其后的思潮要靠它跨海
+      const ks = []; IDEAS.forEach((o, k) => { if (o.s === s && !o.mil) ks.push(k); }); if (NAV >= 0 && IDEAS[NAV].s === s) { ks.splice(ks.indexOf(NAV), 1); ks.unshift(NAV); } // 远洋航海先算：其后的思潮要靠它跨海
       const reqMax = new Float64Array(NN), reqSrc = new Int32Array(NN);
-      for (const k of ks) { const I = IDEAS[k], aff = r => (I.aff && I.aff[typeOf(r)]) || 1, A = IA.subarray(k * NN, (k + 1) * NN), SR = new Int32Array(NN);
+      for (const k of ks) spreadIdea(k, s, rnd, reqMax, reqSrc);
+      for (let r = 1; r <= nR; r++) { const v = reqMax[r]; if (v < INF) { Y[base + r] = v; src[base + r] = reqSrc[r]; } }
+    }
+    // 军事思潮：主思潮推演完毕之后，用独立的随机序列逐条推演
+    { const rndM = mulberry32((h.seed | 0) + 7717); IDEAS.forEach((o, k) => { if (o.mil) spreadIdea(k, o.s, rndM, null, null); }); }
+    function spreadIdea(k, s, rnd, reqMax, reqSrc) {
+      const prev = (s - 1) * NN, gap = Math.max(60, 0.35 * (S[s] - S[s - 1]));
+      const lb = r => s === 1 ? 0 : Y[prev + r] >= INF ? INF : Y[prev + r] + gap;
+      { const I = IDEAS[k], aff = r => (I.aff && I.aff[typeOf(r)]) || 1, A = IA.subarray(k * NN, (k + 1) * NN), SR = new Int32Array(NN);
         // 发源：最早具备条件的地方（摇篮的节奏 × 文明类型的亲和）；其余地方只能更慢地独立想到
         const dS = S[s] - S[s - 1], cand = [];
         for (let r = 1; r <= nR; r++) { if (I.id === 'navigation' && (!R.coast[r] || R.newW[r] > 0.5)) continue; // 远洋航海只出现在旧大陆的沿海
@@ -175,8 +191,7 @@
             if (ed.sea && (R.newW[a] > 0.5) !== (R.newW[b] > 0.5) && k !== NAV && !(NAV >= 0 && IA[NAV * NN + a] <= c)) continue; // 跨洋：须先接纳远洋航海
             let dl = delay(s, a, b, ed); if (dl >= INF) continue; dl *= aff(b) * (sameCiv(a, b) ? 0.55 : 1); // 同一文明之内传得快
             const nc = Math.max(c + dl, L); if (nc < A[b] - 1e-9) { A[b] = nc; SR[b] = SR[a]; hp.push(b, nc); } } }
-        if (!I.opt) for (let r = 1; r <= nR; r++) { if (A[r] > reqMax[r]) { reqMax[r] = A[r]; reqSrc[r] = SR[r]; } } }
-      for (let r = 1; r <= nR; r++) { const v = reqMax[r]; if (v < INF) { Y[base + r] = v; src[base + r] = reqSrc[r]; } }
+        if (!I.opt && reqMax) for (let r = 1; r <= nR; r++) { if (A[r] > reqMax[r]) { reqMax[r] = A[r]; reqSrc[r] = SR[r]; } } }
     }
 
     // ---------- 2b. 新大陆的本土文明：起步晚、范围小、数量少 ----------
@@ -291,6 +306,11 @@
     for (let r = 1; r <= nR; r++) { const c = R.civ[r]; if (c < 0) continue; for (let s = 1; s <= 8; s++) { const y = Math.max(Y[s * NN + r], civArr[r]); if (y < civAges[c][s]) civAges[c][s] = y; } }
     for (let c = 0; c < nCiv; c++) for (let s = 1; s <= 8; s++) if (civAges[c][s] > E) civAges[c][s] = INF;
     ancient.forEach(a => { a.ages = new Float64Array(9).fill(INF); for (const r of a.zone) for (let s = 1; s <= 8; s++) { const y = Y[s * NN + r]; if (y < a.fall && y < a.ages[s]) a.ages[s] = y; } });
+
+    // 所有可观察的形成/传播门槛使用同一月份；保留演算实数的先后，不提前触发。
+    const monthly = values => { for (let i = 0; i < values.length; i++) if (values[i] < INF) values[i] = G.HistoryDate.ceil(values[i]); };
+    for (const values of [Y, IA, ideaBorn, civStart, civArr, relFounded, relArr, relPrevArr, ancientEnd, ...civAges]) monthly(values);
+    for (const a of ancient) { a.fall = G.HistoryDate.ceil(a.fall); monthly(a.ages); }
 
     // ---------- 8. 编年史 ----------
     const regionName = r => { const cs = R.cities[r]; if (cs.length) { let b = cs[0]; for (const k of cs) if (h.settlements[k].score > h.settlements[b].score) b = k; return h.settlements[b].name; } return ''; };

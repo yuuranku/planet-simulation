@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
@@ -20,8 +21,14 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.EditText;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.widget.Toast;
+import android.view.Gravity;
+import android.view.View;
 import android.view.WindowInsets;
+import android.window.OnBackInvokedDispatcher;
 import androidx.webkit.WebViewAssetLoader;
 
 import org.json.JSONObject;
@@ -39,6 +46,9 @@ public final class MainActivity extends Activity {
     private static final String ORIGIN = "https://" + HOST;
     private static final int PICK_FILE = 11, SAVE_FILE = 12;
     private WebView webView;
+    private LinearLayout content;
+    private View landscapeHint;
+    private boolean handlingBack;
     private ValueCallback<Uri[]> fileCallback;
     private volatile String saveToken;
     private volatile OutputStream saveStream;
@@ -70,15 +80,23 @@ public final class MainActivity extends Activity {
                 return response;
             } catch (IOException e) { return missing(); }
         }).build();
+        content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setBackgroundColor(0xfff5f2e9);
         webView = new WebView(this);
         if (Build.VERSION.SDK_INT >= 35) {
-            webView.setOnApplyWindowInsetsListener((view, windowInsets) -> {
-                Insets insets = windowInsets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
+            content.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+                int types = WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime();
+                Insets insets = windowInsets.getInsets(types);
                 view.setPadding(insets.left, insets.top, insets.right, insets.bottom);
-                return windowInsets;
+                // The outer container owns these insets; the WebView gets a usable viewport.
+                return new WindowInsets.Builder(windowInsets).setInsets(types, Insets.NONE).build();
             });
         }
-        setContentView(webView);
+        addLandscapeHint();
+        content.addView(webView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
+        setContentView(content);
+        content.requestApplyInsets();
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -88,7 +106,53 @@ public final class MainActivity extends Activity {
         webView.addJavascriptInterface(downloadBridge, "AndroidDownload");
         webView.setWebViewClient(new LocalClient());
         webView.setWebChromeClient(new ChromeClient());
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
+        }
         webView.loadUrl(ORIGIN + "/index.html");
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void addLandscapeHint() {
+        if (getResources().getConfiguration().orientation != Configuration.ORIENTATION_PORTRAIT
+                || getPreferences(MODE_PRIVATE).getBoolean("landscape_hint_seen", false)) return;
+        LinearLayout banner = new LinearLayout(this);
+        banner.setGravity(Gravity.CENTER_VERTICAL);
+        banner.setPadding(dp(16), dp(6), dp(8), dp(6));
+        banner.setBackgroundColor(0xffeee7d9);
+        TextView message = new TextView(this);
+        message.setText("建议横屏使用\n横屏查看地图与工具更方便。");
+        message.setTextSize(14);
+        message.setTextColor(0xff38362f);
+        banner.addView(message, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        Button dismiss = new Button(this);
+        dismiss.setText("知道了");
+        dismiss.setContentDescription("关闭横屏使用建议");
+        dismiss.setOnClickListener(view -> banner.setVisibility(View.GONE));
+        banner.addView(dismiss, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        landscapeHint = banner;
+        content.addView(banner);
+        getPreferences(MODE_PRIVATE).edit().putBoolean("landscape_hint_seen", true).apply();
+    }
+
+    @Override public void onConfigurationChanged(Configuration config) {
+        super.onConfigurationChanged(config);
+        if (landscapeHint != null && config.orientation == Configuration.ORIENTATION_LANDSCAPE) landscapeHint.setVisibility(View.GONE);
+        content.requestApplyInsets();
+        webView.invalidate();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (webView != null) webView.onResume();
+    }
+
+    @Override protected void onPause() {
+        if (webView != null) webView.onPause();
+        super.onPause();
     }
 
     private WebResourceResponse missing() {
@@ -188,11 +252,24 @@ public final class MainActivity extends Activity {
         }
     }
     @Override public void onBackPressed() {
-        new AlertDialog.Builder(this).setMessage("退出星球推演？正在推演的任务将中断。").setNegativeButton("继续使用", null).setPositiveButton("退出", (d, w) -> finish()).show();
+        handleBack();
+    }
+    private void handleBack() {
+        if (handlingBack || isFinishing()) return;
+        handlingBack = true;
+        webView.evaluateJavascript("typeof window.__androidBack === 'function' && window.__androidBack() === true", handled -> {
+            if (isFinishing() || isDestroyed()) return;
+            if ("true".equals(handled)) { handlingBack = false; return; }
+            if (webView.canGoBack()) { webView.goBack(); handlingBack = false; return; }
+            new AlertDialog.Builder(this).setMessage("退出星球推演？正在推演的任务将中断。")
+                    .setNegativeButton("继续使用", null).setPositiveButton("退出", (d, w) -> finish())
+                    .setOnDismissListener(d -> handlingBack = false).show();
+        });
     }
     @Override protected void onDestroy() {
         if (fileCallback != null) fileCallback.onReceiveValue(null);
         if (saveToken != null) downloadBridge.abort(saveToken);
+        content.removeView(webView);
         webView.destroy();
         super.onDestroy();
     }

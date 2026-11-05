@@ -39,8 +39,47 @@
   }
 
   function payload(world, idx, opts = {}) {
+    const city = world.Cv.cities[idx]; return city ? buildPayload(world, city, { idx, opts }) : null;
+  }
+  // 查询每种历史日志时均向前取最后一条，禁止从终局向过去回填。
+  function fortPayload(world, fortId, requestedYear) {
+    const { Cv, Hc } = world; if (!Hc) return null;
+    const { R:regions, D, C, Pol } = Hc, f = Pol.forts.find(x => x.id === fortId); if (!f) return null;
+    if (requestedYear !== undefined && requestedYear !== Infinity && !Number.isFinite(requestedYear)) return null;
+    const year = requestedYear === undefined || requestedYear === Infinity ? D.E : M.max(0, M.min(D.E, requestedYear));
+    if (year < f.year) return null;
+    const latest = (log, y) => { let result = null; for (const item of log) { if (item[0] > y) break; result = item; } return result; };
+    const status = latest(f.statusLog, year), guard = latest(f.log, year); if (!status || !guard) return null;
+    const get = (log, region, valueKey) => { let value=-1; for (let k=log.off[region]; k<log.off[region+1]; k++) { if (log.year[k]>year) break; value=log[valueKey][k]; } return value; };
+    const cityIndex=status[2], settlementIndex=status[3], historicCity=cityIndex >= 0 ? C.cities[cityIndex] : null;
+    const region = status[1] === 'settlement' && historicCity ? historicCity.r : f.region;
+    const culture = get(Pol.cultLog, region, 'val'), religion = get(Pol.relLog, region, 'val'), owner = get(Pol.own, region, 'owner');
+    const lib = culture >= 0 ? Cv.hist.civLib[culture] : culture <= -2 ? D.ancient[-2-culture].libObj : {id:'unformed',label:'未形成文化',traits:[],n:{}};
+    const country = owner >= 0 && Pol.polities[owner] ? { name:Pol.polities[owner].short, form:null } : null;
+    const road = Cv.hist.roads[f.site.road], line = road.lines[f.site.line], j = f.site.segment * 2;
+    let dx = line[j+2]-line[j]; if (dx > world.P.W/2) dx-=world.P.W; else if (dx < -world.P.W/2) dx+=world.P.W;
+    const orientation = ((M.atan2(-(line[j+3]-line[j+1]), dx) * 180 / M.PI) % 360 + 360) % 360;
+    const historicalRoads = { trunk:[], regional:[], local:[], rail:[] };
+    for (const entry of C.roads) if (entry.year <= year) { const src=Cv.hist.roads[entry.id]; if (src && historicalRoads[src.imp]) historicalRoads[src.imp].push(...src.lines); }
+    if (year === D.E) historicalRoads.rail = Cv.roads.rail || [];
+    let name=f.name, tier='site', type='pass-fort', population=status[1] === 'active' ? guard[1] : 0;
+    if (status[1] === 'settlement' && historicCity) {
+      name=historicCity.name; for (const item of historicCity.names || []) { if (item[0] > year) break; name=item[1]; }
+      tier=historicCity.tier; type=historicCity.type;
+      if (year === D.E && settlementIndex >= 0 && Cv.cities[settlementIndex]) population=Cv.cities[settlementIndex].pop;
+      else { const count=C.popNF, step=C.popStepF, sample=year === D.E ? count-1 : M.min(count-1,M.floor(year/step)); population=C.popF[cityIndex*count+sample]; }
+    }
+    let stage=0; for (let k=1;k<=8;k++) if (D.Y[k*D.NN+region]<=year) stage=k;
+    const era=year === D.E ? Cv.era : stage<=2 ? 'tribal' : stage<=5 ? 'ancient' : stage===6 ? 'medieval' : stage===7 ? 'early-modern' : 'industrial';
+    const fortification={id:f.id,year,status:status[1],guards:guard[1],since:status[0],recordedYear:guard[0],cityIndex,settlementIndex,owner,region:f.region,site:f.site};
+    const civilian = status[1] === 'settlement' && historicCity;
+    const presentCity = civilian && year === D.E && settlementIndex >= 0 ? Cv.cities[settlementIndex] : null;
+    const city={name,x:civilian ? (presentCity || historicCity).x : f.x,y:civilian ? (presentCity || historicCity).y : f.y,tier,type,pop:population,civ:culture,lang:-1,rel:religion,country:owner,lib:lib.id};
+    return buildPayload(world, city, { idx:f.id, opts:{}, id:`${f.id}-year-${year}`, era, roads:historicalRoads, orientation:civilian ? undefined : orientation, lib, country, fortification, exactPopulation:true, historical:year<D.E });
+  }
+  function buildPayload(world, city, context) {
     const { P, Hy, Cv, cfg } = world, W = P.W, H = P.H, e = P.elev, R = cfg.radius;
-    const C = prepare(world), city = Cv.cities[idx]; if (!city) return null;
+    const C = prepare(world), { idx, opts } = context;
     const isWater = i => e[i] <= 0 || Hy.lake[i];
     const waterCode = i => e[i] <= 0 && !Hy.lake[i] ? 1 : Hy.lake[i] ? 2 : 0;
     const qth = Hy.qth, riverOrder = i => (e[i] > 0 && !Hy.lake[i] && Hy.q[i] > qth) ? 1 + M.min(8, M.floor(M.log2(Hy.q[i] / qth))) : 0;
@@ -68,13 +107,13 @@
     // ---- 锚点：落在陆地格 ----
     let cy = city.y, cx = city.x;
     let row = M.min(H - 1, M.floor(cy)), column = wrap(M.floor(cx));
-    if (isWater(at(row, column)) || !dryAt(cy, cx)) {
+    if (!context.fortification && (isWater(at(row, column)) || !dryAt(cy, cx))) {
       // 先在原锚点附近找连续陆面上的点（港口城市常贴着岸线）
       for (let k = 1; k <= 160; k++) { const rr = 0.012 * k, a = k * 2.39996; const yy = city.y + M.sin(a) * rr, xx = city.x + M.cos(a) * rr;
         const r2 = M.min(H - 1, M.max(0, M.floor(yy))), c2 = wrap(M.floor(xx));
         if (dryAt(yy, xx) && !isWater(at(r2, c2))) { cy = yy; cx = xx; row = r2; column = c2; break; } }
     }
-    if (isWater(at(row, column)) || !dryAt(cy, cx)) {
+    if (!context.fortification && (isWater(at(row, column)) || !dryAt(cy, cx))) {
       let best = null;
       for (let r = 1; r <= 4 && !best; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
         const rr = row + dy; if (rr < 0 || rr >= H) continue; if (isWater(at(rr, column + dx))) continue;
@@ -83,9 +122,9 @@
       if (best) { row = best[1]; column = wrap(best[2]); cy = row + 0.5; cx = column + 0.5 + (city.x - (column + 0.5) > W / 2 ? W : 0); }
     }
     const anchor = at(row, column);
-    const seed = hash(cfg.seed >>> 0, 'city-' + idx);
+    const seed = hash(cfg.seed >>> 0, context.id || 'city-' + idx);
     const newWorld = P.newWorld && P.newWorld[anchor];
-    const era = Cv.era === 'industrial' && newWorld && city.country >= 0 ? 'preindustrial' : Cv.era;
+    const era = context.era || (Cv.era === 'industrial' && newWorld && city.country >= 0 ? 'preindustrial' : Cv.era);
     const profile = ERA[era];
     const siteType = SITE[city.type] || city.type;
 
@@ -118,8 +157,8 @@
 
     // ---- 人口与占地（urban_footprint） ----
     // 分档：送进精细生成器的人口有上限（城心与老城），更大的城市外围由快速城郊算法补齐
-    const popFull = M.max(200, city.pop | 0), pop = opts.cap ? M.min(popFull, opts.cap) : popFull, pmin = M.round(pop * 0.85), pmax = M.round(pop * 1.15);
-    const estimate = M.round(pmin + (pmax - pmin) * (0.3 + 0.45 * rnd(seed, 0)));
+    const popFull = context.exactPopulation ? M.max(0, city.pop) : M.max(200, city.pop | 0), pop = opts.cap ? M.min(popFull, opts.cap) : popFull, pmin = context.exactPopulation ? pop : M.round(pop * 0.85), pmax = context.exactPopulation ? pop : M.round(pop * 1.15);
+    const estimate = context.exactPopulation ? pop : M.round(pmin + (pmax - pmin) * (0.3 + 0.45 * rnd(seed, 0)));
     const tierCore = pop < popFull && city.tier === 'metropolis' ? 'city' : city.tier; // 封顶后的城心按“城市”档定面积
     const area = M.max(MIN_AREA[tierCore] || 0.12, ((pmin + pmax) / 2) / (DENSITY[era] * (TIER_DENSITY[tierCore] || 1)));
     const radiusKm = M.sqrt(area / M.PI);
@@ -231,7 +270,7 @@
     const bpattern = isPort ? 'waterfront-mixed-use' : (slopeClass === 'steep' || slopeClass === 'escarpment') ? 'terraced-compounds'
       : { tribal: 'dispersed-compounds', ancient: 'courtyard-blocks', medieval: 'walled-lots', 'early-modern': 'mercantile-blocks', industrial: 'mixed-density-blocks', contemporary: 'mixed-density-blocks' }[era] || 'perimeter-blocks';
     const orientBear = morphology === 'river-corridor' && rBear !== null ? rBear : ['waterfront-harbor', 'lakefront-crescent', 'coastal-terrace'].includes(morphology) ? wBear : null;
-    const orientation = orientBear === null ? seed % 360 : (orientBear + 90 + M.round((rnd(seed, 67) - 0.5) * 18) + 360) % 360;
+    const orientation = context.orientation !== undefined ? context.orientation : orientBear === null ? seed % 360 : (orientBear + 90 + M.round((rnd(seed, 67) - 0.5) * 18) + 360) % 360;
     const wd = WIDTHS[era], ts = TIER_W[city.tier] || 1;
 
     // ---- 周边场地（city_site_context） ----
@@ -285,7 +324,7 @@
       water17.push(code); clear17.push(+(dry ? d : -d).toFixed(5));
     }
     // 城市锚点必须落在连续陆面上
-    if (!dryAt(cy, cx)) { for (let k = 1; k <= 40; k++) { const a = k * 2.4; const yy = cy + M.sin(a) * k * 0.02, xx = cx + M.cos(a) * k * 0.02; if (dryAt(yy, xx)) { cy = yy; cx = xx; break; } } }
+    if (!context.fortification && !dryAt(cy, cx)) { for (let k = 1; k <= 40; k++) { const a = k * 2.4; const yy = cy + M.sin(a) * k * 0.02, xx = cx + M.cos(a) * k * 0.02; if (dryAt(yy, xx)) { cy = yy; cx = xx; break; } } }
 
     // 淡水来源（_freshwater_source）
     let src = null;
@@ -374,7 +413,7 @@
       for (const [p, q] of [[-dx, x0 - wb.w], [dx, wb.e - x0], [-dy, y0 - wb.n], [dy, wb.s - y0]]) { if (p === 0) { if (q < 0) return null; continue; } const r = q / p; if (p < 0) { if (r > t1) return null; if (r > t0) t0 = r; } else { if (r < t0) return null; if (r < t1) t1 = r; } }
       return [x0 + dx * t0, y0 + dy * t0, x0 + dx * t1, y0 + dy * t1, t0, t1]; };
     const corridors = []; let cid = 0;
-    for (const [k, kind] of [['trunk', 'road'], ['regional', 'road'], ['local', 'road'], ['rail', 'rail']]) for (const l of (Cv.roads[k] || [])) {
+    for (const [k, kind] of [['trunk', 'road'], ['regional', 'road'], ['local', 'road'], ['rail', 'rail']]) for (const l of ((context.roads || Cv.roads)[k] || [])) {
       if (l.length < 4) continue;
       for (const off of [-W, 0, W]) { let cur = [];
         const flush = () => { if (cur.length >= 2) corridors.push({ id: `corridor-${k}-${cid++}`, kind, points: cur }); cur = []; };
@@ -385,13 +424,13 @@
         flush(); }
     }
     if (harbor) corridors.push({ id: `city-${idx}-harbor-access`, kind: 'road', points: harbor.access });
-    const country = city.country >= 0 ? Cv.countries[city.country] : null, lib = Cv.libs.find(l => l.id === city.lib) || Cv.libs[0];
+    const country = context.fortification ? context.country : city.country >= 0 ? Cv.countries[city.country] : null, lib = context.lib || Cv.libs.find(l => l.id === city.lib) || Cv.libs[0];
     const named = [];
-    (Cv.labels || []).forEach((l, k) => { if (l.y >= sb.north && l.y <= sb.south && l.x >= sb.west && l.x <= sb.east) named.push({ id: 'label-' + k, name: l.name, kind: l.type, location: { row: l.y, column: l.x } }); });
-    (Cv.riverNames || []).forEach((l, k) => { if (l.y >= sb.north && l.y <= sb.south && l.x >= sb.west && l.x <= sb.east) named.push({ id: 'river-' + k, name: l.name, kind: 'river', location: { row: l.y, column: l.x } }); });
+    (context.historical ? [] : Cv.labels || []).forEach((l, k) => { if (l.y >= sb.north && l.y <= sb.south && l.x >= sb.west && l.x <= sb.east) named.push({ id: 'label-' + k, name: l.name, kind: l.type, location: { row: l.y, column: l.x } }); });
+    (context.historical ? [] : Cv.riverNames || []).forEach((l, k) => { if (l.y >= sb.north && l.y <= sb.south && l.x >= sb.west && l.x <= sb.east) named.push({ id: 'river-' + k, name: l.name, kind: 'river', location: { row: l.y, column: l.x } }); });
 
     const recipe = {
-      id: 'city-' + idx, name: city.name, location: { row: cy, column: cx }, anchorCell: { row, column }, seed, tier: city.tier, siteType, era,
+      id: context.id || 'city-' + idx, name: city.name, location: { row: cy, column: cx }, anchorCell: { row, column }, seed, tier: city.tier, siteType, era,
       population: { minimum: pmin, maximum: pmax, estimate },
       urban: {
         targetFootprintKm2: area, targetEquivalentGridCells: area / (g.rowKm * g.colKm), areaSemantics: 'target-before-native-terrain-mask', radiusKm,
@@ -422,7 +461,8 @@
       schema: 'city-site-context-v2', bounds: sb, rows: N17, columns: N17, elevationMetres: elev17, water: water17, shorelineClearanceNativeCells: clear17, waterBodies: bodies, riverOrder: rord17, rivers: riversOut,
       radiusKm: +siteRadius.toFixed(3), latitudeDegrees: 90 - cy / H * 180, gridCellKilometres: { row: g.rowKm, column: g.colKm }, source, namedFeatures: named
     };
-    return { grid: { width: W, height: H }, recipe, site, lib, country: country ? country.name : null };
+    if (context.fortification) recipe.fortification = context.fortification;
+    return { grid: { width: W, height: H }, recipe, site, lib, country: country ? country.name : null, ...(context.fortification ? {fortification:context.fortification} : {}) };
   }
 
   // marching squares（值 >0 为水），返回闭合环 [[x,y],...]
@@ -458,5 +498,5 @@
     return out;
   }
 
-  G.CitySite = { payload };
+  G.CitySite = { payload, fortPayload };
 })(typeof self !== 'undefined' ? self : this);

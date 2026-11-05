@@ -35,20 +35,36 @@
 
   function apply(world, Hc) {
     const Cv = world.Cv, h = Cv.hist, R = Hc.R, end = Hc.Pol.end, N = h.N, W = h.W, H = h.H, NB = h.NB;
+    Cv.forts = Hc.Pol.forts;
+    const human = Hc.Pol.human, latest = human.snapshots[human.snapshots.length - 1];
+    // 时间线的负 ID 表示古文明；若古文明延续至终局，为当前地图创建对应的真实文化实例。
+    const ancientCulture = new Map();
+    const registerAncient = c => { if (c > -2 || ancientCulture.has(c)) return; const a = Hc.D.ancient[-2 - c]; if (!a) throw new Error('历史文化引用无效'); ancientCulture.set(c, Cv.cultures.length); Cv.cultures.push({ name: a.name, style: a.libObj && a.libObj.label || a.lib, subsistence: a.type, library: a.libObj && a.libObj.label || a.lib, ancient: -2 - c }); };
+    for (let r = 1; r <= R.nR; r++) registerAncient(end.cult[r]);
+    for (const country of end.countries) registerAncient(country.civ); // 统治者文化可能没有成为任何地区的人口主体。
+    const currentCulture = c => c >= 0 ? c : c <= -2 ? ancientCulture.get(c) : -1;
+    const regionPopulation = new Float64Array(R.nR + 1), regionSpecies = new Int16Array(R.nR + 1).fill(-1);
+    for (let r = 1; r <= R.nR; r++) {
+      const counts = new Map(); for (let i = latest.offsets[r]; i < latest.offsets[r + 1]; i++) { const s = latest.species[i], n = latest.population[i]; regionPopulation[r] += n; counts.set(s, (counts.get(s) || 0) + n); }
+      let best = 0; for (const [s, n] of counts) if (n > best) { best = n; regionSpecies[r] = s; }
+    }
+    Cv.species = new Int16Array(N).fill(-1); Cv.speciesLibraries = human.species;
     const state = new Int16Array(N).fill(-1), province = new Int16Array(N).fill(-1);
     for (let i = 0; i < N; i++) { const r = R.regionOf[i]; if (!r) continue; const p = end.owner[r];
       if (p >= 0) { state[i] = end.countryOfP[p]; const v = end.prov[r]; province[i] = v >= 0 ? end.provIdx[v] : -1; }
-      if (Cv.culture[i] >= 0 || end.cult[r] >= 0) Cv.culture[i] = end.cult[r] >= 0 ? end.cult[r] : Cv.culture[i];
-      if (h.domain[i]) Cv.religion[i] = end.rel[r] >= 0 ? end.rel[r] : -1; }
+      Cv.culture[i] = currentCulture(end.cult[r]);
+      Cv.species[i] = regionSpecies[r];
+      if (h.domain[i]) Cv.religion[i] = end.rel[r] >= 0 ? end.rel[r] : -1;
+      if (Cv.popDensity && R.weight[r] > 0) Cv.popDensity[i] = regionPopulation[r] * h.weight[i] / R.weight[r] / h.area[(i / W) | 0]; }
     // 国家
     const nK = end.countries.length, kPop = new Float64Array(nK), kArea = new Float64Array(nK), kCities = new Int32Array(nK);
-    for (let i = 0; i < N; i++) { const k = state[i]; if (k < 0) continue; kPop[k] += h.weight[i] * h.popTotal; kArea[k] += h.area[(i / W) | 0]; }
+    for (let i = 0; i < N; i++) { const k = state[i]; if (k < 0) continue; const r = R.regionOf[i]; kPop[k] += R.weight[r] > 0 ? h.weight[i] * regionPopulation[r] / R.weight[r] : 0; kArea[k] += h.area[(i / W) | 0]; }
     h.settlements.forEach(s => { const k = state[s.cell]; if (k >= 0 && s.tier !== 'site') kCities[k]++; });
     const toFull = i => { const y = (i / W) | 0, x = i - y * W; return [(x + 0.5) * 2, (y + 0.5) * 2]; };
     const countries = end.countries.map((c, k) => {
       const capCell = c.capital >= 0 ? h.settlements[c.capital].cell : R.center[c.capRegion];
-      return { name: c.name, short: c.short, bare: c.bare, form: c.form, formLabel: c.formLabel || FORM_LABEL[c.form] || '王国', regime: c.regime, imperial: !!c.imperial, capital: c.capital, civ: Math.max(0, c.civ), culture: Math.max(0, c.civ),
-        language: Math.max(0, Cv.language[capCell]), religion: Math.max(0, c.religion), pop: Math.round(kPop[k]), area: Math.round(kArea[k]), cities: kCities[k], strength: 1, fromHistory: c.p, color: c.color, gov: c.gov, govKey: c.govKey, govStyle: c.govStyle, ruler: c.ruler, house: c.house, ideas: c.ideas || [], mil: c.mil || 0, adm: c.adm || 0 }; // 配色与历史时间线一致
+      return { name: c.name, short: c.short, bare: c.bare, form: c.form, formLabel: c.formLabel || FORM_LABEL[c.form] || '王国', regime: c.regime, imperial: !!c.imperial, capital: c.capital, civ: currentCulture(c.civ), culture: currentCulture(c.civ),
+        language: Cv.language[capCell], religion: c.religion, pop: Math.round(kPop[k]), area: Math.round(kArea[k]), cities: kCities[k], strength: 1, fromHistory: c.p, color: c.color, gov: c.gov, govKey: c.govKey, govStyle: c.govStyle, ruler: c.ruler, house: c.house, ideas: c.ideas || [], mil: c.mil || 0, adm: c.adm || 0 }; // 配色与历史时间线一致
     });
     // 附庸：记下宗主，配色染上宗主的色调（与历史时间线一致）
     { const kOfP = new Map(end.countries.map((c, k) => [c.p, k]));
@@ -62,23 +78,22 @@
       countries.forEach((c, k) => { if (best[k] >= 0) { const [x, y] = toFull(best[k]); c.lx = x; c.ly = y; c.lsize = dd[best[k]]; } }); }
     const provinces = end.provinces.map(pv => ({ name: pv.name, country: pv.country, seat: pv.seat }));
     // 城市的归属、首都与省会
-    Cv.cities.forEach((ct, k) => { const s = h.settlements[k]; if (!s) return; ct.country = state[s.cell]; ct.prov = province[s.cell]; delete ct.capital; delete ct.seat; });
+    // 与历史终局选治所使用同一份逐区人口分配和累计取整。
+    const cityPopulation=G.HistoryAdministration.cityPopulations(h,R,regionPopulation);
+    Cv.cities.forEach((ct, k) => { const s = h.settlements[k]; if (!s) return; ct.pop=cityPopulation[k];ct.civ = Cv.culture[s.cell]; ct.rel = Cv.religion[s.cell]; ct.country = state[s.cell]; ct.prov = province[s.cell]; delete ct.capital; delete ct.seat; });
     if (end.religions) Cv.religions = end.religions.map(r => Object.assign({}, r)); // 宗教库生成的宗教（含推演中分裂出的教派）
-    for (const c of Hc.C.cities) if (c.colonial !== undefined && c.idx >= 0 && Cv.cities[c.idx]) Cv.cities[c.idx].name = c.name; // 殖民地城市改用宗主国的名字
+    for (const c of Hc.C.cities) if (c.idx >= 0 && Cv.cities[c.idx]) { Cv.cities[c.idx].name = c.name; h.settlements[c.idx].name = c.name; } // 所有城市使用历史终局名称。
     countries.forEach((c, k) => { if (c.capital >= 0 && Cv.cities[c.capital]) Cv.cities[c.capital].capital = k; });
     provinces.forEach((pv, i) => { if (pv.seat >= 0 && Cv.cities[pv.seat] && Cv.cities[pv.seat].seat === undefined) Cv.cities[pv.seat].seat = i; });
-    // 实际治理：离首都越远越弱（随首都所在地的发展阶段放大）
+    // 已设省区以到真实治所的交通日数表达治理；无支撑的土地保持未设省。
     const gov = new Uint8Array(N), govDays = new Float32Array(N).fill(Infinity);
-    { const capCell = countries.map(c => c.capital >= 0 ? h.settlements[c.capital].cell : -1);
-      const stageAt = (r, y) => { const D = Hc.D; let s = 0; for (let k = 1; k <= 8; k++) if (D.Y[k * D.NN + r] <= y) s = k; return s; };
-      const reach = countries.map((c, k) => capCell[k] >= 0 ? 300 + 260 * stageAt(R.regionOf[capCell[k]] || 1, Hc.D.E) : 600);
-      for (let i = 0; i < N; i++) { const k = state[i]; if (k < 0 || capCell[k] < 0) continue; const km = h.gdist(i, capCell[k]) * h.cellKm; gov[i] = Math.round(255 * Math.max(0.12, Math.min(1, 1.1 - km / reach[k]))); govDays[i] = km / 40; } }
+    for (let i = 0; i < N; i++) { const r=R.regionOf[i];if(!r||province[i]<0||!Number.isFinite(end.adminDays[r]))continue;const days=end.adminDays[r];govDays[i]=days;gov[i]=Math.round(255*Math.max(0.12,Math.min(1,1.1-days/end.adminBudget))); }
     // 名义宣称、部族与羁縻
     const nominal = Int16Array.from(state), tribe = Int16Array.from(Cv.tribe, (t, i) => state[i] < 0 ? t : -1), jimi = new Int16Array(N).fill(-1);
     const tribes = Cv.tribes.map((t, i) => { const hx = Math.min(W - 1, Math.max(0, (t.x / 2) | 0)), hy = Math.min(H - 1, Math.max(0, (t.y / 2) | 0)); return state[hy * W + hx] < 0 ? t : Object.assign({}, t, { hidden: true }); });
     Object.assign(Cv, { country: state, province, countries, provinces, gov, govDays, nominal, tribe, jimi, jimis: [], tribes: tribes.map(t => t.hidden ? Object.assign({}, t, { x: -1e6, y: -1e6 }) : t) });
     let tribalArea = 0, claimArea = 0; for (let i = 0; i < N; i++) if (h.domain[i]) { claimArea += h.area[(i / W) | 0]; if (state[i] < 0) tribalArea += h.area[(i / W) | 0]; }
-    Object.assign(Cv.stats, { countries: nK, provinces: provinces.length, tribalShare: tribalArea / Math.max(1, claimArea), jimis: 0, endYear: Hc.D.E });
+    Object.assign(Cv.stats, { population: Math.round(regionPopulation.reduce((a, b) => a + b, 0)), countries: nK, provinces: provinces.length, tribalShare: tribalArea / Math.max(1, claimArea), jimis: 0, endYear: Hc.D.E });
     // 全分辨率国界与省界：取历史区块的细化边界
     const F = Hc.regionF, P = world.P, FN = F.length, countryF = new Int16Array(FN), provinceF = new Int16Array(FN);
     for (let f = 0; f < FN; f++) { const r = F[f]; if (r > 0) { const p = end.owner[r], k = p >= 0 ? end.countryOfP[p] : -1, v = p >= 0 ? end.prov[r] : -1; countryF[f] = k; provinceF[f] = k >= 0 && v >= 0 ? end.provIdx[v] : -1; } else { countryF[f] = r < -1 ? r : -1; provinceF[f] = r < -1 ? r : -1; } }

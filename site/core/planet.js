@@ -51,7 +51,7 @@
   function fromLatLon(la, lo) { const c = Math.cos(la * D2R); return [c * Math.cos(lo * D2R), c * Math.sin(lo * D2R), Math.sin(la * D2R)]; }
   const bump = (d, c, w) => { const t = (d - c) / w; return Math.exp(-t * t); };
 
-  function build(cfg, progress) {
+  function procedural(cfg, progress, importedElev) {
     const rnd = mulberry32(cfg.seed);
     const W = cfg.W, H = cfg.H;
     const cW = Math.min(W, 544), cH = cW / 2;
@@ -207,6 +207,12 @@
       const shift = vq - 0.008;
       for (let i = 0; i < cN; i++) crust[i] = smooth(-0.3, 0.3, crust[i] - shift); }
 
+    // 导入图的海陆决定假想构造中的大陆/洋壳；不借用随机大陆的地壳分类。
+    if (importedElev) for (let y = 0; y < cH; y++) for (let x = 0; x < cW; x++) {
+      const fy = Math.min(H - 1, Math.floor((y + 0.5) * H / cH)), fx = Math.min(W - 1, Math.floor((x + 0.5) * W / cW));
+      crust[y * cW + x] = importedElev[fy * W + fx] > 0 ? 0.85 : 0.1;
+    }
+
     // ---------- 3. 板块边界与构造作用 ----------
     progress('板块边界', 0.14);
     const bOther = new Int32Array(cN).fill(-1), bConv = new Float32Array(cN), bShear = new Float32Array(cN);
@@ -271,6 +277,8 @@
       }
       uplift[i] = u * mScale;
     }
+
+    if (importedElev) return { ...plateData(), uplift };
 
     // ---------- 4. 基础高程（粗网格） ----------
     progress('地壳均衡', 0.2);
@@ -441,6 +449,12 @@
     let maxE = 0, minE = 0;
     for (let i = 0; i < elev.length; i++) { const e = elev[i]; if (e > 5500) elev[i] = 5500 + (e - 5500) * 0.35; else if (e < -7000) elev[i] = -7000 + (e + 7000) * 0.4; if (elev[i] > maxE) maxE = elev[i]; if (elev[i] < minE) minE = elev[i]; }
 
+    return {
+      W, H, F, C, cW, cH, elev, coreOf, cores, polar, newWorld, ...plateData(),
+      maxE, minE, upsample, downsample
+    };
+
+    function plateData() {
     // 板块信息
     const plates = [];
     for (let p = 0; p < P; p++) plates.push({ id: p, n: 0, cont: 0, sx: 0, sy: 0, sz: 0, speed: 0 });
@@ -484,16 +498,13 @@
       }
     }
 
-    return {
-      W, H, F, C, cW, cH, elev, plate, crust, coreOf, cores, plates, polar, newWorld,
-      bSegs: bSegs.map(a => Float32Array.from(a)), bMarks: Float32Array.from(bMarks),
-      volcanoes: volcanoes.map(i => [((i % cW) + 0.5) * f, (((i / cW) | 0) + 0.5) * f]),
-      maxE, minE, upsample, downsample
-    };
+      return { plate, crust, plates, bSegs: bSegs.map(a => Float32Array.from(a)), bMarks: Float32Array.from(bMarks),
+        volcanoes: volcanoes.map(i => [((i % cW) + 0.5) * f, (((i / cW) | 0) + 0.5) * f]) };
+    }
   }
 
   // 水滴侵蚀：高度换算到无量纲单位后运算
-  function erode(elev, W, H, count, rnd, onP) {
+  function erode(elev, W, H, count, rnd, onP, locked) {
     const S = 1 / 40000;
     const h = new Float32Array(elev.length);
     for (let i = 0; i < h.length; i++) h[i] = elev[i] * S;
@@ -506,12 +517,13 @@
       if ((d & 32767) === 0 && onP) onP(d / count);
       let px = 0, py = 0, tries = 0;
       do { px = rnd() * W; py = 2 + rnd() * (H - 4); tries++; } while (h[(py | 0) * W + (px | 0)] <= 0 && tries < 6);
-      if (h[(py | 0) * W + (px | 0)] <= 0) continue;
+      if (h[(py | 0) * W + (px | 0)] <= 0 || locked && locked[(py | 0) * W + (px | 0)]) continue;
       let dx = 0, dy = 0, sp = 1, wat = 1, sed = 0;
       for (let l = 0; l < life; l++) {
         const xi = px | 0, yi = py | 0, cx = px - xi, cy = py - yi;
         const x1 = xi + 1 === W ? 0 : xi + 1;
         const i00 = yi * W + xi, i10 = yi * W + x1, i01 = i00 + W, i11 = i10 + W;
+        if (locked && (locked[i00] || locked[i10] || locked[i01] || locked[i11])) break;
         const a = h[i00], b = h[i10], c = h[i01], e = h[i11];
         const gx = (b - a) * (1 - cy) + (e - c) * cy, gy = (c - a) * (1 - cx) + (e - b) * cx;
         const ht = a * (1 - cx) * (1 - cy) + b * cx * (1 - cy) + c * (1 - cx) * cy + e * cx * cy;
@@ -527,7 +539,7 @@
         const dh = nh - ht;
         if (nh < 0) { // 入海：泥沙沉在海里（陆架与河口前缘），不在岸上堆成小山包；沉积不高出海平面
           const dep = sed * 0.5, lim = -2 * S, ws = [(1 - ncx) * (1 - ncy), ncx * (1 - ncy), (1 - ncx) * ncy, ncx * ncy], js = [j00, j10, j00 + W, j10 + W];
-          for (let k = 0; k < 4; k++) if (h[js[k]] < lim) h[js[k]] = Math.min(lim, h[js[k]] + dep * ws[k]);
+          for (let k = 0; k < 4; k++) if ((!locked || !locked[js[k]]) && h[js[k]] < lim) h[js[k]] = Math.min(lim, h[js[k]] + dep * ws[k]);
           break;
         }
         const cap = Math.max(-dh * sp * wat * capF, minCap);
@@ -541,6 +553,7 @@
             let bx = xi + offs[2 * k]; const by = yi + offs[2 * k + 1];
             if (by < 0 || by >= H) continue;
             if (bx < 0) bx += W; else if (bx >= W) bx -= W;
+            if (locked && locked[by * W + bx]) continue;
             const v = amt * wts[k]; h[by * W + bx] -= v; sed += v;
           }
         }
@@ -548,8 +561,12 @@
         wat *= 1 - evap;
       }
     }
-    for (let i = 0; i < h.length; i++) elev[i] = h[i] / S;
+    for (let i = 0; i < h.length; i++) if (!locked || !locked[i]) elev[i] = h[i] / S;
   }
 
-  G.Planet = { build, grid, upsample, downsample };
+  function build(cfg, progress, terrainRaster) {
+    return cfg.terrainInput ? G.TerrainImport.build(cfg, terrainRaster, progress) : procedural(cfg, progress);
+  }
+  const hypotheticalTectonics = (cfg, elev, progress) => procedural(cfg, progress, elev);
+  G.Planet = { build, grid, upsample, downsample, hypotheticalTectonics, erodeConstrained: erode };
 })(typeof self !== 'undefined' ? self : this);

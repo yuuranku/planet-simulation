@@ -34,4 +34,4 @@ node --test tests/civilization-statehood.test.cjs tests/ruler-culture-history.te
 - `android/`：安卓 WebView 容器和构建配置。
 - `tests/`：建国及历史规则回归。
 
-第三方素材和组件按各自附带的许可或声明使用，见 `site/fonts/OFL.txt`、`site/licenses/`、`site/globe/` 和 `android/assets/licenses/`。项目其余源码的授权条款尚未指定。
+第三方素材和组件按各自附带的许可或声明使用，见 `site/licenses/`、`site/globe/` 和 `android/assets/licenses/`。项目其余源码的授权条款尚未指定。

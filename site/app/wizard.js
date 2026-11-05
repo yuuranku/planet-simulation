@@ -64,7 +64,7 @@
     const civ = fact('时代', '·', 'mid', age, yr + (c.endYear >= 4450 ? ' · 已有火药与远洋航海' : c.endYear >= 3500 ? ' · 尚无印刷、火药与远洋航海' : ' · 尚无封建契约与远洋航海'))
       + fact('人口基线', ...step3(c.popIdx, 1, 1), ['较低', '中等', '较高'][c.popIdx], pop + '，实际人口随历史演化')
       + fact('文化', ...step3(c.cultures, 11, 17), c.cultures > 17 ? '多元细碎' : c.cultures < 11 ? '大文化圈' : '中等', `${c.cultures} 个文化圈 · ${c.languages} 种语言 · ${c.religions} 个宗教`)
-      + fact('国家', ...step3(c.countries, 60, 100), c.countries > 100 ? '列国林立' : c.countries < 60 ? '少数大国' : '中等', `初始约 ${c.countries} 国 · 部落空间 ${Math.round(c.tribal * 100)}%`)
+      + fact('国家', ...step3(c.countries, 60, 100), c.countries > 100 ? '列国林立' : c.countries < 60 ? '少数大国' : '中等', `目标约 ${c.countries} 国 · 部落空间 ${Math.round(c.tribal * 100)}%`)
       + fact('城镇', ...step3(c.towns, 600, 900), c.towns > 900 ? '城镇密集' : c.towns < 600 ? '城镇疏朗' : '标准', `约 ${c.towns} 座城镇`);
     return `<div class="q"><h4><em>≈</em>世界总结 <small class="trend-sub">这些选择叠加出的整体倾向</small></h4><div class="trend">
       <section><h6>气候</h6>${t1}${w1}${s1}${b1}</section>

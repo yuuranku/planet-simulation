@@ -18,7 +18,7 @@
     progress && progress('历史 · 城市兴衰', 0.966);
     const C = G.HistoryCities.run(h, R, D, { cities: Cv.cities, labels: Cv.labels });
     progress && progress('历史 · 列国争霸到现在', 0.968);
-    const Pol = G.HistoryPolity.run(h, R, D, C, { countries: Cv.countries, provinces: Cv.provinces, religions: Cv.religions, cultureNames: Cv.cultures.map(c => c.name), routes:Cv.routes, admin:Cv.admin, militaryRules:world.cfg.militaryRules, yearDays:world.cfg.yearDays, fullTerrain:{P:world.P,Cl:world.Cl,Hy:world.Hy,cfg:world.cfg} });
+    const Pol = G.HistoryPolity.run(h, R, D, C, { targetCountries: world.cfg.countries, provinces: Cv.provinces, religions: Cv.religions, cultureNames: Cv.cultures.map(c => c.name), routes:Cv.routes, admin:Cv.admin, militaryRules:world.cfg.militaryRules, yearDays:world.cfg.yearDays, fullTerrain:{P:world.P,Cl:world.Cl,Hy:world.Hy,cfg:world.cfg} });
     for (const list of [D.events, C.events, Pol.events]) for (const event of list) G.HistoryCities.resolveEvent(event, C.cities);
     const t3 = Date.now();
     // 区块边界在全分辨率地形上按“山川形便”细化：沿山脊与大河，平原上有自然的犬牙交错

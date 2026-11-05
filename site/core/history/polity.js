@@ -141,7 +141,11 @@
   function run(h, R, D, C, opt) {
     const { NN, E, Y } = D, nR = R.nR, rnd = mulberry32((h.seed | 0) + 7777);
     const scale = clamp(nR / 1400, 0.6, 3);
-    const countries = opt.countries || [];
+    const targetCountries = opt.targetCountries;
+    if (!Number.isInteger(targetCountries) || targetCountries < 1) throw new Error('国家数量目标无效');
+    // 目标是近似数量；每个世界从较窄范围中确定稳定的规模，历史继续自然演化。
+    const countryVariation = Math.min(8, Math.floor(targetCountries / 10));
+    const countryLimit = Math.max(1, targetCountries + Math.floor(mulberry32((h.seed | 0) + 48107)() * (2 * countryVariation + 1)) - countryVariation);
     const center = R.center;
     // 区块中心的三维单位向量：两点间距离用弦长近似（比格距函数快得多）
     const UX = new Float64Array(nR + 1), UY = new Float64Array(nR + 1), UZ = new Float64Array(nR + 1);
@@ -183,6 +187,8 @@
 
     // ---------- 状态 ----------
     const P = [];                                   // 政权
+    let activeCountries = 0;                        // 有实际领土的同时代政权
+    const countrySlots = () => Math.max(0, countryLimit - activeCountries);
     const owner = new Int32Array(nR + 1).fill(-1);
     const linOwnSince = new Float64Array(nR + 1), coreLin = new Int32Array(nR + 1).fill(-1);
     const log = [];                                 // [region, year, owner]
@@ -320,6 +326,7 @@
       if (best < 0 || bs < 1) return;
       const X = PV[best], civ = creole(X.seat, q, y);
       if (!civilized(civ)) { releaseTribes(p, Array.from({ length: nR }, (_, i) => i + 1).filter(r => prov[r] === best && owner[r] === p), y); q.coh = Math.max(0, q.coh - 0.04); return; }
+      if (!countrySlots()) return;
       const c = newPolity(y, X.seat, [{ id: p, kind: 'secede' }], civ); P[c].org = y; P[c].claimLin = q.lin; P[c].claimUntil = y + 300; P[c].coh = 0.8;
       inheritRegions(Array.from({ length: nR }, (_, i) => i + 1).filter(r => prov[r] === best && owner[r] === p).map(r => [r, c]), y);
       q.coh = Math.max(0, q.coh - 0.04); ev(y, 'provSecede', { p: c, q: p, pv: best, r: X.seat });
@@ -551,8 +558,8 @@
       const pv = prov[r];
       if (!keep) { if (pv >= 0) { prevProv[r] = pv; setProv(r, -1, y); } prevOwner[r] = old; occSince[r] = y; }
       owner[r] = p; log.push(r, y, p);
-      if (old >= 0) P[old].n--;
-      if (p >= 0) { P[p].heldRegions.add(r); P[p].n++; if (P[p].n > P[p].peakN) { P[p].peakN = P[p].n; P[p].peakYear = y; } }
+      if (old >= 0 && --P[old].n === 0) activeCountries--;
+      if (p >= 0) { P[p].heldRegions.add(r); if (P[p].n++ === 0) activeCountries++; if (P[p].n > P[p].peakN) { P[p].peakN = P[p].n; P[p].peakYear = y; } }
       const nl = p >= 0 ? P[p].lin : -1, ol = old >= 0 ? P[old].lin : -1; if (nl !== ol) linOwnSince[r] = y;
     }
     // 整批处理疆域继承：同一省被不同国家分走时，按实际去向拆分，
@@ -712,6 +719,7 @@
       D.ancient.forEach((a, ai) => { if (y >= a.fall && !ancientFallen.has(ai)) { ancientFallen.add(ai); for (const q of P) if (q.died === null && q.civ === -2 - ai) q.coh = 0.05; } });
       // 1. 城邦兴起
       for (let r = 1; r <= nR; r++) {
+        if (!countrySlots()) break;
         if (owner[r] >= 0 || sg[r] < 3 || !habitable(r) || !civilized(civOfNew(r)) || (colonialAge !== null && isNW(r))) continue; /* 大航海接触以后，新大陆不再自发兴起本土城邦 */
         const roll = rnd() / (isNW(r) ? 0.3 : 1); if (roll >= 0.08) continue; /* 新大陆：国家稀少，不参与凑数 */
         const cu = cult[r] !== -1 ? cult[r] : cultAt(r, y), tp = typeOfCult(cu);
@@ -912,6 +920,7 @@
       enforceProvinces(y);
       // 目标必须确由本轮战斗占领且此时仍在手；建立独立教国不改变人口。
       for (const w of holyWars.settle({ year:y, owner })) {
+        if (!countrySlots()) { ev(y, 'holyWarConquest', { p:w.attacker, q:w.defender, r:w.target, f:w.religion, war:w.id }); continue; }
         const p = newPolity(y, w.target, [{ id:w.attacker, kind:'holyWar' }], rulingCultureAt(P[w.attacker], y));
         P[p].theo = y; P[p].theoRel = w.religion; P[p].stateRel = w.religion;
         setOwner(w.target, p, y); w.createdPolity = p;
@@ -936,7 +945,7 @@
       if (sh >= 0.6 && Q.n >= 2 && rnd() < (typeOfCult(Q.civ) === 'pastoral' ? 0.9 : 0.5)) { Q.nomad = true; delete Q.settled; delete Q.settledCiv; delete Q._settledRegion; delete Q.leftSteppe; if (R.pasture[Q.cap] < 0.3 && best >= 0) { Q.cap = best; Q.caps[Q.caps.length - 1] = { year: Q.caps[Q.caps.length - 1].year, city: bigCity(best, y), r: best }; } }
       else if (sh < 0.4 && Q.nomad && Q.settled === undefined) { Q.settled = y; Q.settledCiv = settleCivOf(Q.cap, Q.civ); if (Q.settledCiv !== Q.civ && Q.settledCiv === cult[Q.cap]) Q._settledRegion = Q.cap; Q.leftSteppe = true; } }
     function nomadSplit(p, y, regs, kind) { // 把一片草原按相距较远的几个中心分给几个部族（游牧）
-      const q = P[p], k = Math.min(4, 1 + Math.floor(regs.length / 5)), seeds = [q.cap];
+      const q = P[p], k = Math.min(4, 1 + Math.floor(regs.length / 5), 1 + countrySlots()), seeds = [q.cap];
       const ranked = regs.filter(r => r !== q.cap).sort((a, b) => kmBetween(b, q.cap) - kmBetween(a, q.cap) || a - b);
       for (const r of ranked) { if (seeds.length >= k) break; if (seeds.every(s => kmBetween(s, r) > 300)) seeds.push(r); }
       if (seeds.length < 2) return [];
@@ -964,7 +973,7 @@
           if (!nomadAt(q, y)) { const home = []; for (let r = 1; r <= nR; r++) if (owner[r] === p && isSteppe(r) && cult[r] >= 0 && typeOfCult(cult[r]) === 'pastoral' && kmBetween(r, q.cap) > 400) home.push(r);
             if (home.length >= 3 && rnd() < 0.6) { const far = home.sort((a, b) => kmBetween(b, q.cap) - kmBetween(a, q.cap) || a - b)[0], grp = [far], seen = new Set(grp), hs = new Set(home);
               for (let i = 0; i < grp.length; i++) for (let k = R.off[grp[i]]; k < R.off[grp[i] + 1]; k++) { const b = R.nbr[k]; if (hs.has(b) && !seen.has(b)) { seen.add(b); grp.push(b); } }
-              if (grp.length >= 3) { const c = newPolity(y, far, [{ id: p, kind: 'secede' }], cult[far]); P[c].nomad = true; delete P[c].settled; delete P[c].settledCiv; delete P[c]._settledRegion; delete P[c].leftSteppe; P[c].coh = 0.8; for (const r of grp) setOwner(r, c, y); ev(y, 'steppeHome', { p: c, q: p, r: far }); } }
+              if (grp.length >= 3 && countrySlots()) { const c = newPolity(y, far, [{ id: p, kind: 'secede' }], cult[far]); P[c].nomad = true; delete P[c].settled; delete P[c].settledCiv; delete P[c]._settledRegion; delete P[c].leftSteppe; P[c].coh = 0.8; for (const r of grp) setOwner(r, c, y); ev(y, 'steppeHome', { p: c, q: p, r: far }); } }
             continue; }
           let gave = 0; const left = []; for (let r = 1; r <= nR; r++) if (owner[r] === p && R.pasture[r] < 0.35) left.push(r);
           const rest = []; for (const r of left) { const o = prevOwner[r]; if (o >= 0 && o !== p && P[o].died === null && !P[o].rebel && P[o].n > 0) { setOwner(r, o, y); gave++; } else rest.push(r); }
@@ -972,6 +981,7 @@
             for (let i = 0; i < grp.length; i++) for (let k = R.off[grp[i]]; k < R.off[grp[i] + 1]; k++) { const b = R.nbr[k]; if (rs.has(b) && !seen.has(b) && owner[b] === p && b !== q.cap) { seen.add(b); grp.push(b); } }
             const seat = bigRegion(grp, y), civ = civOfNew(seat);
             if (!civilized(civ)) { releaseTribes(p, grp, y); gave += grp.length; continue; }
+            if (!countrySlots()) continue;
             const c = newPolity(y, seat, [{ id: p, kind: 'secede' }], civ); P[c].coh = 0.8; for (const r of grp) setOwner(r, c, y); gave += grp.length; ev(y, 'secede', { p: c, q: p, r: seat }); }
           const st = []; for (let r = 1; r <= nR; r++) if (owner[r] === p) st.push(r);
           const kids = q.n >= 4 ? nomadSplit(p, y, st, 'split') : []; q.coh = Math.min(q.coh, 0.45);
@@ -979,7 +989,7 @@
           ev(y, 'hordeFall', { p, kids, r: q.cap, gave, lostCrown });
           continue; }
         // 4. 前近代农耕国家直辖的草原：诸部叛离，另立汗国（国势尚强时多半册封为藩）
-        if (ptype[p] !== 'pastoral' && !modP[p]) { const sp = []; for (let r = 1; r <= nR; r++) if (owner[r] === p && r !== q.cap && isSteppe(r) && cult[r] >= 0 && typeOfCult(cult[r]) === 'pastoral') sp.push(r);
+        if (ptype[p] !== 'pastoral' && !modP[p] && countrySlots()) { const sp = []; for (let r = 1; r <= nR; r++) if (owner[r] === p && r !== q.cap && isSteppe(r) && cult[r] >= 0 && typeOfCult(cult[r]) === 'pastoral') sp.push(r);
           if (!sp.length || rnd() > (0.02 + 0.006 * Math.min(10, sp.length)) * (1.4 - Math.min(1, q.coh))) continue; // 草原越大，越难羁縻
           const far = sp.sort((a, b) => kmBetween(b, q.cap) - kmBetween(a, q.cap) || a - b)[0], ss = new Set(sp), grp = [far], seen = new Set(grp);
           for (let i = 0; i < grp.length && grp.length < 14; i++) for (let k = R.off[grp[i]]; k < R.off[grp[i] + 1]; k++) { const b = R.nbr[k]; if (ss.has(b) && !seen.has(b) && grp.length < 14) { seen.add(b); grp.push(b); } }
@@ -1053,9 +1063,11 @@
           const pvPart = new Map(); for (const r of own) { const v = prov[r]; if (v < 0) continue; const sr = PV[v].seat; if (!pvPart.has(v)) pvPart.set(v, part.has(sr) ? part.get(sr) : part.get(r)); }
           seeds.forEach((sd, i) => { if (prov[sd] >= 0) pvPart.set(prov[sd], i); });
           for (const r of own) if (prov[r] >= 0 && pvPart.has(prov[r])) part.set(r, pvPart.get(prov[r])); }
-        const kids = [], partitionOwners = [p];
+        const kids = [], partitionOwners = [p]; let slots = countrySlots();
         for (let i = 1; i < seeds.length; i++) { const civ = creole(seeds[i], q, y); if (!civilized(civ)) { partitionOwners[i] = -1; continue; }
+          if (!slots) { partitionOwners[i] = p; continue; } slots--;
           const c = newPolity(y, seeds[i], [{ id: p, kind: 'split' }], civ); partitionOwners[i] = c; P[c].claimLin = q.lin; P[c].claimUntil = y + 400; P[c].coh = 0.75; P[c].org = q.org; if (nomadAt(q, y) && P[c].settled === undefined) P[c].nomad = R.pasture[seeds[i]] >= 0.3; kids.push(c); } // 游牧汗国分裂：在草原上的部分仍是游牧部族
+        if (!kids.length && !partitionOwners.includes(-1)) { dynasty(p, y); return; }
         const lost = own.filter(r => part.has(r) && part.get(r) > 0);
         inheritRegions(lost.filter(r => partitionOwners[part.get(r)] >= 0).map(r => [r, partitionOwners[part.get(r)]]), y);
         releaseTribes(p, lost.filter(r => partitionOwners[part.get(r)] === -1), y);
@@ -1112,6 +1124,7 @@
       if ((y / TICK) % 3 === 0) for (const p of alivePs) { const q = P[p]; if (!q.colBase || q.died !== null) continue;
         for (const [lc, base] of [...q.colBase]) { if (y - q.colSince.get(lc) < 120) continue; const regs = []; for (let r = 1; r <= nR; r++) if (owner[r] === p && R.landComp[r] === lc) regs.push(r);
           if (!regs.length) { q.colBase.delete(lc); continue; } if (regs.length < 2 || rndK() > 0.06 + 0.02 * Math.min(10, regs.length) + (q.coh < 0.5 ? 0.12 : 0)) continue;
+          if (!countrySlots()) continue;
           const seat = bigRegion(regs, y), civ = rulingCultureAt(q, y); setCult(seat, civ, y); if (rel[q.cap] >= 0) setRel(seat, rel[q.cap], y); // 独立时殖民者精英掌权：首都随宗主国的文化与宗教
           const c = newPolity(y, seat, [{ id: p, kind: 'secede' }], civ); P[c].org = q.org || y; P[c].coh = 0.85; P[c].colonialFrom = p;
           inheritRegions(regs.map(r => [r, c]), y); q.colBase.delete(lc); ev(y, 'independence', { p: c, q: p, r: seat }); } }
@@ -1158,7 +1171,6 @@
         let bi = 0; for (let i = 1; i < parts.length; i++) if (parts[i] > parts[bi]) bi = i; cause[r] = [1, 2, 3, 4, 1, 3, 5][bi]; // 1 赋役 2 灾荒 3 异族 4 信仰 5 遗民
         if (mem) memLin[r] = coreLin[r]; }
       // 起义爆发：民怨高的连片地方
-      const started = new Set();
       const hot = new Map(); // 每国只看民怨最高的一处（已平定的地方一百二十年内保持平静）
       for (let r = 1; r <= nR; r++) { const p = owner[r]; if (p < 0 || P[p].rebel || y < calmUntil[r]) continue; const u = unrest[r] + 0.03 * Math.min(3, tradition[r]); const o = hot.get(p); if (o === undefined || u > o[1]) hot.set(p, [r, u]); }
       for (const [p, [r, u]] of [...hot].sort((a, b) => a[0] - b[0])) { if (P[p].n < 3 || y - (P[p].lastRevolt || -1e9) < 60 || (isNW(P[p].cap) && typeOfCult(P[p].civ) === 'new-world')) continue;
@@ -1166,11 +1178,13 @@
         const q = P[p], cl = [r], seen = new Set(cl), maxN = Math.max(1, Math.min(8, Math.floor(q.n * 0.35)));
         for (let i = 0; i < cl.length && cl.length < maxN; i++) for (let k = R.off[cl[i]]; k < R.off[cl[i] + 1] && cl.length < maxN; k++) { const b = R.nbr[k]; if (!seen.has(b) && owner[b] === p && unrest[b] > thr - 0.12) { seen.add(b); cl.push(b); } }
         if (cl.length >= q.n) continue;
-        started.add(p); q.lastRevolt = y; for (const k of cl) { tradition[k] = Math.min(9, tradition[k] + 1); calmUntil[k] = y + 120; }
         const c0 = cause[r], rtype = c0 === 3 ? 'ethnic' : c0 === 4 ? 'religious' : c0 === 5 ? 'loyalist' : 'peasant';
         const seat = bigRegion(cl, y), civ = civOfNew(seat);
+        const revolution = cs[p] >= 7 && cl.includes(q.cap);
+        if (civilized(civ) && !revolution && !countrySlots()) continue;
+        q.lastRevolt = y; for (const k of cl) { tradition[k] = Math.min(9, tradition[k] + 1); calmUntil[k] = y + 120; }
         if (!civilized(civ)) { releaseTribes(p, cl, y); continue; }
-        if (cs[p] >= 7 && cl.includes(q.cap)) { dynasty(p, y, 'revolution'); continue; } // 近代：都城起事成为革命
+        if (revolution) { dynasty(p, y, 'revolution'); continue; } // 近代：都城起事成为革命
         const rb = newPolity(y, seat, [{ id: p, kind: 'revolt' }], civ);
         const Rb = P[rb]; Rb.rebel = true; Rb.rtype = rtype; Rb.target = p; Rb.rebelSince = y; Rb.coh = 0.75; Rb.cause = c0; Rb.memoryOf = -1; Rb.memoryRegion = r; Rb.relAt = rel[seat];
         if (rtype === 'loyalist') { const ml = memLin[r]; let last = -1; for (const X of P) if (X.lin === ml && X.died !== null && X.died < y && !X.restored && X.coreAtDeath && X.coreAtDeath.includes(r) && (last < 0 || X.died > P[last].died)) last = X.id; Rb.memoryOf = last; }
@@ -1412,6 +1426,7 @@
         case 'territoryIntegrate': t = `${nameAt(e.p, y)}将境内及沿海 ${e.n} 处无主地区纳入行政管辖`; break;
         case 'holyWarStart': t = `${nameAt(e.p, y)}以${RELS[e.f].name}之名发起圣战`; major = true; break;
         case 'holyWarWon': t = `${nameAt(e.p, y)}在圣战取得的土地上建立宗教政权`; major = true; break;
+        case 'holyWarConquest': t = `${nameAt(e.p, y)}在圣战中取得领土`; major = true; break;
         case 'holyWarFail': t = `${nameAt(e.p, y)}发动的圣战因${({timeout:'久攻未克',supply:'粮食不足',mobilization:'可征召人口不足',unreachable:'路程超出战役期限', 'changed-control':'边境易主', 'lost-objective':'未能守住目标'})[e.reason] || '战局变化'}而结束`; major = true; break;
         case 'convert': t = `${nameAt(e.p, Math.max(P[e.p].born, y - 1))}奉${RELS[e.f] ? RELS[e.f].name : '新宗教'}为国教`; major = big(e.p); break;
       }

@@ -18,7 +18,7 @@
     { id: 'interior', t: '内陆地形倾向', o: [['A', '低地较广', '平原与缓丘'], ['B', '山系、高原与盆地多样', '起伏丰富'], ['C', '山地较多', '崎岖多山']], d: 'B' },
     { id: 'era', t: '人口承载基线', o: [['A', '较低基线', '参考 1 亿–1.6 亿'], ['B', '中等基线', '参考 2.5 亿–4 亿'], ['C', '较高基线', '参考 6.5 亿–9.5 亿']], d: 'B', extra: 'pop' }, // 文明时代由 age 设定，最终人口由历史推演决定
     { id: 'culture', t: '文化与宗教复杂度', o: [['A', '8 个文化圈', '12 种语言 · 6 个宗教'], ['B', '14 个文化圈', '24 种语言 · 10 个宗教'], ['C', '20 个文化圈', '36 种语言 · 16 个宗教']], d: 'B' },
-    { id: 'politics', t: '政治格局与部落空间', o: [['A', '初始约 45 国', '部落游牧空间 25%'], ['B', '初始约 80 国', '部落游牧空间 35%'], ['C', '初始约 120 国', '部落游牧空间 45%']], d: 'B' },
+    { id: 'politics', t: '政治格局与部落空间', o: [['A', '约 45 国', '部落游牧空间 25%'], ['B', '约 80 国', '部落游牧空间 35%'], ['C', '约 120 国', '部落游牧空间 45%']], d: 'B' },
     { id: 'towns', t: '城市、省份与交通', o: [['A', '疏朗', '480 城镇 · 行政粗分 · 基础交通'], ['B', '标准', '720 城镇 · 标准行政与交通'], ['C', '密集', '1080 城镇 · 行政细分 · 完善交通']], d: 'B', extra: 'towns' },
     { id: 'climate', t: '气候调节——冷热与水汽', o: [['A', '类地平均', '参考温偏 ±0 °C · 水汽 1.0×'], ['B', '偏热偏湿润', '+3 °C · 1.1×'], ['C', '更热更湿润', '+6 °C · 1.2×'], ['D', '偏冷偏干燥', '−3 °C · 0.9×'], ['E', '很冷很干燥', '−6 °C · 0.8×']], d: 'A', extra: 'climate' },
     { id: 'newWorld', t: '是否有新大陆', o: [['yes', '有新大陆', '远隔大洋、晚接触的陆块'], ['no', '没有新大陆', '所有大陆同属旧世界'], ['random', '随机', '由推演决定']], d: 'random' },
@@ -102,9 +102,9 @@
       C: [['文化', '+', '20 个文化圈、36 种语言、16 个宗教'], ['文化', '-', '每个文化圈覆盖范围更小，语言区更细碎']]
     },
     politics: {
-      A: [['政治', '-', '初始约 45 国；此后随历史增减'], ['边疆', '-', '部落与非国家空间约 25%']],
-      B: [['政治', '·', '初始约 80 国；此后随历史增减']],
-      C: [['政治', '+', '初始约 120 国；此后随历史增减'], ['边疆', '+', '部落与非国家空间约 45%']]
+      A: [['政治', '-', '目标约 45 国；实际数量随历史演变'], ['边疆', '-', '部落与非国家空间约 25%']],
+      B: [['政治', '·', '目标约 80 国；实际数量随历史演变']],
+      C: [['政治', '+', '目标约 120 国；实际数量随历史演变'], ['边疆', '+', '部落与非国家空间约 45%']]
     },
     towns: {
       A: [['城镇', '-', '约 480 座城镇'], ['行政', '-', '省份数量少，单省更大'], ['交通', '-', '道路网较稀']],
@@ -148,7 +148,7 @@
     land: [N_('landPercent', '陆地占比（%）', 35, 18, 55, 0.1)],
     structure: [N_('continentCount', '大陆核心数量', 7, 3, 12)],
     culture: [N_('civilizationCount', '文化圈数量', 14, 1, 40), N_('languageCount', '语言数量', 24, 1, 80), N_('religionCount', '宗教数量', 10, 1, 40)],
-    politics: [N_('stateCount', '初始国家数量', 80, 1, 240), N_('frontierPercent', '部落与非国家空间（%）', 35, 0, 90, 0.1)],
+    politics: [N_('stateCount', '现存国家数量目标', 80, 1, 240), N_('frontierPercent', '部落与非国家空间（%）', 35, 0, 90, 0.1)],
     age: [N_('year', '文明纪元年份（1800–4840；4780 年后进入早期工业，4840 年约相当于维多利亚前期的 1840 年）', 4700, 1800, 4840)]
   };
   const PAGES = [
@@ -174,7 +174,8 @@
       climateCustom: false, tempBias: 0, moisture: 1, custom: {}
     };
   }
-  const VERSION = '1.4.3';
+  const VERSION = '1.4.3'; // 世界存档格式版本
+  const APP_VERSION = '1.4.3.1';
   const verOf = f => f && f.engineVersion ? String(f.engineVersion) : '';
   const verCmp = (a, b) => { const pa = String(a).split('.').map(n => parseInt(n, 10) || 0), pb = String(b).split('.').map(n => parseInt(n, 10) || 0); for (let k = 0; k < 3; k++) { const d = (pa[k] || 0) - (pb[k] || 0); if (d) return d; } return 0; };
   // 世界文件必须包含可复现的完整设定；缺项或无效值明确报错，不重写用户的数据。
@@ -318,5 +319,5 @@
     }
     return st;
   }
-  G.Config = { Q, PAGES, CUSTOM, HINTS, hintOf, VERSION, verOf, verCmp, validateState, defaults, randomize, toCfg, encode, decode, ERA_RANGE, AGE, ageLabel, CLIMATE, gridFor, gridOf };
+  G.Config = { Q, PAGES, CUSTOM, HINTS, hintOf, VERSION, APP_VERSION, verOf, verCmp, validateState, defaults, randomize, toCfg, encode, decode, ERA_RANGE, AGE, ageLabel, CLIMATE, gridFor, gridOf };
 })(window);

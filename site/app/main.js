@@ -873,7 +873,7 @@
   }
 
   // ---------- 世界保存（浏览器本地 + 文件导入导出） ----------
-  const VER = G.Config.VERSION;
+  const VER = G.Config.VERSION, APP_VER = G.Config.APP_VERSION;
   const RESTORE_NOTE = '文件包含生成设定、原始地图、人物与标记；打开时用同版规则重新推演世界，不含完整自然网格快照。';
   const loadSaved = () => G.WorldStore.list();
   const storeSaved = list => G.WorldStore.save(list).then(()=>true).catch(error=>{ toast('世界保存失败：'+error.message+'，请导出世界文件',9000); return false; });
@@ -912,7 +912,7 @@
     stateOf(rec);
     const markers = rec.markers || [], names = rec.names || {};
     const file = Object.assign({ engineVersion: rec.engineVersion, rulesVersion: rec.rulesVersion, name: rec.name, note: RESTORE_NOTE, state: rec.state, people:rec.people || [], markers, names, summary: rec.summary, created: rec.created, exported: Date.now(), ms: rec.ms || null,
-      engine: `星球推演 ${VER} · 规则移植自世界生成器 1.4.0.dev164` }, extra || {}, {engineVersion:rec.engineVersion,rulesVersion:rec.rulesVersion});
+      engine: `星球推演 ${APP_VER} · 规则移植自世界生成器 1.4.0.dev164` }, extra || {}, {engineVersion:rec.engineVersion,rulesVersion:rec.rulesVersion});
     return { blob: await G.WorldPackage.encode(file, G.WorldAssets), markers, names };
   }
   const secs = ms => Math.max(1, Math.round(ms / 1000));
@@ -924,14 +924,14 @@
     const tail = `记录了${what}；打开时会按同样设置重新推演${rec.ms ? `（约 ${secs(rec.ms)} 秒）` : ''}。`;
     const linked = mode === 'saveAs' ? null : await files.get(rec.key);
     if (linked) {
-      try { await writeHandle(linked, blob); toast(`已更新世界文件「${linked.name}」（${VER}）：${tail}`, 6500); renderFileInfo(); return true; }
+      try { await writeHandle(linked, blob); toast(`已更新世界文件「${linked.name}」（${APP_VER}）：${tail}`, 6500); renderFileInfo(); return true; }
       catch (e) { if (e.name === 'AbortError') return false; toast('原位置写不进去（' + (e.message || e.name) + '），请重新选择保存位置'); }
     }
     if (canPick()) {
       try {
         const h = await window.showSaveFilePicker({ suggestedName: `${rec.name}.planet.zip`, types: FILE_TYPES, id: 'planet-world' });
         await writeHandle(h, blob); await files.set(rec.key, h); renderFileInfo();
-        toast(`已保存到你选的位置「${h.name}」（${VER}）：${tail}之后“保存到世界文件”会直接更新这个文件。`, 7000); return true;
+        toast(`已保存到你选的位置「${h.name}」（${APP_VER}）：${tail}之后“保存到世界文件”会直接更新这个文件。`, 7000); return true;
       } catch (e) {
         if (e.name === 'AbortError') return false; // 用户取消
         download(blob, rec.name);
@@ -939,7 +939,7 @@
       }
     }
     download(blob, rec.name);
-    toast(`这个浏览器不支持自选保存位置，已下载到默认的下载文件夹（${VER}）：${tail}`, 7000); return true;
+    toast(`这个浏览器不支持自选保存位置，已下载到默认的下载文件夹（${APP_VER}）：${tail}`, 7000); return true;
   }
   function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${name}.planet.zip`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 30000); }
   // 各处显示“已关联的世界文件”

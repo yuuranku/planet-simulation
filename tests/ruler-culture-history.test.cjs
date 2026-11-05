@@ -63,7 +63,7 @@ test('real history output keeps ruler, house and government provenance aligned t
  const lib={...french,cat:'agrarian',n:{states:['法'],cities:['法城'],provinces:['法省']},c:{roots:['法'],prefixes:['新'],suffixes:['地']},traits:[]};
  const h={seed:1,W:10,H:5,R:6400,popTotal:10000,civLib:[lib],speciesLibraries:[G.HumanRules.SPECIES[0]],settlements:[{cell:0,pop:1000,name:'城'}]},C={cities:[{r:1,idx:0,name:'城',founded:0,final:1000}],pop:Float32Array.from([1000,1000]),popN:2,popStep:500,roads:[],plagues:[],events:[]};
  require('./military-fixture-terrain.cjs')(G,R,h);
- const out=G.HistoryPolity.run(h,R,D,C,{countries:[],provinces:[],religions:[],cultureNames:['法文明'],routes:[],admin:{response:80,road:90,sea:160}}), q=out.polities.find(p=>p.rulingCulture[0][1]===0);
+ const out=G.HistoryPolity.run(h,R,D,C,{targetCountries:80,provinces:[],religions:[],cultureNames:['法文明'],routes:[],admin:{response:80,road:90,sea:160}}), q=out.polities.find(p=>p.rulingCulture[0][1]===0);
  assert.ok(out.polities.every(p=>p.born>=200&&p.rulingCulture.every(x=>x[1]!==-1)));
  assert.ok(q);assert.ok(q.houses.length&&q.rulers.length&&q.gov.length);
  for(const r of q.rulers){const c=G.HistoryPolity.datedName(q.rulingCulture,r[0])[1];assert.equal(r[4],c);assert.ok(r[3]>=0&&r[3]<q.houses.length);if(c===-1)assert.equal(r[1],'姓名未详');else assert.ok(french.x.people.given.includes(r[5]));}

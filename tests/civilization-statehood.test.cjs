@@ -4,13 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function history({ known = false, seed = 1, end = 500, arrivals = 200, unknownNeighbor = false, regions = 2, event = null, site = path.join(__dirname, '../site') } = {}) {
+function history({ known = false, seed = 1, end = 500, arrivals = 200, unknownNeighbor = false, regions = 2, event = null, allCities = false, targetCountries = 80, site = path.join(__dirname, '../site') } = {}) {
   const G = {}; G.self = G; vm.createContext(G);
   for (const f of ['noise', 'libraries', 'society', 'human-rules', 'human-anchors', 'human-population', 'human-economy', 'human-fortifications', 'holy-war', 'history/date', 'military', 'history/administration', 'history/regions', 'history/territory', 'history/polity']) {
     let source=fs.readFileSync(path.join(site, 'core', f + '.js'), 'utf8');
     if(event&&f==='history/polity'){
       source=source.replace('const rndU = mulberry32((h.seed | 0) + 4242)', 'const rndU = () => 0');
-      source=source.replace('      const fortPopulation =', '      if(G.scenario)G.scenario({y,P,owner,cult,dynasty,unrestStep,setOwner,unrest,calmUntil,events});\n      const fortPopulation =');
+      source=source.replace('      const fortPopulation =', '      if(G.scenario)G.scenario({y,P,owner,cult,dynasty,crisis,unrestStep,setOwner,unrest,calmUntil,events});\n      const fortPopulation =');
     }
     vm.runInContext(source, G);
   }
@@ -18,6 +18,7 @@ function history({ known = false, seed = 1, end = 500, arrivals = 200, unknownNe
   const nn = regions + 1;
   const R = { nR: regions, area: new Float64Array(nn).fill(100), center: new Int32Array(nn), cx: Float64Array.from({length:nn},(_,r)=>r?1+(r-1)*.01:0), cy: Float64Array.from({length:nn},(_,r)=>r?1:0), weight: Float64Array.from({length:nn},(_,r)=>r?1/regions:0), pot: Float64Array.from({length:nn},(_,r)=>r?1:0), T: new Float64Array(nn).fill(20), pasture: new Float32Array(nn), arid: new Float32Array(nn), semiArid: new Float32Array(nn), river: new Uint8Array(nn), coast: new Uint8Array(nn), newW: new Float32Array(nn), landComp: new Int32Array(nn), zoneOfRegion: new Int32Array(nn), country: new Int16Array(nn).fill(-1), prov: new Int16Array(nn).fill(-1), civ: Int16Array.from({length:nn},(_,r)=>r&&known&&(!unknownNeighbor||r===1)?0:-1), rel: new Int16Array(nn).fill(-1), off: Uint32Array.from([0, 0, 1, 2]), nbr: Int32Array.from([2, 1]), eid: Int32Array.from([0, 0]), edges: [{ a: 1, b: 2, km: 24, rough: 0, river: 0, sea: 0 }] };
   const off=[0,0],nbr=[],eid=[],edges=[];
+  if(event==='limited-crisis')for(let r=1;r<=regions;r++)R.cx[r]=r*.3;
   for(let r=1;r<regions;r++)edges.push({a:r,b:r+1,km:24,rough:0,river:0,sea:0});
   for(let r=1;r<=regions;r++){if(r>1){nbr.push(r-1);eid.push(r-2)}if(r<regions){nbr.push(r+1);eid.push(r-1)}off.push(nbr.length)}
   Object.assign(R,{off:Uint32Array.from(off),nbr:Int32Array.from(nbr),eid:Int32Array.from(eid),edges});
@@ -28,25 +29,35 @@ function history({ known = false, seed = 1, end = 500, arrivals = 200, unknownNe
   const A = { id: 'a', t: { monarchy: ['甲制'] }, n: { states: ['甲'], cities: ['甲城'], provinces: ['甲省'] }, c: { roots: ['甲'], prefixes: ['新'], suffixes: ['地'] } };
   const h = { seed, W: 10, H: 5, R: 6400, popTotal: 10000, civLib: [A], speciesLibraries: [G.HumanRules.SPECIES[0]], settlements: [{ cell: 0, pop: 1000, name: '未来城' }] };
   const C = { cities: [{ r: 1, idx: 0, name: '未来城', founded: 0, final: 1000 }, { r: 0, idx: -1, name: '孤城', founded: 0, final: 100 }], pop: Float32Array.from([1000, 1000, 100, 100]), popN: 2, popStep: end, roads: [], plagues: [], events: [] };
+  if(allCities){
+    h.popTotal=regions*10000;
+    R.regionOf=Int32Array.from({length:regions},(_,i)=>i+1);
+    h.settlements=Array.from({length:regions},(_,i)=>({cell:i,pop:1000,name:`城${i+1}`}));
+    C.cities=Array.from({length:regions},(_,i)=>({r:i+1,idx:i,name:`城${i+1}`,founded:0,final:1000}));
+    C.pop=new Float32Array(regions*2).fill(1000);
+  }
   require('./military-fixture-terrain.cjs')(G, R, h);
   let observation=null;const done={};
-  if(event)G.scenario=({y,P,owner,cult,dynasty,unrestStep,setOwner,unrest,calmUntil,events})=>{
+  if(event)G.scenario=({y,P,owner,cult,dynasty,crisis,unrestStep,setOwner,unrest,calmUntil,events})=>{
     const q=P.find(x=>x.died===null&&x.civ===0);if(y<100||!q)return;
-    assert.equal(cult[2],-1,'scenario uses a genuinely unformed local culture');
+    assert.equal(cult[2],['limited-revolt','limited-crisis'].includes(event)?0:-1,'scenario uses the intended local culture');
     for(let r=1;r<=regions;r++)setOwner(r,q.id,y);
     const before=P.length;
-    if(event==='dynasty'){
+    if(event==='limited-crisis'){
+      crisis(q.id,y,0,0);
+      observation={before,after:P.length,parent:q.id,owner:Array.from(owner),events:events.filter(e=>e.year===y)};
+    }else if(event==='dynasty'){
       q.cap=2;q.caps.push({year:y,city:-1,r:2});
       const id=dynasty(q.id,y,'coup');
       observation={parent:q.id,child:id,civ:P[id].civ,initialCiv:P[id].initialCiv,local:cult[2],owner:Array.from(owner)};
     }else{
       unrest.fill(0);unrest[2]=5;calmUntil.fill(0);q.lastRevolt=-1000;q.coh=.01;
       unrestStep(y,[q.id],new Int8Array(P.length).fill(4),new Float64Array(P.length).fill(10),new Float64Array(P.length).fill(1000));
-      observation={before,after:P.length,local:cult[2],owner:Array.from(owner),parent:q.id,events:events.filter(e=>e.year===y)};
+      observation={before,after:P.length,local:cult[2],owner:Array.from(owner),parent:q.id,events:events.filter(e=>e.year===y),lastRevolt:q.lastRevolt,calmUntil:Array.from(calmUntil)};
     }
     throw done;
   };
-  let out;try{out = G.HistoryPolity.run(h, R, D, C, { countries: [], provinces: [], religions: [], cultureNames: ['甲文明'], routes: [], admin: { response: 80, road: 90, sea: 160 } });}catch(error){if(error!==done)throw error;}
+  let out;try{out = G.HistoryPolity.run(h, R, D, C, { countries: [], targetCountries, provinces: [], religions: [], cultureNames: ['甲文明'], routes: [], admin: { response: 80, road: 90, sea: 160 } });}catch(error){if(error!==done)throw error;}
   if(event){assert.ok(observation,'scenario must actually run');return observation;}
   return JSON.parse(JSON.stringify({ out, cities: C.cities }, (_key, value) => ArrayBuffer.isView(value) ? Array.from(value) : value));
 }
@@ -104,4 +115,74 @@ test('an existing dynasty can succeed at an unassimilated capital using its own 
   assert.notEqual(r.child,r.parent);
   assert.equal(r.civ,0);assert.equal(r.initialCiv,0);assert.equal(r.local,-1);
   assert.ok(r.owner.slice(1).every(p=>p===r.child),'dynastic succession preserves conquered territory');
+});
+
+test('the requested country target constrains actual historical ownership and final country records',()=>{
+  const finalCounts=[];
+  for(const targetCountries of [1,4,12]){
+    const {out}=history({known:true,arrivals:0,regions:40,allCities:true,end:1000,targetCountries});
+    assert.ok(out.end.countries.length>0,'civilizations still form states');
+    const upper=targetCountries+Math.min(8,Math.floor(targetCountries/10));
+    assert.ok(out.end.countries.length<=upper,`requested about ${targetCountries}, generated ${out.end.countries.length}`);
+    const live=new Set(out.end.owner.filter(id=>id>=0));
+    assert.equal(live.size,out.end.countries.length,'country count is not merely a display cap');
+    for(const id of live)assert.ok(out.polities[id].rulingCulture[0][1]!==-1);
+    const changes=[];
+    for(let region=1;region<out.own.off.length-1;region++)for(let i=out.own.off[region];i<out.own.off[region+1];i++)changes.push([out.own.year[i],region,out.own.owner[i]]);
+    changes.sort((a,b)=>a[0]-b[0]);
+    const owners=new Int32Array(out.own.off.length).fill(-1),sizes=new Map();
+    for(let i=0;i<changes.length;){
+      const time=changes[i][0];
+      while(i<changes.length&&changes[i][0]===time){const [,region,next]=changes[i++],old=owners[region];if(old>=0){sizes.set(old,sizes.get(old)-1);if(!sizes.get(old))sizes.delete(old);}owners[region]=next;if(next>=0)sizes.set(next,(sizes.get(next)||0)+1);}
+      assert.ok(sizes.size<=upper+3,`history at ${time} has ${sizes.size} countries, target ${targetCountries}`);
+    }
+    finalCounts.push(out.end.countries.length);
+  }
+  assert.ok(finalCounts[0]<finalCounts[1]&&finalCounts[1]<finalCounts[2],'different settings affect actual outcomes');
+});
+
+test('an existing dynasty can change hands even when the state limit is full',()=>{
+  const r=history({known:true,arrivals:0,unknownNeighbor:true,regions:4,event:'dynasty',targetCountries:1});
+  assert.notEqual(r.child,r.parent);
+  assert.equal(r.civ,0);
+  assert.ok(r.owner.slice(1).every(p=>p===r.child));
+});
+
+test('unformed civilizations can still regain tribal autonomy when the state limit is full',()=>{
+  const r=history({known:true,arrivals:0,unknownNeighbor:true,regions:4,event:'revolt',targetCountries:1});
+  assert.equal(r.after,r.before);
+  assert.equal(r.owner[2],-1);
+  assert.ok(r.events.some(e=>e.kind==='tribalFree'));
+});
+
+test('a deferred revolt does not mark the area as already pacified',()=>{
+  const r=history({known:true,arrivals:0,regions:4,event:'limited-revolt',targetCountries:1});
+  assert.equal(r.after,r.before);
+  assert.equal(r.owner[2],r.parent);
+  assert.equal(r.lastRevolt,-1000);
+  assert.equal(r.calmUntil[2],0);
+});
+
+test('a state can still undergo a change of dynasty during a crisis when the target is full',()=>{
+  const r=history({known:true,arrivals:0,regions:6,event:'limited-crisis',targetCountries:1});
+  assert.ok(r.after>r.before,'a new dynasty is created');
+  assert.ok(r.owner.slice(1).every(id=>id!==r.parent));
+});
+
+test('an 80-country target stays within 70–90 without a sudden terminal collapse',()=>{
+  for(const seed of [1,8,42]){
+    const {out}=history({known:true,arrivals:0,regions:120,allCities:true,end:1000,targetCountries:80,seed});
+    const countAt=time=>{
+      const active=new Set();
+      for(let r=1;r<out.own.off.length-1;r++){
+        let owner=-1;
+        for(let i=out.own.off[r];i<out.own.off[r+1]&&out.own.year[i]<=time;i++)owner=out.own.owner[i];
+        if(owner>=0)active.add(owner);
+      }
+      return active.size;
+    };
+    const before=countAt(950),final=out.end.countries.length;
+    assert.ok(final>=70&&final<=90,`seed ${seed}: requested 80 ± 10, got ${final}`);
+    assert.ok(before-final<=10,`seed ${seed}: last 50 years fell from ${before} to ${final}`);
+  }
 });

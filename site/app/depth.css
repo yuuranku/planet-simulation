@@ -1,0 +1,91 @@
+/* =====================================================================
+   1.4.4 · 层次与立体感
+   前后关系：最底是墨青“案面”；顶栏是案面上的一条横梁；左侧工具栏是压在顶栏之上的一根立柱（投影落在顶栏与地图上）；
+   地图是嵌进案面的一块图版（四周内阴影）；纸卡、按钮浮在图版之上（纸纹 + 上亮下暗的厚度 + 落影）。
+   只在桌面与平板生效；手机横屏、竖屏沿用各自的布局。
+   ===================================================================== */
+@media (min-width: 761px) and (min-height: 541px) {
+  body { background: radial-gradient(120% 90% at 30% 0%, #17474d 0%, #0d2f34 55%, #08242a 100%); }
+
+  /* ---------- 立柱：左侧工具栏，浮在顶栏之前 ---------- */
+  .rail {
+    left: 7px; top: 7px; bottom: 7px; width: calc(var(--rail) - 12px); padding: 8px 0 10px; gap: 2px;
+    border-radius: 16px; border: 1px solid rgba(199, 161, 90, .62); border-right-color: rgba(199, 161, 90, .62);
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, .07), transparent 22%, transparent 78%, rgba(0, 0, 0, .18)),
+      linear-gradient(180deg, #154249 0%, #0f3439 26%, #0c2c31 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 240, 200, .16), inset 0 -2px 0 rgba(0, 0, 0, .35), inset 0 0 0 3px rgba(12, 44, 49, .9), inset 0 0 0 4px rgba(199, 161, 90, .2),
+      6px 0 14px -2px rgba(2, 14, 16, .55), 14px 8px 30px rgba(2, 14, 16, .35), 0 2px 4px rgba(0, 0, 0, .35);
+    z-index: 30;
+  }
+  .rail::after { display: none; }
+  .rail-btn { width: 54px; }
+  /* 菜单键：立柱顶上一块单独的“铜牌”，比立柱再高一层 */
+  .rail-btn[data-tool=menu] {
+    width: 46px; height: 40px; padding: 0; margin: 2px 0 8px; justify-content: center; border-radius: 11px;
+    background: linear-gradient(180deg, #1d555c, #123d43 60%, #0e3237);
+    box-shadow: inset 0 1px 0 rgba(255, 236, 190, .28), inset 0 -2px 0 rgba(0, 0, 0, .35), 0 0 0 1px rgba(199, 161, 90, .7), 0 3px 6px rgba(0, 0, 0, .45), 0 8px 14px -6px rgba(0, 0, 0, .5);
+  }
+  .rail-btn[data-tool=menu]:hover { background: linear-gradient(180deg, #23626a, #154850 60%, #10383d); }
+  .rail-btn[data-tool=menu]:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0, 0, 0, .45), 0 0 0 1px rgba(199, 161, 90, .7); }
+  .rail-btn.on:not([data-tool=hover]):not([data-tool=menu]) {
+    background: linear-gradient(180deg, rgba(199, 161, 90, .3), rgba(199, 161, 90, .12));
+    box-shadow: inset 0 1px 0 rgba(255, 236, 190, .3), inset 0 0 0 1px rgba(199, 161, 90, .6), inset 0 -2px 0 rgba(0, 0, 0, .25), 0 2px 6px rgba(0, 0, 0, .35);
+  }
+  .rail-btn:active { transform: translateY(1px); }
+
+  /* ---------- 横梁：顶栏在立柱之后（左端被立柱压住），向下给地图投影 ---------- */
+  .appbar {
+    left: calc(var(--rail) - 26px); padding-left: 44px; top: 0; height: var(--bar);
+    border-bottom: 0; border-radius: 0 0 0 14px;
+    background:
+      linear-gradient(180deg, rgba(255, 236, 190, .07), transparent 40%),
+      linear-gradient(180deg, #0f363b 0%, #0f3439 55%, #0c2d32 100%);
+    box-shadow: inset 0 -1px 0 rgba(199, 161, 90, .55), inset 0 -4px 0 rgba(6, 26, 29, .6), inset 0 -5px 0 rgba(199, 161, 90, .18), 0 6px 14px -4px rgba(2, 14, 16, .55);
+    z-index: 22;
+  }
+  .appbar::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 36px; pointer-events: none; background: linear-gradient(90deg, rgba(0, 0, 0, .35), transparent); } /* 立柱落在横梁上的影子 */
+  .appbar::after { bottom: 7px; }
+  .appbar-art { color: rgba(199, 161, 90, .5); }
+  .appbar-compass { filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .45)); }
+
+  /* ---------- 图版：地图嵌在案面里 ---------- */
+  #stage, .globe-wrap { left: calc(var(--rail) + 3px); right: 7px; bottom: 7px; top: calc(var(--bar) + 5px); border-radius: 14px; overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(199, 161, 90, .55), 0 0 0 4px rgba(10, 38, 43, .95), 0 0 0 5px rgba(199, 161, 90, .25), 0 10px 24px rgba(0, 0, 0, .35); }
+  .map-frame { border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(15, 52, 57, .7), inset 0 3px 10px rgba(5, 25, 28, .45), inset 0 0 26px rgba(5, 25, 28, .22); }
+
+  /* ---------- 纸卡：纸纹、厚度与落影 ---------- */
+  .card, .tl-focus, .city-panel, .citygen-box, .name-editor, .search {
+    background-image: linear-gradient(180deg, rgba(255, 252, 244, .72), rgba(250, 243, 228, .55) 45%, rgba(240, 228, 203, .62)), url(ui/paper.webp);
+    background-size: auto, 360px 360px;
+    box-shadow: var(--frame), inset 0 0 0 3px rgba(253, 249, 239, .85), inset 0 0 0 4px rgba(199, 161, 90, .28), inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 -3px 0 rgba(168, 130, 63, .16),
+      0 2px 3px rgba(20, 30, 28, .18), 0 10px 22px -6px rgba(20, 30, 28, .35), 0 22px 40px -18px rgba(20, 30, 28, .35);
+  }
+  .tl-bar { box-shadow: var(--frame), inset 0 0 0 3px rgba(253, 249, 239, .85), inset 0 0 0 4px rgba(199, 161, 90, .28), inset 0 1px 0 rgba(255, 255, 255, .9), 0 -2px 10px rgba(20, 30, 28, .12), 0 12px 26px -8px rgba(20, 30, 28, .4); }
+
+  /* 浮在图上的小控件：缩放、图层、图例按钮 */
+  .zoom, .layer-btn, #legendBtn, .legend-btn, .reroll-btn { box-shadow: var(--frame), inset 0 1px 0 rgba(255, 255, 255, .85), inset 0 -2px 0 rgba(168, 130, 63, .2), 0 3px 5px rgba(20, 30, 28, .2), 0 10px 18px -8px rgba(20, 30, 28, .45) !important; }
+  .zoom button:active, #legendBtn:active { transform: translateY(1px); }
+
+  /* 纸面上的按钮：微微凸起，按下凹进 */
+  .btn, .tl-city-acts button, .tf-acts button, .wr-acts button {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), inset 0 -2px 0 rgba(120, 90, 40, .14), 0 1px 2px rgba(60, 40, 20, .18);
+  }
+  .btn:active, .tl-city-acts button:active, .tf-acts button:active { transform: translateY(1px); box-shadow: inset 0 2px 3px rgba(60, 40, 20, .2); }
+  .btn.primary, .btn.dark { box-shadow: inset 0 1px 0 rgba(255, 236, 190, .3), inset 0 -2px 0 rgba(0, 0, 0, .3), 0 0 0 1px rgba(199, 161, 90, .6), 0 3px 8px rgba(10, 30, 32, .35); }
+
+  /* 右侧纸页：卡头的插画角饰（城市 / 废墟 / 关堡 / 国家） */
+  /* 纸纹整页平铺，底下再垫一层实色——长纸页下半截不再透出地图 */
+  .tl-city, .tl-focus { background-color: #f7efdd; background-repeat: no-repeat, repeat; }
+  .card.has-vig::before { content: ""; position: absolute; right: 30px; top: 30px; width: 132px; height: 72px; background: var(--vig) right top / contain no-repeat; mix-blend-mode: multiply; opacity: .42; pointer-events: none; }
+}
+
+/* 向导：程序生成 / 上传地图两张卡片的插画 */
+.world-source-options .src-card { position: relative; overflow: hidden; }
+.world-source-options .src-card { padding-top: 0 !important; }
+.world-source-options .src-art.has-img { display: block; width: calc(100% + 52px); height: 210px; margin: 0 -26px 10px; aspect-ratio: auto; border-radius: 17px 17px 0 0; background: center / cover no-repeat; box-shadow: inset 0 -18px 22px -14px rgba(250, 244, 230, .95), inset 0 0 0 1px rgba(168, 130, 63, .35); }
+.world-source-options .src-art.has-img svg { display: none; }
+.world-source-options .src-art.proc.has-img { background-image: url(ui/wiz-proc.webp); }
+.world-source-options .src-art.up.has-img { background-image: url(ui/wiz-map.webp); }
+.world-source-options .src-card:hover .src-art.has-img { filter: saturate(1.08) brightness(1.03); }

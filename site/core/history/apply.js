@@ -13,8 +13,8 @@
   function vassalTint(L, id) {
     const r = L[0] / 255, g = L[1] / 255, b = L[2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn; let h = 0, s = 0;
     if (d) { s = d / (1 - Math.abs(2 * l - 1)); h = 60 * (mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4); }
-    const a = ((id * 2654435761) >>> 0) % 6, dh = [-24, 18, -14, 26, 12, -20][a], dl = (l > 0.72 ? -1 : 1) * (0.1 + 0.04 * (a % 3));
-    h = (((h + dh) % 360) + 360) % 360 / 360; const s2 = Math.min(0.62, s * (l > 0.72 ? 1.08 : 0.86) + 0.04), l2 = Math.max(0.5, Math.min(0.88, l + dl));
+    const a = ((id * 2654435761) >>> 0) % 4, dh = [-5, 4, -3, 6][a], dl = (l > 0.7 ? -1 : 1) * (0.075 + 0.025 * (a % 2)); // 附庸：沿用宗主色相（仅微调），只调深浅——一眼看出同属一个宗藩体系
+    h = (((h + dh) % 360) + 360) % 360 / 360; const s2 = Math.max(0.18, Math.min(0.66, s * 0.82)), l2 = Math.max(0.42, Math.min(0.86, l + dl));
     const f = n => { const k = (n + h * 12) % 12, aa = s2 * Math.min(l2, 1 - l2); return Math.round(255 * (l2 - aa * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); }; return [f(0), f(8), f(4)]; }
 
   // 全分辨率细化后被切断的内陆碎片（不临海、远小于本土）：并入接壤最多的邻国，省份取接壤处的省
@@ -70,6 +70,10 @@
     { const kOfP = new Map(end.countries.map((c, k) => [c.p, k]));
       end.countries.forEach((c, k) => { const L = c.liegeP >= 0 ? kOfP.get(c.liegeP) : undefined; if (L === undefined || L === k) return; const Ld = c.liegeD >= 0 ? kOfP.get(c.liegeD) : undefined; countries[k].liege = Ld !== undefined ? Ld : L; // 显示直接宗主；配色取最上层宗主的色系
         const b = end.countries[L].color; if (b) countries[k].color = vassalTint(b, c.p); }); }
+    // 盟约：现在仍有效的同盟（与历史时间线同源）
+    { const kOfP = new Map(end.countries.map((c, k) => [c.p, k])), E = Hc.D.E;
+      for (const A of Hc.Pol.alliances || []) { if (A.to != null && A.to <= E) continue; const now = (A.roster || []).filter(x => x[2] == null).map(x => kOfP.get(x[0])).filter(k => k !== undefined); if (now.length < 2) continue;
+        for (const k of now) countries[k].allies = now.filter(x => x !== k); } }
     // 国名锚点：国土内离国界最远处
     { const dd = new Int32Array(N).fill(1 << 30), q = new Int32Array(N); let hd = 0, tl = 0;
       for (let i = 0; i < N; i++) { if (state[i] < 0) continue; for (const d of [1, 3, 4, 6]) { const j = NB[i * 8 + d]; if (j < 0 || state[j] !== state[i]) { dd[i] = 0; q[tl++] = i; break; } } }
@@ -92,8 +96,19 @@
     const nominal = Int16Array.from(state), tribe = Int16Array.from(Cv.tribe, (t, i) => state[i] < 0 ? t : -1), jimi = new Int16Array(N).fill(-1);
     const tribes = Cv.tribes.map((t, i) => { const hx = Math.min(W - 1, Math.max(0, (t.x / 2) | 0)), hy = Math.min(H - 1, Math.max(0, (t.y / 2) | 0)); return state[hy * W + hx] < 0 ? t : Object.assign({}, t, { hidden: true }); });
     Object.assign(Cv, { country: state, province, countries, provinces, gov, govDays, nominal, tribe, jimi, jimis: [], tribes: tribes.map(t => t.hidden ? Object.assign({}, t, { x: -1e6, y: -1e6 }) : t) });
-    let tribalArea = 0, claimArea = 0; for (let i = 0; i < N; i++) if (h.domain[i]) { claimArea += h.area[(i / W) | 0]; if (state[i] < 0) tribalArea += h.area[(i / W) | 0]; }
-    Object.assign(Cv.stats, { population: Math.round(regionPopulation.reduce((a, b) => a + b, 0)), countries: nK, provinces: provinces.length, tribalShare: tribalArea / Math.max(1, claimArea), jimis: 0, endYear: Hc.D.E });
+    let tribalArea = 0, claimArea = 0, inhabitedArea = 0, independentInhabitedArea = 0;
+    for (let i = 0; i < N; i++) if (h.domain[i]) {
+      const area = h.area[(i / W) | 0];
+      claimArea += area;
+      if (state[i] < 0) tribalArea += area;
+      // 与上面人口密度使用同一套最终人口分配，排除无人地和无法生存的土地。
+      const r = R.regionOf[i];
+      if (r && regionPopulation[r] > 0 && h.weight[i] > 0 && R.weight[r] > 0) {
+        inhabitedArea += area;
+        if (state[i] < 0) independentInhabitedArea += area;
+      }
+    }
+    Object.assign(Cv.stats, { population: Math.round(regionPopulation.reduce((a, b) => a + b, 0)), countries: nK, provinces: provinces.length, tribalShare: tribalArea / Math.max(1, claimArea), independentInhabitedShare: independentInhabitedArea / Math.max(1, inhabitedArea), jimis: 0, endYear: Hc.D.E });
     // 全分辨率国界与省界：取历史区块的细化边界
     const F = Hc.regionF, P = world.P, FN = F.length, countryF = new Int16Array(FN), provinceF = new Int16Array(FN);
     for (let f = 0; f < FN; f++) { const r = F[f]; if (r > 0) { const p = end.owner[r], k = p >= 0 ? end.countryOfP[p] : -1, v = p >= 0 ? end.prov[r] : -1; countryF[f] = k; provinceF[f] = k >= 0 && v >= 0 ? end.provIdx[v] : -1; } else { countryF[f] = r < -1 ? r : -1; provinceF[f] = r < -1 ? r : -1; } }

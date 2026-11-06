@@ -11,9 +11,9 @@
     for (const id of ['wizNext', 'wizPrev', 'wizRandom']) $(id).disabled = value;
   }
 
-  function open(state, done, closable) {
+  function open(state, done, closable, resume) {
     G.MapImport.cancel(st);
-    st = JSON.parse(JSON.stringify(state)); onDone = done; page = -2; mapMode = !!st.terrainInput; canClose = !!closable;
+    st = JSON.parse(JSON.stringify(state)); onDone = done; page = resume ? 0 : -2; mapMode = !!st.terrainInput; canClose = !!closable;
     preparing(false);
     $('wizClose').hidden = false;
     $('wizard').hidden = false;
@@ -125,7 +125,7 @@
       hideTip();
       $('wizSub').textContent = page === -2 ? '选择从自己的图纸开始，或交给程序生成。' : '上传图片后自动处理，再设置天文、气候、种族与文明。';
       $('wizBody').innerHTML = page === -2
-        ? '<div class="world-source-options"><button class="opt src-card" data-world-source="procedural"><span class="src-art proc"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="22"/><path d="M14 26c8 4 14-6 22-2s10 10 16 8M12 40c10-3 14 4 24 1s12-8 18-6"/><circle cx="48" cy="14" r="4"/></svg></span><b>程序生成</b><small>回答 25 个问题——星球、气候、大陆与文明——由程序推演出地形、历史与城市。</small><em>推荐 · 从零开始</em></button><button class="opt src-card" data-world-source="upload"><span class="src-art up"><svg viewBox="0 0 64 64"><rect x="10" y="14" width="44" height="34" rx="4"/><path d="M10 40l12-12 10 9 8-6 14 11"/><path d="M32 6v14M26 12l6-6 6 6"/></svg></span><b>上传世界地图</b><small>用你画好的地图或高度图。自动识别海陆、估算高程，再接着设定气候、种族与文明。</small><em>保留你的大陆轮廓</em></button></div>'
+        ? '<div class="world-source-options"><button class="opt src-card" data-world-source="procedural"><span class="src-art proc has-img"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="22"/><path d="M14 26c8 4 14-6 22-2s10 10 16 8M12 40c10-3 14 4 24 1s12-8 18-6"/><circle cx="48" cy="14" r="4"/></svg></span><b>程序生成</b><small>回答 25 个问题——星球、气候、大陆与文明——由程序推演出地形、历史与城市。</small><em>推荐 · 从零开始</em></button><button class="opt src-card" data-world-source="upload"><span class="src-art up has-img"><svg viewBox="0 0 64 64"><rect x="10" y="14" width="44" height="34" rx="4"/><path d="M10 40l12-12 10 9 8-6 14 11"/><path d="M32 6v14M26 12l6-6 6 6"/></svg></span><b>上传世界地图</b><small>用你画好的地图或高度图。自动识别海陆、估算高程，再接着设定气候、种族与文明。</small><em>保留你的大陆轮廓</em></button></div>'
         : G.MapImport.html(st);
       if (page === -1) G.MapImport.bind($('wizBody'),st);
       $('wizNext').textContent = '继续设置世界';

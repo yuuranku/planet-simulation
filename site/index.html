@@ -4,16 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>星球推演 · 世界生成器</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="app/timeline.css">
-  <link rel="stylesheet" href="app/military-map.css">
-  <link rel="stylesheet" href="app/person.css">
-  <link rel="stylesheet" href="app/mobile.css">
-  <script src="app/mobile.js"></script>
+  <link rel="stylesheet" href="style.css?build=20261106f">
+  <link rel="stylesheet" href="app/timeline.css?build=20261106f">
+  <link rel="stylesheet" href="app/military-map.css?build=20261106f">
+  <link rel="stylesheet" href="app/person.css?build=20261106f">
+  <link rel="stylesheet" href="app/mobile.css?build=20261106f">
+  <link rel="stylesheet" href="app/theme.css?build=20261106f">
+  <link rel="stylesheet" href="app/sheet.css?build=20261106f">
+  <link rel="stylesheet" href="app/depth.css?build=20261106f">
+  <script src="app/mobile.js?build=20261106f"></script>
+  <script src="app/sheet.js?build=20261106f"></script>
 </head>
 <body>
+  <!-- 顶栏：标志 · 标题 · 远山线描 · 罗盘 -->
+  <header class="appbar" id="appbar">
+    <div class="appbar-brand"><span class="appbar-logo" data-ui-icon="logo"></span><b>星球推演<i>·</i>世界生成器</b><em></em><span class="appbar-sub">构建世界 · 推演演化 · 绘制文明</span></div>
+    <span class="appbar-art" data-ui-icon="mountains" aria-hidden="true"></span>
+    <span class="appbar-compass" data-ui-icon="compass" aria-hidden="true"></span>
+  </header>
   <main id="stage">
     <canvas id="map" aria-label="世界地图"></canvas>
+    <div class="map-frame" aria-hidden="true"><i data-ui-icon="corner"></i><i data-ui-icon="corner"></i><i data-ui-icon="corner"></i><i data-ui-icon="corner"></i></div>
     <div id="tip" class="tip" hidden></div>
   </main>
 
@@ -48,6 +59,7 @@
       <div class="results" id="results" hidden></div>
     </div>
     <div class="card world-card" id="worldCard">
+      <span class="world-vignette" data-ui-icon="vignette" aria-hidden="true"></span>
       <b id="worldName" data-name-id="world" title="双击改名">尚未推演</b>
       <span id="worldStats">回答 25 个问题，推演一颗新星球</span>
     </div>
@@ -61,6 +73,7 @@
       <button class="card legend-btn" id="legendBtn"><span id="legendTitle">地形与水系图例</span><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
       <div class="card legend" id="legend" hidden></div>
     </div>
+    <button class="card roll-chip" id="rollBtn" title="单独重摇当前这张专题图：上游的地形与环境不变" hidden><span data-ui-icon="dice"></span><b>重摇本图</b><small id="rollVer"></small></button>
   </div>
 
   <!-- 右下：缩放 + 比例尺 -->
@@ -142,18 +155,19 @@
 
 
   <!-- 首页：生成任务 + 已保存的世界 -->
-  <section class="home" id="home" hidden>
+  <section class="home home-main" id="home" hidden>
+    <div class="home-bg" aria-hidden="true"></div>
     <div class="home-inner">
       <header class="home-head">
-        <div class="home-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/></svg><b>世界生成器</b></div>
-        <div class="home-actions"><button class="btn ghost" id="homeLib">文化库 <small id="homeLibCount"></small></button><button class="btn ghost" id="homeRel">宗教库 <small id="homeRelCount"></small></button><button class="btn ghost" id="homeSpecies">种族库 <small id="homeSpeciesCount"></small></button><button class="btn primary" id="homeCreate">＋ 创建世界</button></div>
+        <div class="home-logo"><span data-ui-icon="logo"></span><b>世界生成器</b></div>
+        <div class="home-actions"><button class="hbtn" id="homeLib"><svg viewBox="0 0 24 24"><path d="M4 5.5h6.5a2 2 0 0 1 2 2V19a1.6 1.6 0 0 0-1.6-1.6H4zM20 5.5h-6.5a2 2 0 0 0-2 2V19a1.6 1.6 0 0 1 1.6-1.6H20z"/></svg>文化库 <small id="homeLibCount"></small></button><i class="hsep"></i><button class="hbtn" id="homeRel"><svg viewBox="0 0 24 24"><path d="M12 4c2.2 2.6 2.2 5.4 0 8-2.2-2.6-2.2-5.4 0-8zM12 12c3.2-1.6 6-1 8 1.6-3 1.8-5.8 1.2-8-1.6zM12 12c-3.2-1.6-6-1-8 1.6 3 1.8 5.8 1.2 8-1.6zM12 12v8M8 20h8"/></svg>宗教库 <small id="homeRelCount"></small></button><i class="hsep"></i><button class="hbtn" id="homeSpecies"><svg viewBox="0 0 24 24"><circle cx="7" cy="9" r="1.9"/><circle cx="12" cy="6.6" r="1.9"/><circle cx="17" cy="9" r="1.9"/><path d="M12 12.5c3.3 0 5 3.6 3.6 5.6-1 1.4-2.4.6-3.6.6s-2.6.8-3.6-.6C7 16.1 8.7 12.5 12 12.5z"/></svg>种族库 <small id="homeSpeciesCount"></small></button><button class="btn primary" id="homeCreate">＋ 创建世界</button></div>
       </header>
       <div id="homeJobSec" hidden><h2>正在推演</h2><div class="home-sub"><span>推演完成后会出现在下方“已保存的世界”。</span><span id="homeJobCount"></span></div>
       <div class="wgrid" id="homeJobs"></div>
       <div class="home-sep"></div></div>
-      <h2>已保存的世界</h2><div class="home-sub"><span>打开地图，继续探索。双击世界名称可改名。</span><span><button class="link" id="homeImport">导入世界文件</button> · <span id="homeCount"></span></span></div>
+      <h2 class="home-title">已保存的世界<span class="home-flourish" data-ui-icon="flourish" aria-hidden="true"></span></h2><div class="home-sub"><span>打开地图，继续探索。双击世界名称可改名。</span><span><button class="link" id="homeImport">导入世界文件</button> · <span id="homeCount"></span></span></div>
       <div class="wgrid" id="homeSaved"></div>
-      <footer class="home-foot"><span>世界生成器 1.4.3.1 · 三系统版 · 界面焕新 <a href="#" id="homeNotes" class="home-notes">更新说明</a></span><span>你的世界保存在本机浏览器中，可导出为文件。世界文件包含设定、原图、人物与标记，打开时重新推演；旧版本文件请用原版本打开。</span></footer>
+      <footer class="home-foot"><span>世界生成器 1.4.4 · 古籍星图界面 <a href="#" id="homeNotes" class="home-notes">更新说明</a></span><span>你的世界保存在本机浏览器中，可导出为文件。世界文件包含设定、原图、人物与标记，打开时重新推演；旧版本文件请用原版本打开。</span></footer>
     </div>
   </section>
 
@@ -229,41 +243,42 @@
   <div class="card city-card" id="cityCard" hidden></div>
   <div class="toast" id="toast" hidden></div>
 
-  <script src="core/admin.js"></script>
-  <script src="core/noise.js"></script>
-  <script src="core/culture-ext.js"></script>
-  <script src="core/human-rules.js"></script>
-  <script src="core/history/date.js"></script>
-  <script src="core/military.js"></script>
-  <script src="core/terrain-coast.js"></script>
-  <script src="core/terrain-import.js"></script>
-  <script src="app/world-assets.js"></script>
-  <script src="app/world-package.js"></script>
-  <script src="app/png-decoder.js"></script>
-  <script src="app/map-import.js"></script>
-  <script src="app/military-settings.js"></script>
-  <script src="app/trait-editor.js"></script>
-  <script src="app/config.js"></script>
-  <script src="app/wizard.js"></script>
-  <script src="app/icons.js"></script>
-  <script src="app/fort-lifecycle.js"></script>
-  <script src="app/map.js"></script>
-  <script src="app/home.js"></script>
-  <script src="app/religion-lib.js"></script>
-  <script src="app/species-lib.js"></script>
-  <script src="app/city.js"></script>
-  <script src="core/history/query.js"></script>
-  <script src="core/navigation-overland.js"></script>
-  <script src="core/navigation.js"></script>
-  <script src="core/life-paths.js"></script>
-  <script src="core/life-story.js"></script>
-  <script src="core/life.js"></script>
-  <script src="core/life-text.js"></script>
-  <script src="app/person.js"></script>
-  <script src="app/military-panel.js"></script>
-  <script src="app/military-map.js"></script>
-  <script src="app/timeline.js"></script>
-  <script src="app/world-store.js"></script>
-  <script src="app/main.js"></script>
+  <script src="app/ui-icons.js?build=20261106f"></script>
+  <script src="core/admin.js?build=20261106f"></script>
+  <script src="core/noise.js?build=20261106f"></script>
+  <script src="core/culture-ext.js?build=20261106f"></script>
+  <script src="core/human-rules.js?build=20261106f"></script>
+  <script src="core/history/date.js?build=20261106f"></script>
+  <script src="core/military.js?build=20261106f"></script>
+  <script src="core/terrain-coast.js?build=20261106f"></script>
+  <script src="core/terrain-import.js?build=20261106f"></script>
+  <script src="app/world-assets.js?build=20261106f"></script>
+  <script src="app/world-package.js?build=20261106f"></script>
+  <script src="app/png-decoder.js?build=20261106f"></script>
+  <script src="app/map-import.js?build=20261106f"></script>
+  <script src="app/military-settings.js?build=20261106f"></script>
+  <script src="app/trait-editor.js?build=20261106f"></script>
+  <script src="app/config.js?build=20261106f"></script>
+  <script src="app/wizard.js?build=20261106f"></script>
+  <script src="app/icons.js?build=20261106f"></script>
+  <script src="app/fort-lifecycle.js?build=20261106f"></script>
+  <script src="app/map.js?build=20261106f"></script>
+  <script src="app/home.js?build=20261106f"></script>
+  <script src="app/religion-lib.js?build=20261106f"></script>
+  <script src="app/species-lib.js?build=20261106f"></script>
+  <script src="app/city.js?build=20261106f"></script>
+  <script src="core/history/query.js?build=20261106f"></script>
+  <script src="core/navigation-overland.js?build=20261106f"></script>
+  <script src="core/navigation.js?build=20261106f"></script>
+  <script src="core/life-paths.js?build=20261106f"></script>
+  <script src="core/life-story.js?build=20261106f"></script>
+  <script src="core/life.js?build=20261106f"></script>
+  <script src="core/life-text.js?build=20261106f"></script>
+  <script src="app/person.js?build=20261106f"></script>
+  <script src="app/military-panel.js?build=20261106f"></script>
+  <script src="app/military-map.js?build=20261106f"></script>
+  <script src="app/timeline.js?build=20261106f"></script>
+  <script src="app/world-store.js?build=20261106f"></script>
+  <script src="app/main.js?build=20261106f"></script>
 </body>
 </html>

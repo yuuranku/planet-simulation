@@ -139,6 +139,14 @@
         if(retreat&&p<peak-.01){const back=position(path,p);c.beginPath();c.moveTo(ex,ey);let i=path.points.length-1;while(i>0&&path.lengths[i]>lim)i--;for(;i>0&&path.lengths[i]>path.total*p;i--)c.lineTo(X(path.points[i]),Y(path.points[i]));c.lineTo(X(back),Y(back));c.setLineDash([5,3]);c.lineWidth=2;c.strokeStyle='#8a2f24';c.stroke();c.setLineDash([]);}
         c.restore();
       }
+      // 盟军：各自的进军通道，盟国国色细线 + 小箭头（与主力同步推进）
+      for(const side of ['attacker','defender'])for(const al of cp.allies?.[side]||[]){
+        const ap=route(al,map.W);if(!ap||ap.total<.3)continue;const st=record.state[side],pp=side==='attacker'?p:Math.min(1,Math.max(.15,(st?.progress??1)));const acol=dark(ink(H,al.p,colorOf)),alim=ap.total*pp,aend=position(ap,pp),aang=heading(ap,pp);
+        for(const k of ks){const ox=v.x+k*map.W*v.s,X=q=>ox+q[0]*v.s,Y=q=>v.y+q[1]*v.s;
+          c.save();c.globalAlpha=alpha;c.lineCap='round';c.lineJoin='round';c.beginPath();c.moveTo(X(ap.points[0]),Y(ap.points[0]));for(let i=1;i<ap.points.length&&ap.lengths[i]<alim;i++)c.lineTo(X(ap.points[i]),Y(ap.points[i]));c.lineTo(X(aend),Y(aend));
+          c.lineWidth=5.5;c.strokeStyle='rgba(255,253,247,.75)';c.stroke();c.lineWidth=3;c.setLineDash([7,3]);c.strokeStyle=acol;c.stroke();c.setLineDash([]);
+          const ex=X(aend),ey=Y(aend),L=9,Wd=5;c.beginPath();c.moveTo(ex+Math.cos(aang)*L*.55,ey+Math.sin(aang)*L*.55);c.lineTo(ex-Math.cos(aang)*L*.45+Math.cos(aang+Math.PI/2)*Wd,ey-Math.sin(aang)*L*.45+Math.sin(aang+Math.PI/2)*Wd);c.lineTo(ex-Math.cos(aang)*L*.45-Math.cos(aang+Math.PI/2)*Wd,ey-Math.sin(aang)*L*.45-Math.sin(aang+Math.PI/2)*Wd);c.closePath();c.lineWidth=1.6;c.strokeStyle='rgba(255,253,247,.95)';c.stroke();c.fillStyle=acol;c.fill();c.restore();}
+      }
     }
   }
   // 交战标记：交叉双刃；围城外加一圈围困短线；当月决出胜负盖印
@@ -194,9 +202,9 @@
     c.textAlign='left';c.textBaseline='middle';c.fillStyle=engaged?'#8a2418':'#2a2622';c.fillText(text,left+PH+5,y+.5);
     c.restore();return {x0:left,y0:top,x1:left+w,y1:top+PH};
   }
-  function draw(c,map,ks,t,H,colorOf){
+  function draw(c,map,ks,t,H,colorOf,filter){
     if(world!==H){world=H;time=null;clear();}onTime(t);drawn=[];battles=[];if(!enabled||!H?.military)return drawn;
-    const records=stateRows(H,t),mix=animation?Math.min(1,(performance.now()-animation.start)/animation.duration):1,points=new Map(),v=map.view;
+    const records=filter?stateRows(H,t).filter(r=>filter(r.campaign)):stateRows(H,t),mix=animation?Math.min(1,(performance.now()-animation.start)/animation.duration):1,points=new Map(),v=map.view;
     for(const record of records)for(const side of ['attacker','defender']){
       const {campaign,state:current,before}=record,state=current[side];if(!state?.active||!(state.remaining>0))continue;
       const path=route(campaign,map.W);if(!path)continue;const progress=lerp(before?.[side],state,mix),pos=position(path,progress),gx=((pos[0]%map.W)+map.W)%map.W,gy=pos[1],ang=heading(path,progress);

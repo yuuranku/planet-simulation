@@ -1,10 +1,10 @@
 /* 地图视图：视口栅格 + 矢量叠加 + 分级显示（移植自 atlas-hierarchy / atlas-interaction） */
 (function (G) {
   'use strict';
-  const SANS = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif', SERIF = '"Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", "SimSun", serif';
-  let FONT = SANS;
+  const SANS = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif', SERIF = '"Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "Noto Serif CJK SC", "SimSun", serif';
+  let FONT = SERIF; // 默认注记用宋体，与界面的古籍风格一致；“现代”风格用黑体
   // 地图风格（矢量部分）：线条与注记统一换色（canvas 滤镜），古典与水墨用宋体
-  const VSTYLE = { default: { filter: 'none', bg: '#e8f3f7' }, antique: { filter: 'sepia(0.85) saturate(1.15) brightness(0.92)', font: SERIF, bg: '#e8dcc0' }, modern: { filter: 'saturate(0.75)', bg: '#f2f3f0' },
+  const VSTYLE = { default: { filter: 'none', bg: '#e8f3f7' }, antique: { filter: 'sepia(0.85) saturate(1.15) brightness(0.92)', font: SERIF, bg: '#e8dcc0' }, modern: { filter: 'saturate(0.75)', font: SANS, bg: '#f2f3f0' },
     nautical: { filter: 'saturate(0.55) brightness(0.85)', font: SERIF, bg: '#f4f0e4' }, blueprint: { filter: 'grayscale(1) invert(1) brightness(1.6)', bg: '#0f2f5a' },
     ink: { filter: 'grayscale(1) contrast(1.25) brightness(0.8)', font: SERIF, bg: '#f2efe8' }, night: { filter: 'invert(0.9) hue-rotate(180deg) saturate(1.2)', bg: '#0b1422' },
     political: { filter: 'none', bg: '#cfe9f6', political: true } };
@@ -12,6 +12,7 @@
   // 屏幕尺度分级：与原版相同的阈值
   const LEVELS = ['world', 'region', 'local', 'detail'];
   const AREA_MAJOR = { plain: 900, plateau: 450, basin: 40 }; // 全图即显示的大片地貌（半格数）
+  const PHONE_W = w => w < 600;
   const levelOf = ratio => ratio < 2.5 ? 0 : ratio < 7 ? 1 : ratio < 18 ? 2 : 3;
   const routeVisible = (imp, lv, mode) => { const rank = { trunk: 0, regional: 1, local: 2 }[imp]; const min = mode === 'sea' ? rank : mode === 'rail' ? rank + 1 : Math.max(1, rank); return min <= lv; };
   const bridgeVisible = (imp, lv) => [1, 2, 3][imp] <= lv;
@@ -30,7 +31,7 @@
   MP.level = function () { return levelOf(this.zoomRel()); };
 
   MP.setData = function (d) {
-    this.d = d; this.W = d.W; this.H = d.H; this.urban = new Map(); this.urbanReq = new Set(); this.stemCache = null;
+    this.d = d; this.W = d.W; this.H = d.H; this.cityScore = null; this.urban = new Map(); this.urbanReq = new Set(); this.stemCache = null;
     this.kmPerGrid = 2 * Math.PI * d.cfg.radius / d.W;
     this.buildPaths();
     this.tex = null; this.texKey = ''; if (this.tiles) this.tiles.clear(); if (this.inflight) this.inflight.clear(); if (this.inflightId) this.inflightId.clear(); this.queue = [];
@@ -120,16 +121,34 @@
     this.motion = requestAnimationFrame(step);
   };
   MP.stopMotion = function () { if (this.motion) cancelAnimationFrame(this.motion); this.motion = 0; };
+  // 可见区域的中心：右侧纸页、底部时间轴、左侧抽屉盖住的部分不算（每帧重算——纸页常在镜头起飞后才展开）
+  const OCCLUDERS = '.tl-city,.tl-focus,.person-panel,#cityCard,#cityPanel,#timeline,#tlDrawer,#layerPanel,#infoPanel,#savedPanel,#stylePanel,.mil-panel';
+  MP.focusCenter = function () {
+    const cr = this.cv.getBoundingClientRect(), vw = this.vw, vh = this.vh; let l = 0, t = 0, r = vw, b = vh;
+    for (const el of document.querySelectorAll(OCCLUDERS)) {
+      if (el.hidden || !el.offsetParent && getComputedStyle(el).position !== 'fixed') continue;
+      const q = el.getBoundingClientRect(); if (q.width < 2 || q.height < 2) continue;
+      const L = q.left - cr.left, T = q.top - cr.top, R = q.right - cr.left, B = q.bottom - cr.top;
+      if (R < 0 || L > vw || B < 0 || T > vh) continue;
+      if (L > vw * 0.45 && q.height > vh * 0.25) r = Math.min(r, L - 12);
+      else if (T > vh * 0.5 && q.width > vw * 0.35) b = Math.min(b, T - 12);
+      else if (R < vw * 0.5 && q.height > vh * 0.3) l = Math.max(l, R + 12);
+    }
+    if (r - l < 220) { l = 0; r = vw; } if (b - t < 160) { t = 0; b = vh; }
+    return [(l + r) / 2, (t + b) / 2];
+  };
+  // 镜头飞向某点：目标点在屏幕上沿直线滑向可见区域中心，同时按指数缩放——全程不会甩出画面、也不会先偏后回
   MP.flyTo = function (gx, gy, rel) {
     this.stopMotion();
-    const v = this.view, s0 = v.s, s1 = this.fitScale() * (rel || Math.max(3, this.zoomRel()));
-    const [cx0, cy0] = this.toGrid(this.vw / 2, this.vh / 2);
+    if (!Number.isFinite(gx) || !Number.isFinite(gy) || !this.d) return;
+    const v = this.view, s0 = v.s, s1 = Math.min(this.maxScale(), Math.max(this.minScale(), this.fitScale() * (rel || Math.max(3, this.zoomRel()))));
+    const [fx0, fy0] = this.focusCenter(), [cx0] = this.toGrid(fx0, fy0);
     let tx = gx; while (tx - cx0 > this.W / 2) tx -= this.W; while (cx0 - tx > this.W / 2) tx += this.W;
-    const t0 = performance.now(), dur = 700;
+    const px0 = v.x + tx * s0, py0 = v.y + gy * s0, t0 = performance.now(), dur = 720;
     const step = (now) => {
       const t = Math.min(1, (now - t0) / dur), e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-      const s = s0 * Math.pow(s1 / s0, e), cx = cx0 + (tx - cx0) * e, cy = cy0 + (gy - cy0) * e;
-      v.s = s; v.x = this.vw / 2 - cx * s; v.y = this.vh / 2 - cy * s; this.clamp(); this.draw();
+      const [fx, fy] = this.focusCenter(), s = s0 * Math.pow(s1 / s0, e), sx = px0 + (fx - px0) * e, sy = py0 + (fy - py0) * e;
+      v.s = s; v.x = sx - tx * s; v.y = sy - gy * s; this.clamp(); this.draw();
       if (t < 1) this.motion = requestAnimationFrame(step); else { this.motion = 0; this.scheduleFrame(); }
     };
     this.motion = requestAnimationFrame(step);
@@ -251,7 +270,7 @@
   MP.copies = function () { const v = this.view, W = this.W * v.s, out = []; if (!(W > 0) || !isFinite(v.x)) return [0]; const k0 = Math.floor(-v.x / W), k1 = Math.floor((this.vw - v.x) / W); for (let k = k0; k <= k1; k++) out.push(k); return out; };
   MP.render = function () {
     let c = this.ctx; const dpr = this.dpr, v = this.view, mainCtx = this.ctx;
-    const VS = VSTYLE[this.app.aux.style] || VSTYLE.default; FONT = VS.font || SANS;
+    const VS = VSTYLE[this.app.aux.style] || VSTYLE.default; FONT = VS.font || SERIF;
     const frameKey=this.frameKey();
     if(this.d && this.baseKey===frameKey){this.presentFrame(this.copies(),VS,true);return;}
     c.setTransform(1, 0, 0, 1, 0, 0); c.filter = 'none'; c.fillStyle = VS.bg; c.fillRect(0, 0, this.cv.width, this.cv.height);
@@ -447,6 +466,7 @@
     }
     if (human && (topic === 'country' || topic === 'govern' || topic === 'system')) d.tribes.forEach((t, i) => items.push([18, 'tribe', t, 'tribe:' + i]));
     if (human && (topic === 'country' || topic === 'govern' || topic === 'system' || topic === 'province') && lv >= 1) (d.jimis || []).forEach((t, i) => items.push([19, 'jimi', t, 'jimi:' + i]));
+    const hist = !!(G.Timeline && G.Timeline.on);
     if (aux.names && tab !== 'plates') {
       // 地理名称分级：全图只有大洋、大陆、主要山脉与大片高原平原盆地；放大后出现海、湾、半岛、湖、雪山；再放大山脉让位给具体山峰与海拔
       for (let li = 0; li < d.labels.length; li++) {
@@ -462,6 +482,7 @@
         if (t === 'peak') minLv = l.rank < 24 ? 1 : 2;
         if (t === 'snow') minLv = 1;
         if (t === 'island') minLv = l.size >= 30 || l.arch && l.size >= 12 ? 1 : 2;
+        if (hist) { if (t === 'ocean') minLv = Math.max(minLv, 0); else if (t === 'sea' || t === 'bay' || (t === 'range' && l.size > 120)) minLv = Math.max(minLv, 1); else if (t === 'peak' || t === 'island' || t === 'lake' || t === 'snow' || t === 'ridge' || t === 'range') minLv = Math.max(minLv, 2); else minLv = Math.max(minLv, 3); } // 历史图：地名让位给国名，全图只留大洋
         if (lv < minLv || lv > maxLv) continue;
         const pr = major ? 20 + ({ ocean: 0, continent: 0, range: 1, plateau: 2, basin: 2, plain: 3 }[t] || 0)
           : 40 + ({ sea: 0, range: lv >= 3 ? 4 : 1, ridge: 4.5, hills: 5, snow: 1.5, plateau: 2, basin: 2, plain: 2.5, bay: 3, peninsula: 3, lake: 4, peak: 5 + Math.min(4, (l.rank || 0) / 40), island: 6 }[t] ?? 7);
@@ -469,14 +490,25 @@
       }
       // 河名：每一级河流在它显示出来的那一级起就有名字（全图不注河名）
       const bigKm = 2 * Math.PI * d.cfg.radius * 0.02;
-      if (aux.rivers && lv >= 1) d.riverNames.forEach((r, k) => { const t = r.tier === undefined ? (r.minor ? 3 : 0) : r.tier; if (lv >= Math.max(1, t) && (t !== 1 || lv >= 2 || (r.km || 0) >= bigKm)) items.push([43 + t * 1.5 - Math.min(1, (r.km || 0) / 4000), 'river', r, 'river:' + k]); });
+      if (aux.rivers && lv >= (hist ? 2 : 1)) d.riverNames.forEach((r, k) => { const t = r.tier === undefined ? (r.minor ? 3 : 0) : r.tier; if (lv >= Math.max(1, t) && (t !== 1 || lv >= 2 || (r.km || 0) >= bigKm)) items.push([43 + t * 1.5 - Math.min(1, (r.km || 0) / 4000), 'river', r, 'river:' + k]); });
     }
-    if (aux.cities && tab !== 'plates') d.cities.forEach((ct, ci) => {
-      const cap = ct.capital !== undefined;
-      const ok = cap || ct.tier === 'metropolis' || (lv >= 1 && ct.tier === 'city') || (lv >= 2 && ct.tier === 'town' && ct.pop >= 2000) || lv >= 3 || (ct.seat !== undefined && topic === 'province' && lv >= 1);
-      if (!ok) return;
-      items.push([cap ? 30 : ct.tier === 'metropolis' ? 31 : ct.tier === 'city' ? 50 : ct.tier === 'site' ? 65 : ct.pop >= 2000 ? 60 : 75, 'city', ct, 'city:' + ci]);
-    });
+    // 城市分级显示：按重要性（人口 × 都城 × 国家大小）排序，按屏幕面积给名额并保持最小间距——全图只见大国都城与大都会，越放大越多
+    if (aux.cities && tab !== 'plates') {
+      const score = this.citySig(), zrC = Math.max(1, zr), cand = [];
+      const minSep = PHONE_W(this.vw) ? [110, 70, 40, 0][lv] : [96, 60, 34, 0][lv], budget = lv >= 3 ? 1e9 : Math.round(this.vw * this.vh / Math.pow([235, 160, 105][lv] / Math.sqrt(zrC / [1, 2.5, 7][lv]), 2));
+      const sel = this.selCity;
+      d.cities.forEach((ct, ci) => {
+        const cap = ct.capital !== undefined;
+        const ok = cap || ct.tier === 'metropolis' || (lv >= 1 && ct.tier === 'city') || (lv >= 2 && ct.tier === 'town' && ct.pop >= 2000) || lv >= 3 || (ct.seat !== undefined && topic === 'province' && lv >= 1);
+        if (!ok && ci !== sel) return;
+        let sx = null, sy = v.y + ct.y * s; for (const k of ks) { const x = v.x + (ct.x + k * this.W) * s; if (onScreen(x, sy, 10)) { sx = x; break; } } if (sx === null) return;
+        cand.push([ci === sel ? 1e12 : score[ci] * (topic === 'province' && ct.seat !== undefined ? 3 : 1), ci, sx, sy]);
+      });
+      cand.sort((a, b) => b[0] - a[0]);
+      const kept = []; let n = 0;
+      for (const [sc, ci, sx, sy] of cand) { if (n >= budget && sc < 1e12) break; if (minSep && sc < 1e12 && kept.some(q => Math.abs(q[0] - sx) < minSep && Math.abs(q[1] - sy) < minSep * 0.7)) continue; kept.push([sx, sy]); n++;
+        const ct = d.cities[ci], cap = ct.capital !== undefined; items.push([(cap ? 30 : ct.tier === 'metropolis' ? 31 : ct.tier === 'city' ? 50 : ct.tier === 'site' ? 65 : ct.pop >= 2000 ? 60 : 75) + n / 1e4, 'city', ct, 'city:' + ci]); }
+    }
     if (aux.cities && tab !== 'plates' && lv >= 1) (d.forts || []).forEach(f => { const kind = G.FortLifecycle.kind(f, Infinity, lv); if (kind) items.push([kind === 'fort' ? 48 : 72, 'fort', f, 'fort:' + f.id]); });
     if (human && topic === 'heritage' && d.heritage) { const on = app.herCat || { religious: 1, war: 1, culture: 1 }; d.heritage.forEach((o, i) => { if (!on[o.cat]) return; if (o.imp < 2 && lv < 1) return; items.push([o.imp >= 3 ? 22 : o.imp === 2 ? 34 : 55, 'heritage', o, 'heritage:' + i]); }); }
     items.sort((a, b) => a[0] - b[0] || (b[2].pop || b[2].size || 0) - (a[2].pop || a[2].size || 0));
@@ -571,7 +603,7 @@
         c.moveTo(sx + dx * 16, sy + 32 + dy * 16); c.lineTo(sx + dx * 9 - dy * 5, sy + 32 + dy * 9 + dx * 5); c.moveTo(sx + dx * 16, sy + 32 + dy * 16); c.lineTo(sx + dx * 9 + dy * 5, sy + 32 + dy * 9 - dx * 5); c.stroke();
         boxes.push([sx - 20, sy + 15, sx + 20, sy + 50]);
       });
-      else if (kind === 'state') { const pxs = (o.lsize || 1) * 2 * s; if (pxs < 14) continue; const size = Math.max(11, Math.min(18, 9 + pxs / 9)); each(o.lx, o.ly, (sx, sy) => text(app.names && app.names[id] ? app.names[id] : (lv >= 1 || pxs > 60 ? o.name : o.short), sx, sy, { size, weight: 700, color: '#3f3a36', ls: 2, id })); }
+      else if (kind === 'state') { const pxs = (o.lsize || 1) * 2 * s; if (pxs < 14) continue; const size = Math.max(11, Math.min(18, 9 + pxs / 9)); const lord = o.liege !== undefined && d.countries[o.liege] ? d.countries[o.liege] : null; each(o.lx, o.ly, (sx, sy) => { const ok = text(app.names && app.names[id] ? app.names[id] : (lv >= 1 || pxs > 60 ? o.name : o.short), sx, sy, { size, weight: 700, color: '#3f3a36', ls: 2, id }); if (ok && lord) { const sub = Math.max(9.5, size * 0.6); text('附庸 · 奉' + (lord.short || lord.name) + '为宗主', sx, sy + (size + sub) * LS / 2 + 2 * LP + 1, { size: sub, weight: 600, color: '#7a5a2a', ls: 1 }); } }); }
       else if (kind === 'province') {
         if (o.lx !== undefined) { const pxs = (o.lsize || 1) * s; if (pxs < 9) continue; const size = Math.max(10.5, Math.min(14, 9 + pxs / 10)); each(o.lx, o.ly, (sx, sy) => text(N_(id, o.name), sx, sy, { size, weight: 600, color: '#5c4f46', ls: 2, id })); }
         else { const ct = d.cities[o.seat]; if (ct) each(ct.x, ct.y + 12 / s, (sx, sy) => text(N_(id, o.name), sx, sy, { size: 10.5, color: '#6a5f58', ls: 1, id })); } }
@@ -637,6 +669,13 @@
   const herKey = o => o.cat === 'war' && o.kind === 'ruin' ? 'burned' : o.kind;
   const herSvg = (k, col, size = 20) => G.MapIcons.svgBadge(k, col, size);
   MapView.HER_COL = HER_COL; MapView.HER_ICON = HER_ICON; MapView.herKey = herKey; MapView.herSvg = herSvg;
+  // 城市重要性：人口为本；都城按其国家大小加权（大国之都先于小国之都），大都会再加权
+  MP.citySig = function () {
+    if (this.cityScore && this.cityScore.d === this.d) return this.cityScore.v;
+    const d = this.d, K = d.countries || [], maxA = Math.max(1, ...K.map(k => k.area || 0));
+    const v = d.cities.map(ct => { const cap = ct.capital !== undefined, k = cap ? K[ct.capital] : null; return Math.max(1, ct.pop || 1) * (cap ? 2.2 + 6 * Math.sqrt((k && k.area || 0) / maxA) : 1) * (ct.tier === 'metropolis' ? 1.6 : 1) * (ct.tier === 'site' ? 0.3 : 1); });
+    this.cityScore = { d, v }; return v;
+  };
   MP.drawHeritage = function (o, sx, sy, free, lv, id, label, text) {
     const c = this.ctx, R = o.imp >= 3 ? 10 : 8.5; if (!free(sx - R, sy - R, sx + R, sy + R)) return;
     this.heritageDots.push({ i: +id.split(':')[1], x: sx, y: sy });
@@ -675,6 +714,8 @@
   MP.bindInput = function () {
     const cv = this.cv, ptrs = new Map(), samples = [];
     let moved = false, multi = false, downAt = null, wheelExp = 0, wheelXY = [0, 0], wheelFrame = 0, wheelCommit = 0;
+    let hoverFrame = 0, hoverPoint = null;
+    const clearHover = () => { if (hoverFrame) cancelAnimationFrame(hoverFrame); hoverFrame = 0; hoverPoint = null; this.app.onHover && this.app.onHover(null); };
     const commit = () => this.scheduleFrame();
     const record = () => { const t = performance.now(); samples.push([t, this.view.x, this.view.y]); while (samples.length && t - samples[0][0] > 160) samples.shift(); };
     const coast = () => {
@@ -688,7 +729,7 @@
       this.motion = requestAnimationFrame(step); return true;
     };
     cv.addEventListener('pointerdown', e => {
-      this.stopMotion(); cv.setPointerCapture(e.pointerId);
+      clearHover(); this.stopMotion(); cv.setPointerCapture(e.pointerId);
       if (!ptrs.size) { moved = false; multi = false; samples.length = 0; record(); downAt = [e.offsetX, e.offsetY]; }
       ptrs.set(e.pointerId, [e.offsetX, e.offsetY, e.offsetX, e.offsetY]); if (ptrs.size > 1) multi = true;
       cv.focus({ preventScroll: true });
@@ -696,7 +737,15 @@
     const gesture = () => { const p = [...ptrs.values()].slice(0, 2); if (p.length === 1) return [p[0][0], p[0][1], 0]; return [(p[0][0] + p[1][0]) / 2, (p[0][1] + p[1][1]) / 2, Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1])]; };
     cv.addEventListener('pointermove', e => {
       const p = ptrs.get(e.pointerId);
-      if (!p) { cv.style.cursor = !this.app.tool && this.cityAt(e.offsetX, e.offsetY) ? 'pointer' : ''; this.app.onHover && this.app.onHover(e); return; }
+      if (!p) {
+        hoverPoint = { offsetX: e.offsetX, offsetY: e.offsetY };
+        if (!hoverFrame) hoverFrame = requestAnimationFrame(() => {
+          hoverFrame = 0; const point = hoverPoint; hoverPoint = null; if (!point) return;
+          cv.style.cursor = !this.app.tool && this.cityAt(point.offsetX, point.offsetY) ? 'pointer' : '';
+          this.app.onHover && this.app.onHover(point);
+        });
+        return;
+      }
       const before = gesture(); p[0] = e.offsetX; p[1] = e.offsetY; const after = gesture();
       if (Math.hypot(e.offsetX - p[2], e.offsetY - p[3]) > 5) moved = true;
       if (!moved && !multi) return;
@@ -716,7 +765,7 @@
       samples.length = 0;
     };
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
-    cv.addEventListener('pointerleave', () => this.app.onHover && this.app.onHover(null));
+    cv.addEventListener('pointerleave', clearHover);
     cv.addEventListener('wheel', e => {
       e.preventDefault(); this.stopMotion();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.vh : 1;

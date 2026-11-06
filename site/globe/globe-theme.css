@@ -1,0 +1,85 @@
+/* =====================================================================
+   1.4.4 · 球体 / 卫星 / 恒星系统界面：与主程序同一套“古籍星图”
+   墨青工具条、描金细线、米黄纸面控制栏、宋体标题；控件有厚度与落影
+   ===================================================================== */
+body.globe-page {
+  --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  --navy: #0f3439; --gold: #c7a15a; --gold-a: rgba(199, 161, 90, .55); --paper: #fbf6ea; --ink: #2c241a; --ink2: #6b5c48; --ink3: #9a8a70; --line: #e4d4b3; --accent: #1e5d63;
+  --map-ink: #2c241a; --map-muted: #6b5c48; --map-accent: #1e5d63; --map-panel: #fbf6ea; --map-field: #f3ead6; --map-border: #e4d4b3; --map-highlight: rgba(199, 161, 90, .16);
+  background: #071b1f; color: var(--ink);
+}
+
+/* ---------- 工具条：墨青立柱 ---------- */
+.globe-rail {
+  background: linear-gradient(90deg, rgba(255, 255, 255, .06), transparent 30%, rgba(0, 0, 0, .16)), linear-gradient(180deg, #154249 0%, #0f3439 30%, #0c2c31 100%);
+  border-right: 1px solid var(--gold-a);
+  box-shadow: inset -3px 0 0 rgba(12, 44, 49, .9), inset -4px 0 0 rgba(199, 161, 90, .18), 6px 0 16px rgba(2, 14, 16, .5);
+}
+.globe-rail-item, .globe-rail .globe-icon-button { color: rgba(236, 223, 194, .85); font-family: var(--serif); letter-spacing: .04em; }
+.globe-rail-item svg, .globe-rail .globe-icon-button svg { color: var(--gold); }
+.globe-rail-item:hover, .globe-rail .globe-icon-button:hover { background: rgba(199, 161, 90, .14); color: #f6ead0; }
+.globe-rail-item[aria-pressed="true"] { color: #fff3d6; background: linear-gradient(180deg, rgba(199, 161, 90, .3), rgba(199, 161, 90, .12)); box-shadow: inset 0 1px 0 rgba(255, 236, 190, .3), inset 0 0 0 1px rgba(199, 161, 90, .6), 0 2px 6px rgba(0, 0, 0, .35); }
+.globe-menu { border-radius: 11px !important; width: 46px !important; height: 40px !important; background: linear-gradient(180deg, #1d555c, #123d43 60%, #0e3237);
+  box-shadow: inset 0 1px 0 rgba(255, 236, 190, .28), inset 0 -2px 0 rgba(0, 0, 0, .35), 0 0 0 1px rgba(199, 161, 90, .7), 0 3px 6px rgba(0, 0, 0, .45); }
+
+/* ---------- 控制栏：米黄纸面 ---------- */
+.globe-sidebar {
+  background: linear-gradient(180deg, rgba(255, 252, 244, .78), rgba(247, 239, 221, .7)), url(../app/ui/paper.webp) 0 0 / 360px 360px, var(--paper);
+  border-right: 1px solid rgba(168, 130, 63, .55);
+  box-shadow: inset -3px 0 0 rgba(253, 249, 239, .9), inset -4px 0 0 rgba(199, 161, 90, .28), 8px 0 22px rgba(2, 14, 16, .45);
+  color: var(--ink);
+}
+.globe-sidebar-heading { border-bottom: 0; position: relative; padding-bottom: 22px; }
+.globe-sidebar-heading::after, .globe-control-section::after { content: ''; position: absolute; left: 22px; right: 22px; bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(168, 130, 63, .55) 15%, rgba(168, 130, 63, .55) 85%, transparent); }
+.globe-control-section { border-bottom: 0; position: relative; }
+.globe-sidebar h1 { font: 700 22px/1.35 var(--serif); letter-spacing: .06em; color: var(--ink); }
+.globe-control-section h2 { font: 700 15px/24px var(--serif); letter-spacing: .08em; color: var(--ink); }
+.globe-control-section h2::before { content: '◆'; color: var(--gold); font-size: 9px; margin-right: 7px; vertical-align: 2px; }
+.eyebrow { color: #8a6d3b; font-family: var(--serif); letter-spacing: .14em; }
+.inventory, .control-note, .globe-gesture-note, .globe-note, .globe-live-status:not(:empty), .globe-selection:not(:empty) { color: var(--ink3); }
+.globe-note a { color: var(--accent); }
+.field { color: var(--ink2); font-family: var(--serif); }
+.field select, .globe-page select {
+  background: linear-gradient(180deg, #fffdf6, #f5ecd9); border: 1px solid rgba(168, 130, 63, .5); border-radius: 9px; color: var(--ink); font-family: var(--serif);
+  box-shadow: inset 0 1px 0 #fff, inset 0 -2px 0 rgba(168, 130, 63, .12), 0 1px 2px rgba(60, 40, 20, .12);
+}
+.globe-page select option, .globe-page select optgroup { background: #fbf6ea; color: var(--ink); }
+.switch-row { color: var(--ink); font-family: var(--serif); }
+.switch-row input { background: #d8cbb0; box-shadow: inset 0 1px 2px rgba(60, 40, 20, .25); }
+.switch-row input:checked { background: linear-gradient(180deg, #2a6f75, #1e5d63); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .3), 0 0 0 1px rgba(199, 161, 90, .6); }
+.switch-row input::before { background: #fffaf0; box-shadow: 0 1px 2px rgba(0, 0, 0, .35); }
+.globe-action {
+  border: 1px solid rgba(168, 130, 63, .55); border-radius: 10px; color: var(--accent); font-family: var(--serif); letter-spacing: .04em;
+  background: linear-gradient(180deg, #fffdf6, #f3e9d3);
+  box-shadow: inset 0 1px 0 #fff, inset 0 -2px 0 rgba(120, 90, 40, .14), 0 1px 2px rgba(60, 40, 20, .18);
+}
+.globe-action:hover { background: linear-gradient(180deg, #fffaf0, #efe2c6); }
+.globe-action:active { transform: translateY(1px); box-shadow: inset 0 2px 3px rgba(60, 40, 20, .2); }
+.globe-action.primary { color: #f6ead0; border-color: rgba(199, 161, 90, .7); background: linear-gradient(180deg, #23626a, #164a50 60%, #10393e);
+  box-shadow: inset 0 1px 0 rgba(255, 236, 190, .3), inset 0 -2px 0 rgba(0, 0, 0, .3), 0 3px 8px rgba(10, 30, 32, .3); }
+.globe-action.primary:hover { background: linear-gradient(180deg, #2a6f77, #1a535a 60%, #12403f); }
+.globe-action svg { color: var(--gold); }
+#globe-time { color: var(--ink2); font-family: var(--serif); }
+#celestial-status:not(:empty) { color: #9a5a1c; }
+.globe-icon-button { color: var(--ink2); }
+.globe-sidebar .globe-icon-button:hover { background: rgba(168, 130, 63, .12); }
+
+/* ---------- 星图上的天体注记：小纸签 ---------- */
+#celestial-labels span {
+  font-family: var(--serif); font-weight: 600; letter-spacing: .04em; color: #2c241a;
+  background: linear-gradient(180deg, #fffdf6, #f3e9d3); border: 1px solid rgba(168, 130, 63, .6); border-radius: 7px;
+  box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgba(0, 0, 0, .35);
+}
+#globe-place-labels .place { font-family: var(--serif); }
+#globe-place-labels .place.state { color: #f6e3b5; }
+
+/* 球体画面：四周一圈内阴影，像嵌在案面里的一块图版 */
+#globe::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 1px rgba(199, 161, 90, .35), inset 0 0 40px rgba(0, 0, 0, .45); z-index: 3; }
+
+/* 载入与出错的遮罩：墨青星夜 + 纸签 */
+#atlas-map-loading { background: radial-gradient(90% 80% at 50% 40%, #154249 0%, #0c2c31 60%, #071b1f 100%) !important; color: #f1e3c0 !important; font-family: var(--serif) !important; }
+#atlas-map-loading h1 { letter-spacing: .1em; color: #f1e3c0; }
+#atlas-map-loading p { color: rgba(236, 223, 194, .7) !important; }
+#atlas-map-loading .map-loading-spinner { border-color: rgba(199, 161, 90, .25) !important; border-top-color: #c7a15a !important; }
+#atlas-map-loading button { border-color: rgba(199, 161, 90, .6) !important; background: linear-gradient(180deg, #fffdf6, #f3e9d3) !important; color: #2c241a !important; font-family: var(--serif) !important; }
+#atlas-map-loading button:first-child { background: linear-gradient(180deg, #23626a, #10393e) !important; color: #f6ead0 !important; }

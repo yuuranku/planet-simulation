@@ -89,7 +89,9 @@
       const rise=elev[b]-elev[a],grade=km>0?Math.abs(rise)/(km*1000):0;
       return {km,climb:Math.max(0,rise),descent:Math.max(0,-rise),grade,terrainFactor:(ground(a)+ground(b))*.5*(1+Math.min(6,12*grade))};
     }
-    function route({from,to,segmentCost,maxKmPerDay,maxDays=Infinity}){
+    function route({from,to,segmentCost,maxKmPerDay,maxDays=Infinity,cellPen=null}){
+      // cellPen(i)≥1：领土偏好（他国领土加倍计价，只影响选路，不改实际天数）
+      const pen=cellPen||(()=>1),penMax=cellPen?(cellPen.max||40):1,bound=maxDays*penMax;
       const a=point(from),b=point(to);if(!a||!b||!dry(a.i)||!dry(b.i)||!surfaceDry(a)||!surfaceDry(b))return null;
       if(typeof segmentCost!=='function'||!Number.isFinite(maxKmPerDay)||maxKmPerDay<=0||!(maxDays>=0))throw Error('越野寻路缺少有效统一时间 cost');
       const time=e=>{if(!e.km)return 0;const value=segmentCost(e);if(value===Infinity)return value;if(!Number.isFinite(value)||value<=0)throw Error('越野路径时间 cost 必须为正数或 Infinity');return value;};
@@ -99,14 +101,14 @@
       if(a.i===b.i){
         if(!dryLine(a,b))return null;
         const km=distance(a,b),days=stepTime(a.i,b.i,km);if(!Number.isFinite(days)||days>maxDays)return null;
-        if(!km)return {pts:Float32Array.from([from.x,from.y]),pointDays:Float64Array.of(0),km:0,days:0};
-        return {pts:Float32Array.from([from.x,from.y,from.x+delta(b.x-a.x),to.y]),pointDays:Float64Array.of(0,days),km,days};
+        if(!km)return {pts:Float32Array.from([from.x,from.y]),pointDays:Float64Array.of(0),km:0,days:0,cost:0};
+        return {pts:Float32Array.from([from.x,from.y,from.x+delta(b.x-a.x),to.y]),pointDays:Float64Array.of(0,days),km,days,cost:days*pen(b.i)};
       }
       if(!dryLine(a,cA)||!dryLine(cB,b))return null;
       const startKm=distance(a,cA),endKm=distance(cB,b),startDays=stepTime(a.i,a.i,startKm),endDays=stepTime(b.i,b.i,endKm);
       if(!Number.isFinite(startDays+endDays))return null;
       const heuristic=i=>distance(center(i),cB)/maxKmPerDay+endDays;
-      if(startDays+heuristic(a.i)>maxDays)return null;
+      if(startDays+heuristic(a.i)>bound)return null;
       workspace();const heap=new G.Hydro.Heap(1024);
       dist[a.i]=startDays;pred[a.i]=-1;seen[a.i]=epoch;heap.push(a.i,startDays+heuristic(a.i));
       let found=false;
@@ -120,23 +122,24 @@
           if(DX[k]&&DY[k]&&(!dry(cell(x+DX[k],y))||!dry(cell(x,yy))))continue;
           if(!clearEdge(i,k,j))continue;
           const km=DY[k]?(DX[k]?diagonal[Math.min(y,yy)]:northSouth):east[y];
-          const days=stepTime(i,j,km),next=dist[i]+days;if(!Number.isFinite(next)||(seen[j]===epoch&&next>=dist[j]))continue;
-          const estimate=next+heuristic(j);if(estimate>maxDays)continue;
+          const days=stepTime(i,j,km),next=dist[i]+days*pen(j);if(!Number.isFinite(next)||(seen[j]===epoch&&next>=dist[j]))continue;
+          const estimate=next+heuristic(j);if(estimate>bound)continue;
           seen[j]=epoch;dist[j]=next;pred[j]=i;heap.push(j,estimate);
         }
       }
       if(!found)return null;
       const cells=[];for(let i=b.i;i>=0;i=pred[i])cells.push(i);cells.reverse();
-      const pts=[from.x,from.y],pointDays=[0];let km=0,days=0,previous=a;
+      const pts=[from.x,from.y],pointDays=[0];let km=0,days=0,cost=0,previous=a;
       function append(p,i,j){
         const length=distance(previous,p);if(!length)return;
-        days+=stepTime(i,j,length);km+=length;
+        const d=stepTime(i,j,length);days+=d;cost+=d*pen(j);km+=length;
         const last=pts[pts.length-2],x=last+delta(wrap(p.x)-wrap(last));pts.push(x,p.y);pointDays.push(days);previous=p;
       }
       append(cA,a.i,a.i);
       for(let k=1;k<cells.length;k++)append(center(cells[k]),cells[k-1],cells[k]);
       append(b,b.i,b.i);
-      return {pts:Float32Array.from(pts),pointDays:Float64Array.from(pointDays),km,days};
+      if(days>maxDays)return null;
+      return {pts:Float32Array.from(pts),pointDays:Float64Array.from(pointDays),km,days,cost};
     }
     return {route,dryLine};
   }

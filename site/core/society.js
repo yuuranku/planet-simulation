@@ -362,15 +362,35 @@
     // 按陆块人口分配发源地配额（每个有足够人口的陆块至少一个）
     const compPop = new Float64Array(landComp.count + 1);
     for (let i = 0; i < N; i++) if (landComp[i]) compPop[landComp[i]] += weight[i];
-    const compOrder = [...compPop.keys()].filter(k => k > 0 && compPop[k] > 0.004).sort((a, b) => compPop[b] - compPop[a]);
+    const civOrder = byScore(buildable, civScore), candidateByComp = new Map();
+    for (const i of civOrder) {
+      const k = landComp[i]; if (!candidateByComp.has(k)) candidateByComp.set(k, []);
+      candidateByComp.get(k).push(i);
+    }
+    const compOrder = [...compPop.keys()].filter(k => k > 0 && compPop[k] > 0.004 && candidateByComp.has(k)).sort((a, b) => compPop[b] - compPop[a]);
     const compQuota = new Map(); let left = civTarget;
     for (const k of compOrder) if (left > 0) { compQuota.set(k, 1); left--; }
     while (left > 0 && compOrder.length) { let best = compOrder[0], bv = -1; for (const k of compOrder) { const v = compPop[k] / (compQuota.get(k) + 1); if (v > bv) { bv = v; best = k; } } compQuota.set(best, compQuota.get(best) + 1); left--; }
     let validCount = 0; for (let i = 0; i < N; i++) validCount += domain[i];
-    const civOrder = byScore(buildable, civScore);
-    const hearthCells = [], occH = [];
+    const hearthCells = [], occH = [], placed = new Map(), exhausted = new Set();
     const minHD = Math.max(1, Math.sqrt(validCount / civTarget) * 0.45);
-    for (const [k, qn] of compQuota) spacedSelect(civOrder.filter(i => landComp[i] === k), qn, minHD, occH).forEach(i => hearthCells.push(i));
+    for (const [k, qn] of compQuota) {
+      const selected = spacedSelect(candidateByComp.get(k), qn, minHD, occH);
+      hearthCells.push(...selected); placed.set(k, selected.length);
+      if (selected.length < qn) exhausted.add(k);
+    }
+    // 被间距限制占用不了的配额交给仍有候选的陆块，不产生无人区种子。
+    while (hearthCells.length < civTarget) {
+      let best = 0, bv = -1;
+      for (const k of compOrder) if (!exhausted.has(k)) {
+        const v = compPop[k] / ((placed.get(k) || 0) + 1);
+        if (v > bv) { best = k; bv = v; }
+      }
+      if (!best) break;
+      const selected = spacedSelect(candidateByComp.get(best), 1, minHD, occH);
+      if (!selected.length) { exhausted.add(best); continue; }
+      hearthCells.push(selected[0]); placed.set(best, (placed.get(best) || 0) + 1);
+    }
     const civSeeds = hearthCells.map((c, k) => ({ cell: c, strength: 0.88 + 0.2 * civScore[c], primary: true }));
     let CV = territory(civSeeds, { valid: domain, friction: civFriction, trans: phys });
     // 未被触及的有人口陆块：独立地方文化

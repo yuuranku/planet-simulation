@@ -10,7 +10,7 @@ function history({ known = false, seed = 1, end = 500, arrivals = 200, unknownNe
     let source=fs.readFileSync(path.join(site, 'core', f + '.js'), 'utf8');
     if(event&&f==='history/polity'){
       source=source.replace('const rndU = mulberry32((h.seed | 0) + 4242)', 'const rndU = () => 0');
-      source=source.replace('      const fortPopulation =', '      if(G.scenario)G.scenario({y,P,owner,cult,dynasty,crisis,unrestStep,setOwner,unrest,calmUntil,events});\n      const fortPopulation =');
+      source=source.replace('      const fortPopulation =', '      if(G.scenario)G.scenario({y,P,owner,cult,dynasty,crisis,unrestStep,setOwner,unrest,calmUntil,events,countrySlots});\n      const fortPopulation =');
     }
     vm.runInContext(source, G);
   }
@@ -36,13 +36,14 @@ function history({ known = false, seed = 1, end = 500, arrivals = 200, unknownNe
     C.cities=Array.from({length:regions},(_,i)=>({r:i+1,idx:i,name:`城${i+1}`,founded:0,final:1000}));
     C.pop=new Float32Array(regions*2).fill(1000);
   }
+  h.H=Math.max(h.H,Math.ceil(regions/h.W));
   require('./military-fixture-terrain.cjs')(G, R, h);
   let observation=null;const done={};
-  if(event)G.scenario=({y,P,owner,cult,dynasty,crisis,unrestStep,setOwner,unrest,calmUntil,events})=>{
+  if(event)G.scenario=({y,P,owner,cult,dynasty,crisis,unrestStep,setOwner,unrest,calmUntil,events,countrySlots})=>{
     const q=P.find(x=>x.died===null&&x.civ===0);if(y<100||!q)return;
     assert.equal(cult[2],['limited-revolt','limited-crisis'].includes(event)?0:-1,'scenario uses the intended local culture');
     for(let r=1;r<=regions;r++)setOwner(r,q.id,y);
-    const before=P.length;
+    const before=P.length, slotsBefore=countrySlots();
     if(event==='limited-crisis'){
       crisis(q.id,y,0,0);
       observation={before,after:P.length,parent:q.id,owner:Array.from(owner),events:events.filter(e=>e.year===y)};
@@ -53,11 +54,11 @@ function history({ known = false, seed = 1, end = 500, arrivals = 200, unknownNe
     }else{
       unrest.fill(0);unrest[2]=5;calmUntil.fill(0);q.lastRevolt=-1000;q.coh=.01;
       unrestStep(y,[q.id],new Int8Array(P.length).fill(4),new Float64Array(P.length).fill(10),new Float64Array(P.length).fill(1000));
-      observation={before,after:P.length,local:cult[2],owner:Array.from(owner),parent:q.id,events:events.filter(e=>e.year===y),lastRevolt:q.lastRevolt,calmUntil:Array.from(calmUntil)};
+      observation={before,after:P.length,local:cult[2],owner:Array.from(owner),parent:q.id,events:events.filter(e=>e.year===y),lastRevolt:q.lastRevolt,calmUntil:Array.from(calmUntil),slotsBefore,slotsAfter:countrySlots(),rebel:P[owner[2]]&&{rebel:P[owner[2]].rebel,target:P[owner[2]].target}};
     }
     throw done;
   };
-  let out;try{out = G.HistoryPolity.run(h, R, D, C, { countries: [], targetCountries, provinces: [], religions: [], cultureNames: ['甲文明'], routes: [], admin: { response: 80, road: 90, sea: 160 } });}catch(error){if(error!==done)throw error;}
+  let out;try{out = G.HistoryPolity.run(h, R, D, C, { countries: [], targetCountries, targetTribal: 0.35, provinces: [], religions: [], cultureNames: ['甲文明'], routes: [], admin: { response: 80, road: 90, sea: 160 } });}catch(error){if(error!==done)throw error;}
   if(event){assert.ok(observation,'scenario must actually run');return observation;}
   return JSON.parse(JSON.stringify({ out, cities: C.cities }, (_key, value) => ArrayBuffer.isView(value) ? Array.from(value) : value));
 }
@@ -125,7 +126,8 @@ test('the requested country target constrains actual historical ownership and fi
     const upper=targetCountries+Math.min(8,Math.floor(targetCountries/10));
     assert.ok(out.end.countries.length<=upper,`requested about ${targetCountries}, generated ${out.end.countries.length}`);
     const live=new Set(out.end.owner.filter(id=>id>=0));
-    assert.equal(live.size,out.end.countries.length,'country count is not merely a display cap');
+    const countries=[...live].filter(id=>{const q=out.polities[id];return !(q.rtype && q.rebelUntil===null);});
+    assert.equal(countries.length,out.end.countries.length,'all non-rebel territorial owners appear as countries');
     for(const id of live)assert.ok(out.polities[id].rulingCulture[0][1]!==-1);
     const changes=[];
     for(let region=1;region<out.own.off.length-1;region++)for(let i=out.own.off[region];i<out.own.off[region+1];i++)changes.push([out.own.year[i],region,out.own.owner[i]]);
@@ -134,7 +136,8 @@ test('the requested country target constrains actual historical ownership and fi
     for(let i=0;i<changes.length;){
       const time=changes[i][0];
       while(i<changes.length&&changes[i][0]===time){const [,region,next]=changes[i++],old=owners[region];if(old>=0){sizes.set(old,sizes.get(old)-1);if(!sizes.get(old))sizes.delete(old);}owners[region]=next;if(next>=0)sizes.set(next,(sizes.get(next)||0)+1);}
-      assert.ok(sizes.size<=upper+3,`history at ${time} has ${sizes.size} countries, target ${targetCountries}`);
+      const actors=new Set([...sizes.keys()].map(id=>{const q=out.polities[id];if(q.rtype && time>=q.rebelSince && (q.rebelUntil===null || time<q.rebelUntil)){const targets=q.rebelTargets.filter(x=>x[0]<=time);return targets.length?targets.at(-1)[1]:id;}return id;}));
+      assert.ok(actors.size<=upper+3,`history at ${time} has ${actors.size} countries, target ${targetCountries}`);
     }
     finalCounts.push(out.end.countries.length);
   }
@@ -155,12 +158,15 @@ test('unformed civilizations can still regain tribal autonomy when the state lim
   assert.ok(r.events.some(e=>e.kind==='tribalFree'));
 });
 
-test('a deferred revolt does not mark the area as already pacified',()=>{
+test('a revolt can occur at the country limit without creating an independent country',()=>{
   const r=history({known:true,arrivals:0,regions:4,event:'limited-revolt',targetCountries:1});
-  assert.equal(r.after,r.before);
-  assert.equal(r.owner[2],r.parent);
-  assert.equal(r.lastRevolt,-1000);
-  assert.equal(r.calmUntil[2],0);
+  assert.equal(r.after,r.before+1,'a rebel actor is created');
+  assert.notEqual(r.owner[2],r.parent,'the rebel temporarily controls the region');
+  assert.deepEqual(r.rebel,{rebel:true,target:r.parent},'the rebel belongs to its targeted state');
+  assert.equal(r.slotsBefore,0);assert.equal(r.slotsAfter,0,'the rebel does not consume a separate country slot');
+  assert.ok(r.events.some(e=>e.kind==='revolt'),'the revolt is recorded');
+  assert.ok(r.lastRevolt>=100);
+  assert.ok(r.calmUntil[2]>r.lastRevolt);
 });
 
 test('a state can still undergo a change of dynasty during a crisis when the target is full',()=>{
@@ -171,13 +177,13 @@ test('a state can still undergo a change of dynasty during a crisis when the tar
 
 test('an 80-country target stays within 70–90 without a sudden terminal collapse',()=>{
   for(const seed of [1,8,42]){
-    const {out}=history({known:true,arrivals:0,regions:120,allCities:true,end:1000,targetCountries:80,seed});
+    const {out}=history({known:true,arrivals:0,regions:650,allCities:true,end:1000,targetCountries:80,seed});
     const countAt=time=>{
       const active=new Set();
       for(let r=1;r<out.own.off.length-1;r++){
         let owner=-1;
         for(let i=out.own.off[r];i<out.own.off[r+1]&&out.own.year[i]<=time;i++)owner=out.own.owner[i];
-        if(owner>=0)active.add(owner);
+        if(owner>=0){const q=out.polities[owner];if(!(q.rtype && time>=q.rebelSince && (q.rebelUntil===null || time<q.rebelUntil)))active.add(owner);}
       }
       return active.size;
     };

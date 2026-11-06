@@ -157,7 +157,18 @@
     const W=idx.W,dist=(a,b)=>{let dx=Math.abs(a.x-b.x);dx=Math.min(dx,W-dx);return Math.hypot(dx,a.y-b.y);};
     const pick=a=>a[Math.floor(rnd()*a.length)%a.length],chance=x=>rnd()<x,clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
     const ageAt=t=>(t-opts.birthTime)*cal.earthYearsPerYear;
-    const rankName=()=>LP().rankTitle(role==='official'&&minister?'official':role,rank)||PATH.occupation;
+    // 官称随效力之国：统治文化的族系与当时的政体（酋邦、游牧、神权、共和、起义军）；传道人随所奉宗教的圣职
+    const libCache=new Map(),cultureLib=id=>{if(id==null||id===-1)return null;if(!libCache.has(id)){let l=null;try{l=definition(h,cfg,id);}catch(e){l=null;}libCache.set(id,l);}return libCache.get(id);};
+    const officeCtx=()=>{
+      const t=Math.min(clock,end()),ctx={};
+      if(serving>=0){const P=Q().polity(h,serving,t);if(P){const lib=cultureLib(P.rulingCulture),x=lib?G.CultureExt.ext(lib):null;if(x){ctx.family=x.family;ctx.minister=x.gov?.minister;}const g=Q().rowAt(h.polities[serving].gov,t);if(g)ctx.govKey=g[2];}}
+      if(!ctx.family){const lib=cultureLib(currentCulture),x=lib?G.CultureExt.ext(lib):null;if(x){ctx.family=x.family;ctx.minister=ctx.minister||x.gov?.minister;}}
+      if(currentReligion>=0&&h.religions?.[currentReligion]?.clergy)ctx.clergy=h.religions[currentReligion].clergy;
+      return ctx;
+    };
+    const rankPath=()=>role==='official'&&minister?'official':role;
+    const rankName=()=>LP().rankTitle(rankPath(),rank,officeCtx())||PATH.occupation;
+    const rankLadder=()=>LP().ladderOf?.(rankPath(),officeCtx())||null;
     const here=t=>Q().location(h,{kind:place.kind,id:place.id},Math.min(t,h.E+1-1e-6));
     const cityName=(id,t)=>Q().location(h,{kind:'city',id},Math.min(t,h.E+1-1e-6)).name;
     const regionName=(r,t)=>{const cs=(idx.cityByRegion.get(r)||[]).filter(i=>Q().exists(h.cities[i],t));return cs.length?cityName(cs[0],t)+'一带':Q().location(h,{kind:'rural',id:r},Math.min(t,h.E+1-1e-6)).name;};
@@ -165,6 +176,7 @@
     function add(kind,time,data={},precision='day'){
       time=Math.min(end(),Math.max(time,clock));
       const date=dateAt(time,cal,precision),loc=here(time);
+      if(data.rankTitle&&!data.ladder){const L=rankLadder();if(L)data={...data,ladder:L,ladderRole:rankPath()};}
       const e={id:p.id+':event:'+p.events.length,date,year:date.year,kind,place:placeRef(loc),participants:[p.id],cause:{rule:'life-v3:'+kind},result:{...data,s:[Math.round(fame),Math.round(wealth),Math.round(health),rank]}};
       p.events.push(e);clock=eventTime(p,e);return e;
     }
@@ -196,13 +208,13 @@
         const target=h.cities[c.id];if(dist(place,target)*idx.kmPerUnit>maxDays*70)continue;let routed=false;
         for(const m of mode&&mode!=='walk'&&!c.detour?[mode,'walk']:['walk']){
           if(navCalls>=NAV_MAX)break;navCalls++;p.story.navigationCalls=navCalls;
-          let nav=null;try{nav=navigate(placeRef(place),c.id,t0,m,maxDays,speed);}catch(_){nav=null;}
+          let nav=null;try{nav=navigate(placeRef(place),c.id,t0,m,maxDays,speed,serving);}catch(_){nav=null;}
           // 港口城的路网节点常落在水面上：从朝内陆挪一步的登岸点重试一次
           if((!nav||nav.fail)&&navCalls<NAV_MAX){
             const fromId=place.kind==='city'&&String(h.cities[place.id].type||'').includes('port')?place.id:null,toId=String(target.type||'').includes('port')?c.id:null;
             if(fromId!=null||toId!=null){
               const optsOf=id=>id==null?[null]:LAND(h).has(id)?[LAND(h).get(id)]:probed.has(id)?[landings(id)[0]]:(probed.add(id),landings(id).slice(0,4));
-              outer:for(const la of optsOf(fromId))for(const lb of optsOf(toId)){if(navCalls>=NAV_MAX)break outer;navCalls++;let n=null;try{n=navigate(la||placeRef(place),lb||c.id,t0,m,maxDays,speed);}catch(_){}if(n&&!n.fail){nav=n;if(la)LAND(h).set(fromId,la);if(lb)LAND(h).set(toId,lb);break outer;}}
+              outer:for(const la of optsOf(fromId))for(const lb of optsOf(toId)){if(navCalls>=NAV_MAX)break outer;navCalls++;let n=null;try{n=navigate(la||placeRef(place),lb||c.id,t0,m,maxDays,speed,serving);}catch(_){}if(n&&!n.fail){nav=n;if(la)LAND(h).set(fromId,la);if(lb)LAND(h).set(toId,lb);break outer;}}
             }
           }
           if(!nav||nav.fail||!(nav.km>0&&nav.days>0)||nav.days>maxDays)continue;
@@ -431,7 +443,7 @@
       envoy(){
         if(serving<0||!alivePolity(h,serving,clock)){if(findLord(clock)<0)return ACT.wanderer();}
         const pol=polityName(h,serving,clock),home=capitalOf(h,serving,clock);
-        if(rank<0){if(home!=null&&!(place.kind==='city'&&place.id===home))toCapital(`赴${pol}都城，投入鸿胪寺。`,'入京');rank=0;return note('office',clock,'入仕',`因通晓诸国语言风俗，被${pol}选为${rankName()}。`,{serving:pol,rankTitle:rankName()});}
+        if(rank<0){if(home!=null&&!(place.kind==='city'&&place.id===home))toCapital(`赴${pol}都城，投身出使列国的使团。`,'入京');rank=0;return note('office',clock,'入仕',`因通晓诸国语言风俗，被${pol}选为${rankName()}。`,{serving:pol,rankTitle:rankName()});}
         if(place.kind==='city'&&home!=null&&place.id!==home&&chance(.6)){travel([{id:home,w:1}],'出使归来，回京复命。',{title:'复命',state:true});return;}
         const caps=capitalsNear(clock,200,serving);if(!caps.length)return note('office',clock,'待命',`在${place.name}整理诸国档案，等待下一次出使。`);
         const war=pid=>(idx.campByPolity.get(serving)||[]).some(c=>(c.attacker===pid||c.defender===pid)&&c.startTime<=clock&&c.startTime>clock-5);
@@ -722,7 +734,7 @@
     if(p.version!==VERSION)return G.LifeStory.summary(p,time,full);
     const events=eventsAt(p,time,full),path=LP().BY[p.story.path],asp=events.find(e=>e.kind==='aspiration');
     const view={path:p.story.path,pathLabel:path?.label,icon:path?.icon,title:path?.title||'尚未立志',goal:asp?path.goal:null,temperament:asp?p.story.temperament:null,status:asp?'pursuing':'growing',fame:0,wealth:p.initialWealth,health:95,rank:-1,rankTitle:null,serving:null,religionName:p.birth.religionName,cultureName:p.birth.cultureName,journeys:[],achievements:[],costs:[],works:[],epithet:null,cities:new Set(),polities:new Set(),km:0,role:p.story.path};
-    for(const e of events){const r=e.result;if(r.s){[view.fame,view.wealth,view.health,view.rank]=r.s;}if(r.rankTitle)view.rankTitle=r.rankTitle;if(r.serving)view.serving=r.serving;if(e.kind==='religion')view.religionName=r.religionName;if(e.kind==='culture')view.cultureName=r.cultureName;if(e.kind==='aspiration'&&r.path)view.role=r.path;
+    for(const e of events){const r=e.result;if(r.s){[view.fame,view.wealth,view.health,view.rank]=r.s;}if(r.rankTitle)view.rankTitle=r.rankTitle;if(r.ladder){view.ladder=r.ladder;view.ladderRole=r.ladderRole;}if(r.serving)view.serving=r.serving;if(e.kind==='religion')view.religionName=r.religionName;if(e.kind==='culture')view.cultureName=r.cultureName;if(e.kind==='aspiration'&&r.path)view.role=r.path;
       if(e.kind==='migration'){view.journeys.push(e);view.km+=r.distanceKm||0;if(e.place.kind==='city')view.cities.add(e.place.id);if(r.owner>=0)view.polities.add(r.owner);}
       if(['office','battle','mission','deed','trade','revolt','sight'].includes(e.kind)||e.kind==='faith'&&r.converts)view.achievements.push(e);if(['trial','injury','captivity','illness','hardship'].includes(e.kind))view.costs.push(e);
       if(e.kind==='legacy'){view.status='fulfilled';view.works=r.works||[];}if(e.kind==='unfinished')view.status='unfinished';}

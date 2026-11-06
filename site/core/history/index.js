@@ -18,7 +18,7 @@
     progress && progress('历史 · 城市兴衰', 0.966);
     const C = G.HistoryCities.run(h, R, D, { cities: Cv.cities, labels: Cv.labels });
     progress && progress('历史 · 列国争霸到现在', 0.968);
-    const Pol = G.HistoryPolity.run(h, R, D, C, { targetCountries: world.cfg.countries, provinces: Cv.provinces, religions: Cv.religions, cultureNames: Cv.cultures.map(c => c.name), routes:Cv.routes, admin:Cv.admin, militaryRules:world.cfg.militaryRules, yearDays:world.cfg.yearDays, fullTerrain:{P:world.P,Cl:world.Cl,Hy:world.Hy,cfg:world.cfg} });
+    const Pol = G.HistoryPolity.run(h, R, D, C, { targetCountries: world.cfg.countries, targetTribal: world.cfg.tribal, provinces: Cv.provinces, religions: Cv.religions, cultureNames: Cv.cultures.map(c => c.name), routes:Cv.routes, admin:Cv.admin, militaryRules:world.cfg.militaryRules, yearDays:world.cfg.yearDays, fullTerrain:{P:world.P,Cl:world.Cl,Hy:world.Hy,cfg:world.cfg} });
     for (const list of [D.events, C.events, Pol.events]) for (const event of list) G.HistoryCities.resolveEvent(event, C.cities);
     const t3 = Date.now();
     // 区块边界在全分辨率地形上按“山川形便”细化：沿山脊与大河，平原上有自然的犬牙交错
@@ -28,7 +28,10 @@
     const ice = G.Borders.polarIceMask(P, Hy, Cl);
     const fixed = []; Cv.cities.forEach((c, k) => { const s = h.settlements[k]; if (s && R.regionOf[s.cell]) fixed.push([c.x, c.y, R.regionOf[s.cell]]); });
     const regionF = G.Borders.refineFine(P, Hy, half, { seed: (h.seed | 0) + 903, ice, climb: 30, river: 3, riverMax: 9, freq: 0.09, noise0: 0.3, noise1: 1.5, fixed, amp: 1.5, bandF: 4, oct: [[0.12, 1], [0.3, 0.5]], cityR: 1, minCells: 12 });
-    return { R, D, C, Pol, regionF, ms: { regions: t1 - t0, dawn: t2 - t1, polity: t3 - t2, borders: Date.now() - t3, total: Date.now() - t0 } };
+    // 国内道路：同一国的主要城市只能借道他国相通时，在本国境内补修官道
+    const t4 = Date.now(); progress && progress('历史 · 国内道路', 0.973);
+    const roadFix = G.HistoryRoads ? G.HistoryRoads.build(world, { R, D, C, Pol, regionF }, progress) : null;
+    return { R, D, C, Pol, regionF, roadFix, ms: { regions: t1 - t0, dawn: t2 - t1, polity: t3 - t2, borders: t4 - t3, roads: Date.now() - t4, total: Date.now() - t0 } };
   }
 
   // 打包给时间线：第一次打开时运行
@@ -68,9 +71,9 @@
       ideas: D.IDEAS.map((I, k) => ({ id: I.id, name: I.name, s: I.s, desc: I.desc, opt: !!I.opt, mil: !!I.mil, born: D.ideaBorn[k] < 1e8 ? G.HistoryDate.ceil(D.ideaBorn[k]) : null, origins: D.ideaOrigins[k].filter(r => D.ideaA[k * NN + r] < 1e8).map(r => [R.cx[r], R.cy[r], r]) })), ideaA: Float64Array.from(D.ideaA, v => v >= 1e8 ? 1e9 : v),
       civs, ancient, cradles, religions, events: events.map(G.HistoryDate.event), eraStep: D.eraStep, eraAt: D.eraAt, eraNames: D.ERA_NAME,
       outline: O, regionF, landF, FW, FH,
-      polities: Pol.polities, forts: Pol.forts, holyWars: Pol.holyWars, own: Pol.own, cultLog: Pol.cultLog, relLog: Pol.relLog, provinces: Pol.provinces, provLog: Pol.provLog, unrest: Pol.unrest, human: Pol.human, Rkm: h.R, EMPN: Pol.EMPN, T0: Pol.T0,
+      polities: Pol.polities, alliances: Pol.alliances || [], forts: Pol.forts, holyWars: Pol.holyWars, own: Pol.own, cultLog: Pol.cultLog, relLog: Pol.relLog, provinces: Pol.provinces, provLog: Pol.provLog, unrest: Pol.unrest, human: Pol.human, Rkm: h.R, EMPN: Pol.EMPN, T0: Pol.T0,
       cities: C.cities, cityPop: C.popF || C.pop, popStep: C.popF ? C.popStepF : C.popStep, popN: C.popF ? C.popNF : C.popN, regionPop: C.popF ? C.regionPopF : C.regionPop, /* 面板曲线用 10 年一档的细采样 */ pasture: R.pasture, popTotal: h.popTotal, roads: C.roads, plagues: C.plagues, tiers: C.tiers,
-      stats: { regions: R.nR, edges: R.edges.length, core: Hc.ms, polity: Pol.stats, cities: C.cities.length, lost: C.cities.filter(c => c.lost).length, roads: C.roads.length, ms: Date.now() - t0 }
+      stats: { domesticRoads: Hc.roadFix || null, alliances: (Pol.alliances || []).length, regions: R.nR, edges: R.edges.length, core: Hc.ms, polity: Pol.stats, cities: C.cities.length, lost: C.cities.filter(c => c.lost).length, roads: C.roads.length, ms: Date.now() - t0 }
     };
     return data;
   }

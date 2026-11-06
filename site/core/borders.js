@@ -145,6 +145,7 @@
     for (let f = 0; f < FN; f++) if (out[f] === -3) { const y = (f / FW) | 0, x = f - y * FW, h = (y >> 1) * W + (x >> 1); out[f] = half[h] === -2 ? -1 : half[h]; }
     const pins = []; for (let k = 0; k < FX.length; k += 4) pins.push(FX[k], FX[k + 3]);
     tidy(out, FW, FH, pins); bridge(out, FW, FH, 10);
+    fillCoastalGaps(out, FW, FH);
     return out;
   }
 
@@ -184,6 +185,26 @@
       for (let d = 0; d < maxLen && hit < 0 && fr.length; d++) { const nx = []; for (const i of fr) { nb4(i, j => { if (hit >= 0 || prev.has(j) || F[j] < -1) return; prev.set(j, i); if (comp[j] === mi + 1) hit = j; else nx.push(j); }); if (hit >= 0) break; } fr = nx; }
       if (hit < 0) return; for (let p = prev.get(hit); p >= 0 && comp[p] !== ci + 1; p = prev.get(p)) F[p] = c.k; n++; });
     return n;
+  }
+
+  // 社会半格把狭小岸角或近岸小岛判成水时，细化后的真实陆地可能
+  // 没有历史区块。只修补靠近已有区块的小片缺口，保留大片无人区。
+  function fillCoastalGaps(F, FW, FH) {
+    const source = F.slice(), { cs } = components(source, FW, FH, k => k === -1);
+    for (const c of cs) {
+      if (c.cells.length > 64) continue;
+      let best = 0, bestD = 17;
+      for (const i of c.cells) {
+        const y = (i / FW) | 0, x = i - y * FW;
+        for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+          const d = dx * dx + dy * dy, yy = y + dy;
+          if (!d || d >= bestD || yy < 0 || yy >= FH) continue;
+          const lab = source[yy * FW + ((x + dx) % FW + FW) % FW];
+          if (lab > 0) { bestD = d; best = lab; }
+        }
+      }
+      if (best) for (const i of c.cells) F[i] = best;
+    }
   }
 
   // country / province：半分辨率标签（-1 无国家陆地；水为 -2）

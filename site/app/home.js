@@ -27,9 +27,27 @@
   // ---------- 更新说明（最新在前） ----------
   // 第一条是当前版本，展开显示；其余折叠
   const NOTES = [
+    ['1.4.4', '界面与地图分级', [
+      '<b>右栏纸页</b>：城市、省份、国家与人物的详情像卷轴一样从顶栏下自上而下卷开，纸轴随展开的边滚下；纸纹铺满整页，长页下半截不再透出地图，关闭键留在纸面上；国家详情分为人口与族群、兵制与战史、制度与思潮、君统、都城与行省、编年六栏，可开可合，开合状态会记住。',
+      '<b>官称随制度</b>：人物的官职、军阶、使节与医官称谓随效力之国的统治文化（华夏、日本、日耳曼、阿拉伯……）与政体（酋邦、游牧、神权、共和、起义军）而定；传道人用所奉宗教的圣职名。',
+      '<b>战役命名</b>：战地无城时借附近的山川或城邑方位命名，按战法与规模分出会战、遭遇战、伏击战、夜袭、粮道之战；同名战役依次称“第二次……”，再多则冠以年份。',
+      '<b>库页面切换</b>：在文化库、宗教库、种族库之间切换时只保留当前一页，按一次返回就回到首页。',
+      '<b>古籍星图界面</b>：墨青顶栏与工具栏、描金细线、米黄纸卡与宋体标题；首页换上星图书房插画，图标与装饰全部为矢量线描。',
+      '<b>城市按重要性分级</b>：全图只显示大国都城与大都会，放大后按屏幕面积逐级加入城市、城镇；同一片区域保持最小间距，不再挤成一团。',
+      '<b>历史图按视角取舍</b>：国家图显示都城与主要城市；单国视角只显示本国城市与本国相关的事；军制图只留都城、驻军与关塞；省份、文明、宗教等图层只留少数大城；地理名称在历史图中让位给国名。',
+      '<b>事件栏简化</b>：近事只留三条，战斗只说结果并按国合并（“某国连战 3 场，得 2 地”），关塞撤守、边地归附不再刷屏；伤亡与过程仍在战事簿。图例默认只列颜色，说明收进“说明”。',
+      '<b>附庸国</b>：附庸沿用宗主的色相，与宗主以虚线相隔，不再画斜纹；国名下注明“附庸 · 奉某国为宗主”；图例单列附庸国。',
+      '<b>地名不再空缺</b>：部族地带或文明尚未成形处建起的城邑、省份与政权，借这一带日后或邻近的文化起名，不再出现“未命名城邑”；无城可依的古战场借最近城邑的方位称呼。',
+      '<b>盟约与联合进军</b>：受同一强邻威胁的国家会结盟，盟国互不攻伐、遇袭相援，出征时接壤的盟国联合进军；国家详情显示盟约与宗藩。',
+      '<b>国内道路</b>：同一国的主要城市只能借道他国相通时，在本国境内补修官道；人物在本国奔走、赴任优先走本国领土。',
+      '<b>镜头定位</b>：点城市、事件、人物经历时，镜头落在右侧纸页与时间轴之外的可见区域中央，不再漂移。',
+      '<b>界面层次</b>：工具栏浮于顶栏之前，地图嵌入图版，纸卡加纸纹与落影；球体与星系界面换成同一风格；向导与详情卡配插画，关塞图标改为城堡。',
+      '<b>专题图单独重摇</b>：图层面板每张专题图右上角有骰子，左下角有“重摇本图”。按环节重摇——地形与水系、气候、人文分布、列国历史——上游不变、下游随之重算，可回到上一版；重摇记录写进世界链接与世界文件。'
+    ]],
     ['1.4.3.1', '修复说明', [
       '<b>修复国家过多</b>：历史推演会参考所选的现存国家数量目标；国家仍会随战争、建国和分裂发生变化。',
-      '<b>人物经历修复</b>：修正宗主国接纳附庸时，人物年表将事件误记为本国称臣的问题。'
+      '<b>人物经历修复</b>：修正宗主国接纳附庸时，人物年表将事件误记为本国称臣的问题。',
+      '<b>边疆扩张调整</b>：有居民的相邻边疆可逐步归附具备治理能力的国家，部族文化会继续自然演变。'
     ]],
     ['1.4.3', '更新说明', [
       '<b>自定义上传地图</b>：上传高度图或海陆配色图，生成属于自己的世界；可调整高程与生成程度，并保护指定区域。',
@@ -115,7 +133,7 @@
   function renderHome() {
     renderJob();
     const list = hooks.loadSaved();
-    $('homeCount').textContent = `${list.length} 个世界`;
+    $('homeCount').textContent = `${list.length} 个世界`; $('homeSaved').classList.toggle('is-empty', !list.length); $('home').classList.toggle('is-empty', !list.length);
     $('homeLibCount').textContent = `已选 ${selectedCount()} 个文化库`;
     if ($('homeSpeciesCount') && G.SpeciesLib) $('homeSpeciesCount').textContent = `已选 ${G.SpeciesLib.selectedCount()} 个种族`;
     if ($('homeRelCount') && G.RelLib) { $('homeRelCount').textContent = `已选 ${G.RelLib.selectedCount()} 个宗教库`; G.RelLib.load().then(() => { $('homeRelCount').textContent = `已选 ${G.RelLib.selectedCount()} 个宗教库`; }); }
@@ -125,7 +143,7 @@
       <p class="wfile" data-fileinfo="${esc(w.key)}" hidden>世界文件：<b></b></p>
       <button class="wlink" data-open="${i}">打开世界地图 ↗</button></div>
       <div class="wfoot"><button data-settings="${i}">查看生成设置</button><button data-export="${i}" title="保存设置、种子、改名与标记；首次保存可自选位置，之后直接更新同一个文件">保存到文件</button><button class="danger" data-delete="${i}">删除世界</button></div></div>`).join('')
-      : '<p class="home-empty">还没有保存的世界。推演完成后会自动保存在这里；也可以导入之前导出的世界文件。</p>';
+      : `<div class="home-empty-card"><span class="hec-ico">${G.UIIcons ? G.UIIcons.logo : ''}</span><h3>还没有保存的世界</h3><p>推演完成后会自动保存在这里；<br>也可以导入之前导出的世界文件。</p><button class="btn primary hec-go" data-home-create="1">＋ 创建你的第一个世界</button><button class="link hec-imp" data-home-import="1"><svg viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 19h14"/></svg>导入世界文件 · ${list.length} 个世界</button></div>`;
     if (hooks.fileInfo) $('homeSaved').querySelectorAll('[data-fileinfo]').forEach(async el => { const n = await hooks.fileInfo(el.dataset.fileinfo); el.hidden = !n; if (n) el.querySelector('b').textContent = n; });
   }
   function settingsHtml(st) {
@@ -140,8 +158,12 @@
 
   // ---------- 文化库页面 ----------
   let libCat = 'all';
+  // 三个库页面互为切换：同一时间只开一页，返回一次就回到打开它的地方（首页或向导）
+  const LIB_PAGES = { libPage: 'homeLib', relPage: 'homeRel', speciesPage: 'homeSpecies' };
+  function libNav(active) { for (const [pg, btn] of Object.entries(LIB_PAGES)) { if (pg !== active && $(pg)) $(pg).hidden = true; if ($(btn)) $(btn).classList.toggle('on', pg === active); } }
+  G.LibNav = libNav;
   async function showLibrary() {
-    $('libPage').hidden = false;
+    libNav('libPage'); $('libPage').hidden = false;
     $('libGrid').innerHTML = '<p class="home-empty">正在载入文化库…</p>';
     await loadBuiltin(); renderLibrary();
   }
@@ -205,7 +227,7 @@
       modal('更新说明', note(NOTES[0]) + (NOTES.length > 1 ? `<details class="notes-old"><summary>${NOTES[1][0]} 及更早版本（${NOTES.slice(1).reduce((n, x) => n + x[2].length, 0)} 条）</summary>${NOTES.slice(1).map(note).join('')}</details>` : ''), `<button class="btn primary" data-lm-close>知道了</button>`); };
     $('homeImport').onclick = () => hooks.pickImport ? hooks.pickImport() : $('importFile').click();
     $('homeSaved').addEventListener('click', e => {
-      const b = e.target.closest('button'); if (!b) return; const list = hooks.loadSaved();
+      const b = e.target.closest('button'); if (!b) return; if (b.dataset.homeCreate) { hooks.createWorld(); return; } if (b.dataset.homeImport) { hooks.pickImport(); return; } const list = hooks.loadSaved();
       const i = +(b.dataset.open ?? b.dataset.settings ?? b.dataset.export ?? b.dataset.delete), w = list[i]; if (!w) return;
       if (b.dataset.open !== undefined && hooks.openWorld(w)) hide();
       if (b.dataset.settings !== undefined && hooks.checkWorld(w)) modal('生成设置 · ' + esc(w.name), settingsHtml(w.state), `<button class="btn ghost" data-lm-close>关闭</button><button class="btn primary" data-recreate="${i}">用此设置换种子再推演</button>`);
@@ -214,7 +236,7 @@
     });
     $('homeSaved').addEventListener('dblclick', e => { const el = e.target.closest('[data-wname]'); if (!el) return; const list = hooks.loadSaved(), w = list[+el.dataset.wname]; const n = prompt('世界名称', w.name); if (n && n.trim()) { hooks.renameWorld(w, n.trim()); renderHome(); } });
     $('homeJobs').addEventListener('click', e => { if (e.target.closest('[data-home=current]')) hide(); });
-    $('libBack').onclick = () => { $('libPage').hidden = true; if (!$('home').hidden) renderHome(); };
+    $('libBack').onclick = () => { libNav(null); if (!$('home').hidden) renderHome(); };
     $('libTabs').addEventListener('click', e => { const b = e.target.closest('[data-cat]'); if (b) { libCat = b.dataset.cat; renderLibrary(); } });
     $('libGrid').addEventListener('change', e => { const c = e.target.closest('[data-sel]'); if (!c) return; const libs = allLibs(); let sel = getSel() || libs.map(l => l.id); if (c.checked) { if (!sel.includes(c.dataset.sel)) sel.push(c.dataset.sel); } else { if (sel.length <= 1) { c.checked = true; alert('至少选择一个文化库才能生成世界'); return; } sel = sel.filter(x => x !== c.dataset.sel); } setSel(sel); renderLibrary(); });
     $('libGrid').addEventListener('click', e => {

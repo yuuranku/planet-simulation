@@ -1,0 +1,124 @@
+/* =====================================================================
+   右栏纸页：城市、省份、单国、人物、战事——都像一张纸从顶栏下面“转”出来
+   纸页上缘压在顶栏之下（夹层），关闭键留在纸面上；二级栏目可开可合
+   ===================================================================== */
+
+/* ---------- 纸页：像卷轴一样从顶栏下自上而下卷开 ----------
+   上缘固定在顶栏下，纸面向下铺开；卷着的纸轴（.sheet-roller，由 app/sheet.js 生成）压在展开的边上一路滚下去 */
+@keyframes sheet-unroll {
+  0%   { clip-path: inset(0 -60px 100% -60px); }
+  100% { clip-path: inset(0 -60px -60px -60px); }
+}
+.sheet-roller { position: fixed; z-index: 30; height: 16px; margin-top: -8px; pointer-events: none; border-radius: 8px;
+  background: linear-gradient(180deg, #c9b48a 0%, #fbf3df 30%, #fffaf0 45%, #e9dbbb 70%, #a88a55 100%);
+  box-shadow: 0 0 0 1px rgba(168, 130, 63, .55), 0 6px 10px -2px rgba(20, 30, 28, .35), 0 -2px 6px rgba(20, 30, 28, .12); }
+.sheet-roller::before, .sheet-roller::after { content: ''; position: absolute; top: 1px; bottom: 1px; width: 6px; border-radius: 3px; background: linear-gradient(180deg, #8a6a32, #d8b874 45%, #6e521f); }
+.sheet-roller::before { left: -3px; } .sheet-roller::after { right: -3px; }
+@media (min-width: 761px) and (min-height: 541px) {
+  .tl-city, .tl-focus, body.tl-on .tl-city {
+    top: calc(var(--bar) - 1px); right: 22px; border-radius: 0 0 14px 14px; transform-origin: 50% 0;
+    animation: sheet-unroll .7s cubic-bezier(.45, .05, .25, 1) backwards;
+    /* 上缘一道压痕：纸从顶栏的缝里抽出来 */
+    box-shadow: inset 0 14px 12px -12px rgba(8, 30, 33, .42), 0 0 0 1px rgba(168, 130, 63, .42), inset 0 0 0 3px rgba(253, 249, 239, .9), inset 0 0 0 4px rgba(199, 161, 90, .22), 0 14px 30px -10px rgba(20, 30, 28, .32), 0 2px 6px rgba(20, 30, 28, .12);
+  }
+  .tl-city { max-height: calc(100vh - var(--bar) - var(--tlh, 0px) - var(--tld, 0px) - 28px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding-top: 18px; }
+  .tl-city::-webkit-scrollbar { display: none; }
+  .tl-focus { max-height: calc(100vh - var(--bar) - var(--tlh, 0px) - var(--tld, 0px) - 28px); }
+  /* 纸页底边：一道淡金线收口 */
+  .tl-city::after, .tl-focus::after { content: ''; display: block; height: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .tl-city, .tl-focus { animation: none !important; } }
+
+/* ---------- 关闭键：始终在纸面上 ---------- */
+.tl-city > .tl-city-x { top: 12px; right: 10px; z-index: 3; color: var(--ink3); background: rgba(251, 246, 234, .9); }
+.tl-focus > .tl-city-x { position: absolute; top: 14px; right: 12px; z-index: 4; color: var(--t3); background: rgba(251, 246, 234, .92); box-shadow: 0 0 0 1px rgba(168, 130, 63, .25); border-radius: 50%; width: 30px; height: 30px; }
+.tl-focus .tf-head { padding-right: 36px; }
+.tl-city > .tl-city-x:hover, .tl-focus > .tl-city-x:hover { color: var(--ink); background: var(--paper-2); }
+.tl-city > .tl-city-x svg, .tl-focus > .tl-city-x svg { width: 15px; height: 15px; }
+
+/* ---------- 单国视角：头部 ---------- */
+.tl-focus .tf-head { padding: 22px 0 0; }
+.tl-focus .tf-eyebrow { font: 500 11.5px var(--serif); letter-spacing: .14em; color: var(--gold-2, #a8823f); }
+.tl-focus .tf-eyebrow i { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(var(--pc), .18); }
+.tl-focus h3 { margin: 8px 0 0; font: 700 27px/1.2 var(--serif); letter-spacing: .1em; color: #241b11; }
+.tl-focus .tf-sub { margin: 6px 0 0; font: 12px var(--serif); letter-spacing: .06em; color: var(--t3); }
+
+.tl-focus .tf-kpis { margin: 18px 0 0; border-top: 1px solid rgba(168, 130, 63, .35); border-bottom: 1px solid rgba(168, 130, 63, .35); background: linear-gradient(180deg, rgba(236, 223, 196, .25), transparent); }
+.tl-focus .tf-kpis > div { padding: 11px 0 10px 12px; }
+.tl-focus .tf-kpis small { font: 11px var(--serif); letter-spacing: .08em; color: var(--t3); }
+.tl-focus .tf-kpis b { margin-top: 3px; font: 700 22px/1.15 var(--serif); letter-spacing: .01em; font-variant-numeric: tabular-nums lining-nums; color: #241b11; }
+.tl-focus .tf-kpis b em { font: 12px var(--serif); margin-left: 3px; color: var(--t2); }
+.tl-focus .tf-kpis b span { font: 500 14px/26px var(--serif); }
+
+.tl-focus .tf-fate { margin: 16px 0 0; gap: 8px; }
+.tl-focus .tf-fate div { grid-template-columns: 40px 1fr; gap: 12px; align-items: baseline; }
+.tl-focus .tf-fate dt { font: 600 11.5px var(--serif); letter-spacing: .24em; color: var(--gold-2, #a8823f); white-space: nowrap; }
+.tl-focus .tf-fate dd { font: 13px/1.6 var(--serif); color: #2a2117; }
+.tl-focus .tf-chart { margin: 16px 0 0; padding: 10px 10px 6px; border-radius: 10px; background: rgba(236, 223, 196, .28); box-shadow: inset 0 0 0 1px rgba(168, 130, 63, .16); }
+.tf-chart-cap { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 0; }
+.tf-chart-cap span { font: 600 11.5px var(--serif); letter-spacing: .12em; color: var(--t2); }
+.tf-chart-cap small { margin-left: auto; font: 10.5px var(--serif); color: var(--t3); }
+
+/* ---------- 二级栏目：壹 贰 叁……可开可合 ---------- */
+.tf-grps { margin: 20px -18px 0; border-top: 1px solid rgba(168, 130, 63, .35); }
+.tf-grp { border-bottom: 1px solid var(--hair); }
+.tf-grp > summary { list-style: none; display: grid; grid-template-columns: 24px auto minmax(0, 1fr) 12px; align-items: center; gap: 10px; padding: 13px 18px; cursor: pointer; user-select: none; transition: background .15s; }
+.tf-grp > summary::-webkit-details-marker { display: none; }
+.tf-grp > summary:hover { background: rgba(199, 161, 90, .08); }
+.tf-grp > summary i { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 600 12px var(--serif); font-style: normal; color: var(--gold-2, #a8823f); box-shadow: inset 0 0 0 1px rgba(168, 130, 63, .5); }
+.tf-grp > summary b { font: 700 14.5px var(--serif); letter-spacing: .14em; color: #241b11; white-space: nowrap; }
+.tf-grp > summary small { justify-self: end; min-width: 0; max-width: 100%; font: 11.5px var(--serif); letter-spacing: .02em; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf-grp > summary s { width: 7px; height: 7px; justify-self: center; border-right: 1.5px solid var(--t3); border-bottom: 1.5px solid var(--t3); transform: rotate(-45deg); transition: transform .2s; }
+.tf-grp[open] > summary { background: linear-gradient(90deg, rgba(var(--pc), .07), transparent 70%); }
+.tf-grp[open] > summary i { color: #fbf6ea; background: linear-gradient(180deg, #1f5d64, #154249); box-shadow: inset 0 0 0 1px rgba(230, 208, 155, .55); }
+.tf-grp[open] > summary s { transform: rotate(45deg); margin-top: -4px; }
+.tf-grp-body { padding: 4px 18px 18px; animation: grp-open .22s ease-out; }
+@keyframes grp-open { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* 栏目里的小节：细虚线分隔，小标题宋体 */
+.tf-grp-body .tf-sec { margin: 16px 0 0; padding-top: 12px; border-top: 1px dashed rgba(168, 130, 63, .3); }
+.tf-grp-body > .tf-sec:first-child, .tf-grp-body > div > .tf-sec:first-child { margin-top: 2px; padding-top: 0; border-top: 0; }
+.tf-grp-body h4 { margin: 0 0 9px; font: 700 12.5px var(--serif); letter-spacing: .16em; color: var(--t2); }
+.tf-grp-body h4 small { font: 11px var(--serif); letter-spacing: 0; }
+.tf-grp-body .tf-none { font: 12px/1.7 var(--serif); }
+.tl-focus .tf-annals span, .tl-focus .tf-revs span, .tl-focus .tf-steps span, .tl-focus .tf-chain span { font-family: var(--serif); }
+
+/* 人口与族群 */
+.tl-focus .tp-head { grid-template-columns: auto 1fr; gap: 16px; }
+.tl-focus .tp-big small { font: 11px var(--serif); letter-spacing: .08em; }
+.tl-focus .tp-big b { font: 700 28px/1.1 var(--serif); letter-spacing: 0; font-variant-numeric: tabular-nums lining-nums; color: #241b11; }
+.tl-focus .tp-big b em { font: 13px var(--serif); margin-left: 4px; }
+.tl-focus .tp-kv { grid-template-columns: 1fr; gap: 6px; }
+.tl-focus .tp-kv dt { font: 10.5px var(--serif); letter-spacing: .1em; }
+.tl-focus .tp-kv dd { font: 600 12.5px/1.45 var(--serif); white-space: normal; }
+.tl-focus .tp-block h5 { font: 700 12px var(--serif); letter-spacing: .16em; color: var(--t2); }
+.tl-focus .tp-block h5 small { font: 10.5px var(--serif); letter-spacing: 0; }
+.tl-focus .tp-bar { height: 7px; border-radius: 4px; }
+.tl-focus .tp-list li { grid-template-columns: 8px minmax(0, 1fr) 46px 62px; }
+.tl-focus .tp-list li i { border-radius: 50%; }
+.tl-focus .tp-list li span { font: 12.5px var(--serif); }
+.tl-focus .tp-list li b { font: 600 12px var(--serif); font-variant-numeric: tabular-nums; color: #2a2117; }
+.tl-focus .tp-list li em { font: 11px var(--serif); font-variant-numeric: tabular-nums; }
+.tl-focus .tp-note { margin-top: 12px; font: 11px/1.65 var(--serif); color: var(--t3); }
+
+/* ---------- 城市卡、省份卡：小节折叠 ---------- */
+.tl-city h3 { font-size: 21px; letter-spacing: .08em; padding-right: 34px; }
+.tl-city-eyebrow { font: 500 11.5px var(--serif); letter-spacing: .14em; }
+.tl-city dl { gap: 5px; padding: 8px 0; border-top: 1px solid rgba(168, 130, 63, .3); border-bottom: 1px solid rgba(168, 130, 63, .3); }
+.tl-city dt { font: 600 11.5px var(--serif); letter-spacing: .08em; color: var(--gold-2, #a8823f); }
+.tl-city dd { font: 12.5px/1.55 var(--serif); }
+.tl-fold { margin: 0 -16px; border-bottom: 1px solid rgba(168, 130, 63, .16); }
+.tl-fold > summary { list-style: none; display: flex; align-items: baseline; gap: 8px; padding: 10px 16px; cursor: pointer; font: 700 12.5px var(--serif); letter-spacing: .14em; color: var(--ink); user-select: none; }
+.tl-fold > summary::-webkit-details-marker { display: none; }
+.tl-fold > summary:hover { background: rgba(199, 161, 90, .08); }
+.tl-fold > summary small { margin-left: auto; font: 11px var(--serif); letter-spacing: 0; color: var(--ink3); }
+.tl-fold > summary::after { content: ''; flex: none; align-self: center; width: 6px; height: 6px; border-right: 1.5px solid var(--ink3); border-bottom: 1.5px solid var(--ink3); transform: rotate(-45deg); transition: transform .2s; }
+.tl-fold[open] > summary::after { transform: rotate(45deg); margin-top: -3px; }
+.tl-fold-body { padding: 0 16px 12px; }
+.tl-fold-body > ul, .tl-fold-body > ol { margin-top: 0; }
+.tl-city .tl-fold-body ul { max-height: 160px; }
+.tl-city .tl-city-acts { margin-top: 12px; }
+.tl-city .tl-city-acts button { font-family: var(--serif); background: var(--paper-2); box-shadow: inset 0 0 0 1px rgba(168, 130, 63, .35); }
+
+/* ---------- 首页顶栏：当前打开的库 ---------- */
+.home-main .hbtn.on { background: rgba(199, 161, 90, .2); box-shadow: inset 0 -2px 0 var(--gold); }

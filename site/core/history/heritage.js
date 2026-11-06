@@ -41,6 +41,10 @@
       years.forEach((y, i) => { const name = short(q, y), end = years[i + 1] ?? b, prev = periods[periods.length - 1]; if (prev && prev[2] === name) prev[1] = end; else periods.push([y, end, name]); });
       return periods;
     };
+    // 附近没有城时：借全图最近的一座城加方位称呼（某城以北），不出现“无名”
+    const farName = r => { let best = -1, bd = Infinity; C.cities.forEach((c, i) => { if (c.lost || c.fort || !c.name) return; let dx = c.x - R.cx[r]; if (h.W) { if (dx > h.W / 2) dx -= h.W; else if (dx < -h.W / 2) dx += h.W; } const d = dx * dx + (c.y - R.cy[r]) ** 2; if (d < bd) { bd = d; best = i; } });
+      if (best < 0) return ''; const c = C.cities[best]; let dx = R.cx[r] - c.x; if (h.W) { if (dx > h.W / 2) dx -= h.W; else if (dx < -h.W / 2) dx += h.W; } const dy = R.cy[r] - c.y;
+      return c.name + (Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? '以东' : '以西') : (dy > 0 ? '以南' : '以北')); };
     const nearCity = r => { let b = bigIn(r); if (b >= 0) return b; let best = -1, bd = 1e9; for (let k = R.off[r]; k < R.off[r + 1]; k++) { const n = R.nbr[k], c = bigIn(n); if (c >= 0) { const d = km(r, n); if (d < bd) { bd = d; best = c; } } } return best; };
     const markHoly = (ci, f) => { if (ci < 0) return; const k = C.cities[ci].idx; if (k < 0 || !Cv.cities[k]) return; const c = Cv.cities[k]; (c.holy = c.holy || []).includes(f) || c.holy.push(f); };
 
@@ -76,7 +80,7 @@
       for (const r of ord) { if (picked.length >= nB) break; if (picked.some(o => km(o, r) < 450)) continue; picked.push(r);
         let bestK = null, bv = 0; for (const [k, v] of pairs) { if (typeof v !== 'number' || !k.startsWith(r + ':')) continue; if (v > bv) { bv = v; bestK = k; } }
         const duo = bestK ? pairs.get(r + '|' + bestK.split(':').slice(1).join(':')) : null, ci = nearCity(r);
-        add(Object.assign(at(r, -1), { cat: 'war', kind: 'battle', imp: picked.length <= 4 ? 2 : 1, year: span[r][0], name: `${cname(ci) || '无名'}古战场`,
+        add(Object.assign(at(r, -1), { cat: 'war', kind: 'battle', imp: picked.length <= 4 ? 2 : 1, year: span[r][0], name: `${cname(ci) || farName(r) || '荒原'}古战场`,
           text: `第 ${Math.round(span[r][0])}–${Math.round(span[r][1])} 年间此地 ${cnt[r]} 次易手${duo ? `，${short(P[duo[0]], duo[2] - 1)}与${short(P[duo[1]], duo[2])}曾在此反复争夺` : ''}` })); } }
     // 战火焚毁的城
     C.cities.forEach((c, i) => { if (!c.lost || c.cause !== '毁于战火') return; const A = c.ancient >= 0 && D.ancient[c.ancient];

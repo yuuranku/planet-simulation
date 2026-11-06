@@ -26,7 +26,7 @@
   G.app = app;
   // ---------- 专题注记文字：类别名 + 小字说明 + 注记颜色（取该类配色加深）+ 可改名的对象 ----------
   const BINS = {
-    pop: [['人烟稀少', '< 1 人/km²'], ['人口稀疏', '1–10 人/km²'], ['人口中等', '10–50 人/km²'], ['人口稠密', '50–200 人/km²'], ['人口密集', '> 200 人/km²']],
+    pop: [['人烟稀少'], ['人口稀疏'], ['人口中等'], ['人口稠密'], ['人口密集']],
     agri: [['不宜农耕', '潜力 < 0.2'], ['农业潜力低', '0.2–0.45'], ['农业潜力中等', '0.45–0.7'], ['农业潜力高', '> 0.7']],
     habit: [['不宜居', '宜居度 < 0.2'], ['宜居度低', '0.2–0.45'], ['宜居度中等', '0.45–0.7'], ['宜居度高', '> 0.7']],
     veg: [['荒漠裸地', '覆盖 < 25%'], ['植被稀疏', '25–50%'], ['植被中等', '50–75%'], ['植被茂密', '> 75%']],
@@ -35,6 +35,12 @@
   const BIN_INK = { pop: ['#7a6a52', '#8a6a3a', '#9a5a2a', '#8a2f24', '#5a1430'], agri: ['#7a6a52', '#7a6a2a', '#4f6a2a', '#1f5a32'], habit: ['#7a6a52', '#8a5a2a', '#6a6a2a', '#1f6a52'], veg: ['#7a6a52', '#7a6a3a', '#3f6a2f', '#1f5a32'], govern: ['#3f3a36', '#5a524a', '#7a6e62'] };
   const hexInk = (h, k = 0.5) => { const n = parseInt(h.slice(1), 16); return `rgb(${Math.round((n >> 16 & 255) * k)},${Math.round((n >> 8 & 255) * k)},${Math.round((n & 255) * k)})`; };
   const palInk = (arr, i, k = 0.5) => arr && arr.length >= i * 3 + 3 ? `rgb(${Math.round(arr[i * 3] * k)},${Math.round(arr[i * 3 + 1] * k)},${Math.round(arr[i * 3 + 2] * k)})` : null;
+  const fmtDensity = n => n === 0 ? '0' : n < 0.001 ? n.toPrecision(2) : String(Number(n.toPrecision(3)));
+  const populationRange = (category, stats) => {
+    if (stats.populationDensityUniform) return `约 ${fmtDensity(stats.populationDensityMean)} 人/km²`;
+    const limits = stats.populationDensityBreaks.map(fmtDensity);
+    return (category === 0 ? `≤ ${limits[0]}` : category === 4 ? `≥ ${limits[3]}` : `${limits[category - 1]}–${limits[category]}`) + ' 人/km²';
+  };
   app.zoneText = (t, z) => {
     const d = app.data, pal = d.pal, c = z.c;
     if (t === 'culture') { const o = d.cultures[c]; return o ? [o.name, '', palInk(pal.culture, c, 0.45), 'culture:' + c] : []; }
@@ -44,7 +50,7 @@
     if (t === 'koppen') { const k = KOPPEN[c]; return k ? [k[1], k[0], hexInk(k[2], 0.48)] : []; }
     if (t === 'biome') { const k = BIOMES[c]; return k ? [k[0], '', hexInk(k[1], 0.45)] : []; }
     if (t === 'basin') { const r = d.riverNames[z.ri]; return r ? [r.name + '流域', '', palInk(pal.basin, c, 0.45), 'river:' + z.ri] : []; }
-    const b = BINS[t]; if (b && b[c]) return [b[c][0], b[c][1], BIN_INK[t][c]];
+    const b = BINS[t]; if (b && b[c]) return [b[c][0], t === 'pop' ? populationRange(c, d.stats) : b[c][1], BIN_INK[t][c]];
     return [];
   };
   // ---------- 辅助图层按专题记忆：地形图默认全开；其余专题默认不开城市、交通与地理名称，打开后各专题分别记住 ----------
@@ -128,14 +134,14 @@
   let worker = null, seq = 0;
   const pending = new Map(), strips = new Map();
   function startWorker() {
-    worker = new Worker('core/worker.js');
+    worker = new Worker('core/worker.js?build=20261106f');
     worker.onmessage = e => onMsg(e.data);
     worker.onerror = e => {
       const error = new Error('推演线程失败：' + e.message);
-      pendingGeneration = null; $('progress').hidden = true;
       for (const request of pending.values()) request.reject(error);
       pending.clear(); strips.clear();
-      toast(error.message, 9000);
+      if (pendingGeneration) generationFailed(error, true);
+      else toast(error.message, 9000);
     };
   }
   function post(m) { worker.postMessage(m); }
@@ -156,9 +162,9 @@
     if (m.type === 'strip' || m.type === 'stripEnd') { const cb = strips.get(m.id); if (cb) { if (m.type === 'strip') cb(m); else strips.delete(m.id); } return; }
     if (m.type === 'contoursFine') { if (app.data) { app.data.contoursFine = m.contours; if (map.paths) { map.paths.cont.fine = null; map.draw(); } } return; }
     if (m.type === 'error') {
-      if (m.requestType === 'generate') { pendingGeneration = null; $('progress').hidden = true; }
       const request = pending.get(m.id); strips.delete(m.id);
       if (request) { pending.delete(m.id); request.reject(new Error(m.message)); }
+      if (m.requestType === 'generate' && pendingGeneration) { console.error(m.message); generationFailed(new Error(m.message)); return; }
       // 人物条件错误由人物表单呈现，不应误报为整个世界推演失败。
       if (request && m.requestType === 'personGenerate') return;
       console.error(m.message); toast('推演出错：' + m.message.split('\n')[0]); return;
@@ -171,13 +177,19 @@
     post({ type: 'render', id, req });
     const out = p.then(m => {
       const img = new ImageData(new Uint8ClampedArray(m.buf.buffer || m.buf), req.w, req.h);
-      if (window.createImageBitmap) return createImageBitmap(img);
+      // 渐进瓦片的预览必须同步落到画布，避免异步位图晚于细节条带完成而覆盖它们。
+      if (!onStrip && window.createImageBitmap) return createImageBitmap(img);
       const c = document.createElement('canvas'); c.width = req.w; c.height = req.h; c.getContext('2d').putImageData(img, 0, 0); return c;
     });
     out.renderId = id;
     return out;
   };
-  app.cancelRender = function (id) { strips.delete(id); post({ type: 'cancelRender', id }); };
+  app.cancelRender = function (id) {
+    strips.delete(id);
+    const request = pending.get(id);
+    if (request) { pending.delete(id); request.reject(new Error('渲染已取消')); }
+    post({ type: 'cancelRender', id });
+  };
 
   // ---------- 推演 ----------
   const STAGES = ['板块漂移', '大陆核心', '板块边界', '地壳均衡', '山脉细节', '水力侵蚀', '四季气候', '气候分类', '水系汇流', '河流流量', '流域划分', '河道描绘', '文明', '等高线与气象场'];
@@ -195,10 +207,58 @@
   ];
   let funKey = '';
   let genCfg = null, pendingGeneration = null, spinT = 0, progMax = 0;
+  function generationFailed(error, restartWorker = false) {
+    const failed = pendingGeneration;
+    if (!failed) return;
+    pendingGeneration = null;
+    G.Home.setJob(null);
+    $('progress').hidden = false;
+    $('progTitle').textContent = '世界推演失败';
+    $('progTitle').style.opacity = 1;
+    $('progStage').textContent = '已保留这次的世界设置';
+    const note = $('progNote');
+    note.hidden = false;
+    note.textContent = error.message.split('\n')[0];
+    let actions = $('generationErrorActions');
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.id = 'generationErrorActions';
+      Object.assign(actions.style, { display:'flex', flexWrap:'wrap', justifyContent:'center', gap:'8px', marginTop:'14px' });
+      note.after(actions);
+    }
+    actions.replaceChildren();
+    const add = (label, action, primary) => {
+      const button = document.createElement('button');
+      button.className = 'btn ' + (primary ? 'primary' : 'ghost');
+      button.textContent = label; button.onclick = action; actions.append(button);
+    };
+    add('重试', () => {
+      $('progress').hidden = true;
+      if (restartWorker) { worker.terminate(); startWorker(); }
+      generate(failed.state, failed.restore, failed.preparedTerrain, failed.opts);
+    }, true);
+    add('修改设置', () => {
+      $('progress').hidden = true;
+      if (restartWorker) { worker.terminate(); startWorker(); }
+      const libraries = [['libs', () => G.Home.snapshot()], ['rlibs', () => G.RelLib.snapshot()], ['slibs', () => G.SpeciesLib.snapshot()]];
+      const before = libraries.map(([, snapshot]) => { try { return JSON.stringify(snapshot()); } catch (_) { return null; } });
+      G.Wizard.open(failed.state, st => {
+        try {
+          libraries.forEach(([key, snapshot], i) => { const current = snapshot(); if (JSON.stringify(current) !== before[i]) st[key] = current; });
+        } catch (error) { pendingGeneration = { state:st }; generationFailed(error); return; }
+        generate(st);
+      }, true, true);
+    });
+    add(app.data ? '返回地图' : '返回首页', () => {
+      $('progress').hidden = true;
+      if (!app.data) G.Home.show();
+    });
+    actions.hidden = false; actions.style.display = 'flex';
+  }
   // restore：从存档 / 世界文件打开时传入 { name, ms }，进度卡说明这是按存档设置重新推演
-  async function generate(st, restore, preparedTerrain) {
+  async function generate(st, restore, preparedTerrain, opts) {
     if (pendingGeneration) { toast('当前世界仍在推演，请等待完成'); return; }
-    pendingGeneration = { state:st };
+    pendingGeneration = { state:st, restore, preparedTerrain, opts };
     try {
     await Promise.all([G.Home.loadBuiltin(), G.RelLib.load()]);
     if (G.City && G.City.current !== null) G.City.close();
@@ -217,22 +277,23 @@
     $('progress').hidden = false;
     progMax = 0;
     $('progBar').style.width = '0%'; $('progStage').textContent = '准备推演…'; funKey = '';
-    $('progTitle').textContent = restore ? `正在还原「${restore.name}」` : '正在构思一颗新的星球';
+    $('progTitle').textContent = restore ? `正在还原「${restore.name}」` : opts && opts.reroll ? `正在重摇「${opts.reroll.label}」` : '正在构思一颗新的星球';
+    const actions = $('generationErrorActions'); if (actions) { actions.hidden = true; actions.style.display = 'none'; }
     const note = $('progNote');
-    if (note) { note.hidden = true; note.textContent = ''; } if (restore) funKey = 'restore';
-    spinT = performance.now(); spinGlobe();
+    if (note) { note.hidden = true; note.textContent = ''; } if (restore || (opts && opts.reroll)) funKey = 'restore';
+    spinT = performance.now(); spinGlobe(pendingGeneration);
     post({ type: 'generate', cfg: genCfg, terrainRaster });
-    } catch (error) { pendingGeneration = null; $('progress').hidden = true; toast('无法开始推演：' + error.message, 8000); }
+    } catch (error) { generationFailed(error); }
   }
   function onProgress(m) {
     // 进度只进不退：各阶段的报告值偶有交错，界面上取已到达的最大值
     const f = progMax = Math.max(progMax, Math.min(1, m.f || 0));
     $('progStage').textContent = m.stage; $('progBar').style.width = Math.floor(f * 100) + '%';
     G.Home.setJob({ name: '新世界', seed: pendingGeneration?.state.seed ?? app.state?.seed, stage: m.stage, f });
-    const k = funKey !== 'restore' && FUN.find(([re]) => re.test(m.stage)); if (k && k[0].source !== funKey) { funKey = k[0].source; const list = k[1]; const t = $('progTitle'); t.style.opacity = 0; setTimeout(() => { t.textContent = list[Math.floor(Math.random() * list.length)]; t.style.opacity = 1; }, 160); }
+    const k = funKey !== 'restore' && FUN.find(([re]) => re.test(m.stage)); if (k && k[0].source !== funKey) { funKey = k[0].source; const list = k[1], job = pendingGeneration; const t = $('progTitle'); t.style.opacity = 0; setTimeout(() => { if (!job || pendingGeneration !== job) return; t.textContent = list[Math.floor(Math.random() * list.length)]; t.style.opacity = 1; }, 160); }
   }
-  function spinGlobe() {
-    if ($('progress').hidden) return;
+  function spinGlobe(job) {
+    if ($('progress').hidden || pendingGeneration !== job) return;
     const c = $('spinGlobe').getContext('2d'), t = (performance.now() - spinT) / 1000;
     c.clearRect(0, 0, 120, 120);
     c.fillStyle = '#d9edf5'; c.beginPath(); c.arc(60, 60, 46, 0, 7); c.fill();
@@ -240,17 +301,18 @@
     for (let k = 0; k < 6; k++) { const a = ((t * 0.6 + k / 6) % 1) * Math.PI; const rx = Math.abs(Math.cos(a)) * 46; c.beginPath(); c.ellipse(60, 60, rx, 46, 0, 0, 7); c.stroke(); }
     for (const la of [-0.5, 0, 0.5]) { c.beginPath(); c.ellipse(60, 60 - la * 46, Math.sqrt(1 - la * la) * 46, 5, 0, 0, 7); c.stroke(); }
     c.strokeStyle = '#1a73e8'; c.lineWidth = 2; c.beginPath(); c.arc(60, 60, 46, 0, 7); c.stroke();
-    requestAnimationFrame(spinGlobe);
+    requestAnimationFrame(() => spinGlobe(job));
   }
   function onReady(m) {
     if (!pendingGeneration) return;
+    const reroll = pendingGeneration.opts && pendingGeneration.opts.reroll;
     app.state = pendingGeneration.state; genCfg = pendingGeneration.cfg; pendingGeneration = null;
     const stored = loadSaved().find(w => w.key === G.Config.encode(app.state) && currentRecord(w));
     app.people = stored?.people || []; app.history = null;
     history.replaceState(null, '', '#' + G.Config.encode(app.state));
     if (G.Timeline) G.Timeline.reset();
     m.cfg = genCfg; app.data = m;
-    app.names = stored?.names || {};
+    app.names = stored?.names || (reroll && reroll.name ? { world: reroll.name } : {});
     $('progress').hidden = true;
     const s = m.stats;
     { const sv = loadSaved().find(w => w.key === G.Config.encode(app.state) && currentRecord(w)); if (sv && sv.name && !app.names.world && sv.name !== s.worldName + '星') app.names.world = sv.name; $('worldName').textContent = app.names.world || s.worldName + '星'; }
@@ -260,13 +322,14 @@
     applyPrefix();
     buildIndex();
     loadMarkers();
+    if (reroll && !stored && reroll.markers && reroll.group !== 't') tools.markers = reroll.markers; // 地形没变：标记照旧
     clearTools();
     map.setData(m);
     globeSent = false; if (!$('globeWrap').hidden) showGlobe(false);
-    renderPanel(); renderLegend(); renderInfo();
+    renderPanel(); renderLegend(); renderInfo(); syncRollBtn();
     makeThumbs();
-    setTimeout(() => { saveWorld(); G.Home.setJob({ name: $('worldName').textContent, seed: app.state.seed, stage: '推演完成 · 用时 ' + (m.info.ms / 1000).toFixed(1) + ' 秒', f: 1, done: true, thumb: worldThumb() }); }, 1500);
-    toast(`推演完成 · 用时 ${(m.info.ms / 1000).toFixed(1)} 秒 · 网格 ${m.W}×${m.H}`);
+    setTimeout(async () => { await saveWorld(); if (reroll && reroll.oldKey !== G.Config.encode(app.state)) { const keep = loadSaved(); const old = keep.find(w => w.key === reroll.oldKey); if (old && !(old.people && old.people.length)) storeSaved(keep.filter(w => w.key !== reroll.oldKey)); } G.Home.setJob({ name: $('worldName').textContent, seed: app.state.seed, stage: '推演完成 · 用时 ' + (m.info.ms / 1000).toFixed(1) + ' 秒', f: 1, done: true, thumb: worldThumb() }); }, 1500);
+    toast(reroll ? `「${reroll.label}」已重摇 · 第 ${(G.Config.rollsOf(app.state)[reroll.group] || 0) + 1} 版 · 用时 ${(m.info.ms / 1000).toFixed(1)} 秒` : `推演完成 · 用时 ${(m.info.ms / 1000).toFixed(1)} 秒 · 网格 ${m.W}×${m.H}`);
      renderFileInfo();
   }
 
@@ -302,6 +365,34 @@
   $('zout').onclick = () => map.zoomAt(map.vw / 2, map.vh / 2, 1 / 1.6);
   $('zfit').onclick = () => { map.fit(); map.draw(); map.scheduleFrame(); };
 
+  // ---------- 专题图单独重摇：每张专题图都可在生成后单独重新随机；上游不变，下游随之重算 ----------
+  const ROLL_GROUP = { terrain: 't', plates: 't', basin: 't', koppen: 'c', biome: 'c', agri: 'c', habit: 'c', veg: 'c', sprecip: 'c', stemp: 'c', pop: 's', species: 's', culture: 's', language: 's', religion: 's', country: 'h', govern: 'h', system: 'h', province: 'h', heritage: 'h' };
+  const ROLL_INFO = {
+    t: ['地形与水系', '大陆、山川、海岸与河流整体重塑；气候、人文与历史随新地形重新推演。'],
+    c: ['气候', '地形与河流不变；重摇大气环流与降水格局，气候带、植被、农业潜力随之改变，人文与历史据此重新推演。'],
+    s: ['人文分布', '自然环境不变；重摇人口、聚落、文明、语言与宗教的分布，列国历史随之重新推演。'],
+    h: ['列国历史', '自然环境与文明、语言、宗教的分布不变；重摇各文明兴起的先后与列国兴亡，国家疆域、省份与遗迹随之改变。']
+  };
+  app.rollGroupOf = t => (t === 'terrain' || t === 'plates') && app.state && app.state.terrainInput ? null : ROLL_GROUP[t] || null;
+  app.rollVersion = t => { const g = app.rollGroupOf(t); return g && app.state ? (G.Config.rollsOf(app.state)[g] || 0) + 1 : 1; };
+  app.rerollTopic = (topic, delta = 1) => {
+    if (!app.state || !app.data) return;
+    const g = app.rollGroupOf(topic); if (!g) return;
+    const st = JSON.parse(JSON.stringify(app.state)), r = G.Config.rollsOf(st), n = Math.max(0, (r[g] || 0) + delta);
+    if (n) r[g] = n; else delete r[g]; st.rolls = r;
+    if (G.Timeline && G.Timeline.on) G.Timeline.close();
+    generate(st, null, undefined, { reroll: { group: g, topic, label: TOPIC_NAME[topic] || ROLL_INFO[g][0], oldKey: G.Config.encode(app.state), name: app.names.world || $('worldName').textContent, markers: tools.markers.slice() } });
+  };
+  function rollDialog(topic) {
+    const g = app.rollGroupOf(topic); if (!g) return;
+    const ver = app.rollVersion(topic), name = TOPIC_NAME[topic] || ROLL_INFO[g][0], same = Object.entries(ROLL_GROUP).filter(([k, v]) => v === g && k !== topic && TOPIC_NAME[k]).map(([k]) => TOPIC_NAME[k]);
+    let box = $('rollDialog'); if (!box) { box = document.createElement('div'); box.className = 'overlay roll-overlay'; box.id = 'rollDialog'; document.body.appendChild(box); box.addEventListener('click', e => { const b = e.target.closest('[data-roll-act]'); if (e.target === box || (b && b.dataset.rollAct === 'x')) { box.hidden = true; return; } if (!b) return; box.hidden = true; app.rerollTopic(box.dataset.topic, b.dataset.rollAct === 'back' ? -1 : 1); }); }
+    box.dataset.topic = topic;
+    box.innerHTML = `<div class="card roll-card"><div class="roll-ico">${G.UIIcons ? G.UIIcons.dice : ''}</div><h3>重摇「${esc(name)}」</h3><p class="roll-ver">当前为第 ${ver} 版 · 重摇环节：${ROLL_INFO[g][0]}</p><p>${ROLL_INFO[g][1]}</p>${same.length ? `<p class="roll-same">同一环节的专题图也会一起变化：${same.map(esc).join('、')}</p>` : ''}<p class="roll-note">世界名称${g === 't' ? '' : '与地图标记'}保留；改过的地名与已保存人物不会带到新版本。</p><div class="roll-acts"><button class="btn ghost" data-roll-act="x">取消</button>${ver > 1 ? '<button class="btn ghost" data-roll-act="back">回到上一版</button>' : ''}<button class="btn primary" data-roll-act="go">重摇这张图</button></div></div>`;
+    box.hidden = false;
+  }
+  app.rollDialog = rollDialog;
+
   // ---------- 图层面板 ----------
   function toggle(key, label, on, group) { return `<button class="tg${on ? ' on' : ''}" data-${group}="${key}"><span>${label}</span><i class="sw-ui"></i></button>`; }
   let auxOpen = true;
@@ -310,7 +401,7 @@
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     let h = '';
     if (tab === 'geo' || tab === 'human') {
-      h += `<h3>${tab === 'geo' ? '地理专题' : '人文专题'}</h3><div class="topics">` + TOPICS[tab].map(([k, n]) => `<button class="topic${app.topics[tab] === k ? ' on' : ''}" data-topic="${k}"><span class="th">${app.thumbs[k] ? `<img src="${app.thumbs[k]}" alt="">` : ''}</span>${n}</button>`).join('') + '</div>';
+      h += `<h3>${tab === 'geo' ? '地理专题' : '人文专题'}</h3><div class="topics">` + TOPICS[tab].map(([k, n]) => `<button class="topic${app.topics[tab] === k ? ' on' : ''}" data-topic="${k}"><span class="th">${app.thumbs[k] ? `<img src="${app.thumbs[k]}" alt="">` : ''}</span><span class="tn">${n}</span>${app.rollGroupOf(k) ? `<span class="roll-btn" data-roll="${k}" role="button" title="单独重摇这张图（第 ${app.rollVersion(k)} 版）">${G.UIIcons ? G.UIIcons.dice : '⟳'}${app.rollVersion(k) > 1 ? `<em>${app.rollVersion(k)}</em>` : ''}</span>` : ''}</button>`).join('') + '</div>';
     } else if (tab === 'season') {
       h += `<h3>季节</h3><div class="seasons">${SEASONS.map((s, i) => `<button data-season="${i}" class="${app.season === i ? 'on' : ''}">${s}</button>`).join('')}</div>`;
       h += `<h3>底图</h3><div class="toggles">${toggle('sprecip', '降水', app.topics.season === 'sprecip', 'sbase')}${toggle('stemp', '气温（℃）', app.topics.season === 'stemp', 'sbase')}</div>`;
@@ -328,6 +419,7 @@
   }
   $('tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; app.tab = b.dataset.tab; renderPanel(); onTopicChange(); });
   $('panelBody').addEventListener('click', e => {
+    const rb = e.target.closest('[data-roll]'); if (rb) { e.stopPropagation(); rollDialog(rb.dataset.roll); return; }
     const t = e.target.closest('[data-topic]'); if (t) { app.topics[app.tab] = t.dataset.topic; renderPanel(); onTopicChange(); return; }
     const s = e.target.closest('[data-season]'); if (s) { app.season = +s.dataset.season; renderPanel(); onTopicChange(); return; }
     const sb = e.target.closest('[data-sbase]'); if (sb) { app.topics.season = sb.dataset.sbase; renderPanel(); onTopicChange(); return; }
@@ -336,7 +428,10 @@
     if (e.target.closest('[data-pre]')) { app.setNoPrefix(!app.noPrefix); return; }
     if (e.target.closest('#auxHead')) { auxOpen = !auxOpen; renderPanel(); }
   });
-  function onTopicChange() { app.syncAux(); if (!$('layerPanel').hidden) renderPanel(); map.refreshRaster(); map.draw(); renderLegend(); }
+  function onTopicChange() { app.syncAux(); if (!$('layerPanel').hidden) renderPanel(); map.refreshRaster(); map.draw(); renderLegend(); syncRollBtn(); }
+  function syncRollBtn() { const b = $('rollBtn'); if (!b) return; const t = app.topic(), g = app.data && app.rollGroupOf(t); b.hidden = !g; if (g) { $('rollVer').textContent = app.rollVersion(t) > 1 ? '第 ' + app.rollVersion(t) + ' 版' : ''; b.title = `单独重摇「${TOPIC_NAME[t] || ''}」：${ROLL_INFO[g][1]}`; } }
+  app.syncRollBtn = syncRollBtn;
+  $('rollBtn').onclick = () => rollDialog(app.topic());
   app.ui = { refresh() { renderPanel(); onTopicChange(); } };
   $('layerBtn').onclick = () => { $('layerPanel').hidden = !$('layerPanel').hidden; if (!$('layerPanel').hidden) renderPanel(); };
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { $(b.dataset.close).hidden = true; if (b.dataset.close === 'infoPanel') setTool(null, 'info'); });
@@ -393,7 +488,10 @@
       const st = { agri: [[0, '#f3eedf'], [0.2, '#eadb9c'], [0.45, '#b9d27c'], [0.7, '#6fb35f'], [1, '#2f7d45']], habit: [[0, '#f2ece4'], [0.2, '#f1c98c'], [0.45, '#e8e08a'], [0.7, '#8fcf86'], [1, '#2f9a7a']], veg: [[0, '#f1e9d2'], [0.25, '#dccf92'], [0.5, '#9ccc6e'], [0.75, '#5aa85a'], [1, '#2d7a46']] }[t];
       const note = { agri: '综合积温、水分（含灌溉河流）、坡度与土壤', habit: '农业潜力、淡水与海岸可达性、气温舒适度', veg: '由年均温与年降水推算的净初级生产力' }[t];
       h += `<h5>${TOPIC_NAME[t]}</h5><div class="ramp" style="background:${grad(st, 0, 1)}"></div><div class="ramp-l"><span>低</span><span>高</span></div><p>${note}</p>`;
-    } else if (t === 'pop') h += `<h5>人口密度（人/km²）</h5><div class="ramp" style="background:${grad([[0, '#f6f1e8'], [0.3, '#f4dfb4'], [1, '#f2b46a'], [1.6, '#e07a46'], [2.1, '#b8403c'], [2.7, '#6e1d3c']], 0, 2.7)}"></div><div class="ramp-l"><span>0</span><span>10</span><span>100</span><span>500</span></div><p>总人口 ${fmtPop(d.stats.population)}</p>`;
+    } else if (t === 'pop') {
+      const mean = d.stats.populationDensityMean, stops = [[0, '#f6f1e8'], [1, '#f4dfb4'], [2, '#f2b46a'], [3, '#e07a46'], [4, '#b8403c'], [5, '#6e1d3c']];
+      h += `<h5>人口密度（人/km²）</h5><div class="ramp" style="background:${grad(stops, 0, 5)}"></div><div class="ramp-l"><span>少</span><span>多</span></div><p>按本世界有人居住陆地的密度分布分级（地图区域经过平滑），无人区不参与分级。有人陆地平均密度 ${fmtDensity(mean)} 人/km²；总人口 ${fmtPop(d.stats.population)}</p>`;
+    }
     else if (t === 'sprecip') h += `<h5>${SEASONS[app.season]} · 季节降水（mm/季）</h5><div class="ramp" style="background:${grad([[0, '#f3e6c4'], [40, '#ece0a4'], [120, '#c4df9c'], [260, '#7cc8ae'], [500, '#4c9ad4'], [900, '#3561bd'], [1500, '#2b3f93']], 0, 1500)}"></div><div class="ramp-l"><span>0</span><span>260</span><span>900</span><span>1500</span></div>` + seasonSym();
     else if (t === 'stemp') h += `<h5>${SEASONS[app.season]} · 季节气温（°C）</h5><div class="ramp" style="background:${grad([[-45, '#323a8f'], [-25, '#5774cc'], [-8, '#9fc4ec'], [3, '#d8ecf2'], [12, '#f4f1c6'], [20, '#f6cd82'], [28, '#ec8d55'], [36, '#c9433d'], [44, '#8a1b35']], -45, 44)}"></div><div class="ramp-l"><span>-45</span><span>0</span><span>20</span><span>44</span></div>` + seasonSym();
     else if (t === 'plates') {
@@ -423,6 +521,8 @@
       h += `<h5>${TOPIC_NAME[t]}${t === 'govern' ? ' · 颜色越淡，实际控制越弱' : t === 'culture' || t === 'language' ? ' · 颜色越淡，影响越弱' : ''}</h5><div class="sw">${items.slice(0, 24).map(([x, i]) => `<span data-name-id="${pk}:${i}" title="双击改名"><i style="background:${palColor(pal[pk], i)}"></i><em>${x.name}</em></span>`).join('')}</div>`;
       if (items.length > 24) h += `<p>另有 ${items.length - 24} 项，可在搜索框中查找。</p>`;
       h += `<div class="sw" style="margin-top:8px"><span><i style="background:#efe6d2"></i><em>部落与游牧空间</em></span><span><i style="background:#f3efe6;border:1px solid #ddd"></i><em>无人荒野 / 冰盖</em></span></div>`;
+      if (pk === 'country') { const vas = d.countries.map((k, i) => [k, i]).filter(([k]) => k.liege !== undefined && d.countries[k.liege]);
+        if (vas.length) h += `<h5>附庸国 <small>${vas.length} 国 · 与宗主同色系</small></h5><div class="sw">${vas.slice(0, 12).map(([k, i]) => { const L = d.countries[k.liege], c = palColor(pal.country, i), lc = palColor(pal.country, k.liege); return `<span data-name-id="country:${i}" title="${esc(k.name)} 奉 ${esc(L.name)} 为宗主"><i style="background:${c};box-shadow:inset 0 0 0 1.5px ${lc}"></i><em>${esc(k.short || k.name)} → ${esc(L.short || L.name)}</em></span>`; }).join('')}</div>`; }
     }
     $('legend').innerHTML = h;
   }
@@ -450,7 +550,7 @@
       ${d.info.terrain ? kv([['原始图纸',esc((st.terrainInput.source?.asset || st.terrainInput.asset).name)],['算法介入',d.info.terrain.intervention+' / 100'],['高程依据',st.terrainInput.processing ? '根据上传图片自动估算' : '原始灰度高度图']]) : ''}
       ${kv([['板块', d.info.geologyStatus==='not-generated'?'图纸未提供构造信息':d.info.geologyStatus==='hypothetical'?`${d.info.plates} 块 · 假想构造`:`${d.info.plates} 块 · ${q('plates').split(' · ')[1]}`], ['陆地占比', c.terrainInput?'依导入图纸及介入设置':Math.round(c.land * 100) + '%'], ['北极', polarName[d.info.polar.N]], ['南极', polarName[d.info.polar.S]], ['新大陆', d.info.newWorld ? '有' : '无'], ['最高峰', Math.round(d.info.maxE) + ' m'], ['最深海沟', Math.round(-d.info.minE) + ' m']])}
       <h3>文明</h3>
-      ${kv([['时代', s.endYear ? `文明纪元第 ${s.endYear} 年 · ${G.Config.ageLabel(s.endYear)}` : q('era')], ['人口规模', q('era')], ['总人口', fmtPop(s.population)], ['环境承载区间', fmtPop(s.supportRange[0]) + ' – ' + fmtPop(s.supportRange[1])], ['道路 / 海运航线 / 桥梁', `${s.roads} / ${s.seaRoutes} / ${s.bridges}`], ['边疆部族', s.tribes], ['国家', s.countries], ['省份', s.provinces], ['聚落', s.settlements], ['文化圈 / 语言 / 宗教', `${s.cultures} / ${s.languages} / ${s.religions}`], ['部族与非国家空间', Math.round(s.tribalShare * 100) + '%']])}
+      ${kv([['时代', s.endYear ? `文明纪元第 ${s.endYear} 年 · ${G.Config.ageLabel(s.endYear)}` : q('era')], ['人口规模', q('era')], ['总人口', fmtPop(s.population)], ['环境承载区间', fmtPop(s.supportRange[0]) + ' – ' + fmtPop(s.supportRange[1])], ['道路 / 海运航线 / 桥梁', `${s.roads} / ${s.seaRoutes} / ${s.bridges}`], ['边疆部族', s.tribes], ['国家', s.countries], ['省份', s.provinces], ['聚落', s.settlements], ['文化圈 / 语言 / 宗教', `${s.cultures} / ${s.languages} / ${s.religions}`], ['无国家管辖陆地（含无人区）', Math.round(s.tribalShare * 100) + '%'], ['有人陆地中的无国家管辖区', (s.independentInhabitedShare * 100).toFixed(1) + '%']])}
       <h3>人口最多的国家</h3>
       <div class="list">${topK.map(([k, i]) => `<button data-fly="country:${i}" data-name-id="country:${i}"><i style="background:${palColor(pal.country, i)}"></i><em>${k.name}</em><small>${k.formLabel} · ${fmtPop(k.pop)}</small></button>`).join('')}</div>
       <h3>文明</h3>
@@ -536,8 +636,10 @@
   }
   function clearTools() { tools.route = [null, null]; tools.routeRes = null; tools.pick = -1; tools.measure = []; app.tool = null; $('toolCard').hidden = true; document.querySelectorAll('.rail-btn').forEach(b => { if (b.dataset.tool !== 'hover') b.classList.remove('on'); }); }
   $('rail').addEventListener('click', e => {
-    const b = e.target.closest('.rail-btn'); if (!b || !app.data && b.dataset.tool !== 'menu') return;
+    const b = e.target.closest('.rail-btn'); if (!b) return;
+    if (!app.data && b.dataset.tool !== 'menu') { toast('先创建或打开一个世界'); return; }
     const t = b.dataset.tool;
+    if (t !== 'menu' && !$('home').hidden) G.Home.hide(); // 首页上点工具：回到地图再用
     if (t === 'menu') { $('menu').hidden = !$('menu').hidden; return; }
     if (t === 'style') { const p = $('stylePanel'); p.hidden = !p.hidden; renderStyles(); document.querySelector('[data-tool=style]').classList.toggle('on', !p.hidden); return; }
     if (t === 'hover') return setTool(null, 'hover');
@@ -759,20 +861,29 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (app.tool) setTool(app.tool); } });
 
   // ---------- 悬浮信息 ----------
-  let hoverBusy = false, hoverNext = null;
+  let hoverBusy = false, hoverNext = null, hoverVersion = 0;
   app.onHover = (e) => {
-    if (!e || (!app.hover && !e.force) || !app.data || app.tool) { $('tip').hidden = true; return; }
-    hoverNext = e; if (!hoverBusy) doHover();
+    const version = ++hoverVersion;
+    if (!e || (!app.hover && !e.force) || !app.data || app.tool) { hoverNext = null; $('tip').hidden = true; return; }
+    hoverNext = { offsetX: e.offsetX, offsetY: e.offsetY, force: e.force, version };
+    if (!hoverBusy) doHover();
   };
   async function doHover() {
     const e = hoverNext; hoverNext = null; if (!e) return;
     hoverBusy = true;
     const [gx, gy] = map.toGrid(e.offsetX, e.offsetY);
-    const m = await call('probe', { gx, gy, season: app.season });
-    hoverBusy = false;
-    const p = m.data;
-    if (!p || (!app.hover && !e.force)) { $('tip').hidden = true; } else showTip(p, e);
-    if (hoverNext) doHover();
+    try {
+      const m = await call('probe', { gx, gy, season: app.season });
+      if (e.version === hoverVersion) {
+        const p = m.data;
+        if (!p || (!app.hover && !e.force)) $('tip').hidden = true; else showTip(p, e);
+      }
+    } catch (_) {
+      // 错误已由 Worker 消息处理器报告，悬浮查询不应留下未处理的 Promise。
+    } finally {
+      hoverBusy = false;
+      if (hoverNext) doHover();
+    }
   }
   const TOUCH = matchMedia('(hover: none)').matches || matchMedia('(pointer: coarse)').matches;
   function showTip(p, e) {
@@ -794,7 +905,7 @@
       if (app.tab === 'season') rows.push(['气压', p.pres.toFixed(0) + ' hPa'], ['风', windStr(p.wind)]);
     } else {
       const k = p.country >= 0 ? d.countries[p.country] : null;
-      title = k ? k.name : p.tribe >= 0 && d.tribes[p.tribe] ? d.tribes[p.tribe].name : (p.nominal >= 0 ? '部族与游牧地' : '无人荒野');
+      title = k ? k.name : p.pop > 0 ? (p.tribe >= 0 && d.tribes[p.tribe] ? d.tribes[p.tribe].name : '未归国家的居民区') : '无人荒野';
       if (p.lake) title = '湖泊';
       if (app.tab === 'season') rows = [['季节', SEASONS[app.season]], ['气温', p.ts.toFixed(1) + ' °C'], ['降水', Math.round(p.ps) + ' mm/季'], ['气压', p.pres.toFixed(0) + ' hPa'], ['风', windStr(p.wind)]];
       else rows = [['海拔', p.elev + ' m'], ['气候', p.koppen < 255 ? KOPPEN[p.koppen][0] + ' ' + KOPPEN[p.koppen][1] : '—'], ['群系', p.biome < 255 ? BIOMES[p.biome][0] : '—'], ['年均气温', p.tann.toFixed(1) + ' °C'], ['年降水', Math.round(p.pann) + ' mm']];
@@ -821,7 +932,7 @@
           }
           if(food?.guards>0)rows.push(['要塞驻守',`${Math.round(food.guards).toLocaleString('zh-CN')} 人 · 供养后余粮 ${Math.round(food.afterFort-food.demand).toLocaleString('zh-CN')} 人年粮`]);
         }
-        if (p.country >= 0) rows.push(['政体', k.formLabel + (k.liege !== undefined && d.countries[k.liege] ? ' · 宗主 ' + d.countries[k.liege].name : '')], ...(G.AdminSys ? [['行政制度', G.AdminSys.NAME[k.sys || G.AdminSys.classOfCountry(k)]]] : []), ...(k.gov ? [['政府组织', k.gov]] : []), ...(k.ideas && k.ideas.length ? [['思潮', `已接纳 ${k.ideas.length} 条 · 最新：${k.ideas[k.ideas.length - 1]}${k.ideas.includes('远洋航海') ? ' · 可远洋殖民' : ''}`], ['军事 / 治理', `${'●'.repeat(Math.round(k.mil * 2))}${'○'.repeat(7 - Math.round(k.mil * 2))} / ${'●'.repeat(Math.round(k.adm * 2))}${'○'.repeat(6 - Math.round(k.adm * 2))}`]] : []), ...(k.ruler ? [['在位君主', k.ruler[2] + ' ' + k.ruler[1] + (k.house ? ' · ' + k.house : '') + ' · 第 ' + k.ruler[0] + ' 年即位']] : []), ['实际治理', Math.round(p.gov * 100) + '%' + (isFinite(p.govDays) ? ` · 距首都 ${p.govDays < 1 ? '<1' : Math.round(p.govDays)} 日` : '')]);
+        if (p.country >= 0) rows.push(['政体', k.formLabel + (k.liege !== undefined && d.countries[k.liege] ? ' · 宗主 ' + d.countries[k.liege].name : '')], ...(k.allies && k.allies.length ? [['盟约', '与 ' + k.allies.map(i => d.countries[i]?.name).filter(Boolean).join('、') + ' 结盟']] : []), ...(G.AdminSys ? [['行政制度', G.AdminSys.NAME[k.sys || G.AdminSys.classOfCountry(k)]]] : []), ...(k.gov ? [['政府组织', k.gov]] : []), ...(k.ideas && k.ideas.length ? [['思潮', `已接纳 ${k.ideas.length} 条 · 最新：${k.ideas[k.ideas.length - 1]}${k.ideas.includes('远洋航海') ? ' · 可远洋殖民' : ''}`], ['军事 / 治理', `${'●'.repeat(Math.round(k.mil * 2))}${'○'.repeat(7 - Math.round(k.mil * 2))} / ${'●'.repeat(Math.round(k.adm * 2))}${'○'.repeat(6 - Math.round(k.adm * 2))}`]] : []), ...(k.ruler ? [['在位君主', k.ruler[2] + ' ' + k.ruler[1] + (k.house ? ' · ' + k.house : '') + ' · 第 ' + k.ruler[0] + ' 年即位']] : []), ['实际治理', Math.round(p.gov * 100) + '%' + (isFinite(p.govDays) ? ` · 距首都 ${p.govDays < 1 ? '<1' : Math.round(p.govDays)} 日` : '')]);
         else if (p.tribe >= 0 && d.tribes[p.tribe]) rows.push(['生计', { pastoral: '游牧', highland: '山地', forest: '林地狩猎', maritime: '海岸', foraging: '采集渔猎' }[d.tribes[p.tribe].livelihood]]);
       } else if (app.topic() === 'agri') rows.push(['农业潜力', Math.round(p.agri * 100) + '%']);
       else if (app.topic() === 'habit') rows.push(['宜居度', Math.round(p.hab * 100) + '%']);
@@ -1010,7 +1121,7 @@
     if ((act === 'export' || act === 'saveAs') && app.data) { const rec = await saveWorld(); if (rec) exportWorld(rec, act === 'saveAs' ? 'saveAs' : undefined); }
     if (act === 'import') pickImport();
     if (act === 'wizard') G.Wizard.open(app.state ? JSON.parse(JSON.stringify(app.state)) : G.Config.defaults(), st => { st.libs = G.Home.snapshot(); st.rlibs = G.RelLib.snapshot(); st.slibs = G.SpeciesLib.snapshot(); generate(st); }, true);
-    if (act === 'reseed' && app.state) { const st = JSON.parse(JSON.stringify(app.state)); st.seed = (Math.random() * 1e9) | 0; generate(st); }
+    if (act === 'reseed' && app.state) { const st = JSON.parse(JSON.stringify(app.state)); st.seed = (Math.random() * 1e9) | 0; delete st.rolls; generate(st); }
     if (act === 'png' && app.data) { $('map').toBlob(b2 => { const a = document.createElement('a'); a.href = URL.createObjectURL(b2); a.download = `${app.data.stats.worldName}星.png`; a.click(); }); }
     if (act === 'share' && app.data) { const rec=await saveWorld(); if(rec) exportWorld(rec,'saveAs'); }
   });
@@ -1032,7 +1143,7 @@
   G.Home.init({
     loadSaved, exportWorld, pickImport, fileInfo, currentRecord, checkWorld,
     openWorld: w => { if (!checkWorld(w)) return false; generate(stateOf(w), { name: w.name, ms: w.ms }); return true; },
-    recreate: w => { if (!checkWorld(w)) return false; const st = stateOf(w); st.seed = (Math.random() * 1e9) | 0; generate(st); return true; },
+    recreate: w => { if (!checkWorld(w)) return false; const st = stateOf(w); st.seed = (Math.random() * 1e9) | 0; delete st.rolls; generate(st); return true; },
     deleteWorld: w => { files.del(w.key); storeSaved(loadSaved().filter(x => x.key !== w.key)); },
     renameWorld: (w, n) => { const list = loadSaved(); const r = list.find(x => x.key === w.key); if (r) { r.name = n; r.names={...r.names,world:n}; storeSaved(list); } if (app.state && G.Config.encode(app.state) === w.key) { app.names.world = n; $('worldName').textContent = n; } },
     createWorld: () => G.Wizard.open(app.state ? JSON.parse(JSON.stringify(app.state)) : G.Config.defaults(), st => { st.libs = G.Home.snapshot(); st.rlibs = G.RelLib.snapshot(); st.slibs = G.SpeciesLib.snapshot(); generate(st); }, true)

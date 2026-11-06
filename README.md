@@ -1,8 +1,11 @@
 # 星球推演 · 世界生成器
 
-当前版本：**1.4.3.1**。在本机生成世界、探索地图并推演文明历史，Windows 和安卓共用 `site/` 的代码。
+当前版本：**1.4.4**。在本机生成世界、探索地图并推演文明历史，Windows 和安卓共用 `site/` 的代码。
 
-- 修复历史推演生成的现存国家数量远超设置的问题；国家仍会随历史变化。
+- 调整国家规模分布、地域政权传承、王朝周期和飞地处理，并加入君主上位方式与编年记录。
+- 战役要求双方各至少动员 1,000 人；调整义军与未设省地区的历史表现。
+- 优化人口图、边界、地图交互，以及 720p 和 1080p 界面布局。
+- 国家数量仍会随历史变化。
 - 修复人物经历错误记录附庸事件的问题。
 - 自定义上传高度图或海陆配色图，生成自己的世界，并调整生成设置。
 - 军事系统推演军制、战争和攻守城，可查看战棋与战报。
@@ -26,7 +29,7 @@
 建国与历史规则回归可在仓库根目录运行：
 
 ```sh
-node --test tests/civilization-statehood.test.cjs tests/life-vassal.test.cjs tests/ruler-culture-history.test.cjs tests/ruler-terminal-names.test.cjs tests/restoration-lineage.test.cjs tests/theocracy-trait.test.cjs
+node --test tests/civilization-statehood.test.cjs tests/life-vassal.test.cjs tests/ruler-culture-history.test.cjs tests/ruler-terminal-names.test.cjs tests/restoration-lineage.test.cjs tests/theocracy-trait.test.cjs tests/rulers-release.test.cjs tests/military-release.test.cjs
 ```
 
 ## 项目结构与授权

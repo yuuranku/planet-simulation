@@ -66,7 +66,7 @@
     const { nR, off, nbr, eid, edges } = R, Heap = R.Heap;
     const era = clamp(h.era | 0, 0, 2), E = h.endYear || END[era]; // 现在是文明纪元第几年（向导的文明时代）
     const maxStage = E < 2500 ? 4 : E < 3500 ? 5 : E < 4450 ? 6 : E < 4780 ? 7 : 8; // 青铜 / 古典 / 中世纪 / 前工业 / 早期工业
-    const rnd = mulberry32((h.seed | 0) + 5150);
+    const rnd = mulberry32(((h.seedDawn ?? h.seed) | 0) + 5150);
     const nCiv = h.civSeeds.length;
     const civType = h.civLib.map(l => TYPE[l.cat] ? l.cat : 'agrarian');
     const typeOf = r => R.civ[r] >= 0 ? civType[R.civ[r]] : 'tribal';
@@ -99,9 +99,25 @@
     order.sort((a, b) => valleyScore[b] - valleyScore[a] || a - b);
     const nCradle = clamp(Math.round(nCiv / 4), 2, 4), minKm = kmR * 0.06;
     const cradleR = [];
+    // 人口较多且有合格河谷的不同大陆，优先各形成一个摇篮；仍保留自然条件和距离要求。
+    const continentPopulation = new Map();
+    for (let r = 1; r <= nR; r++) if (R.weight[r] > 0) continentPopulation.set(R.landComp[r], (continentPopulation.get(R.landComp[r]) || 0) + R.weight[r]);
+    const totalPopulation = [...continentPopulation.values()].reduce((a,b) => a+b, 0);
+    const localCandidates = Array.from({length:nR},(_,i) => i+1)
+      .filter(r => best > 0 && score[r] > 0 && R.river[r] >= 3 && R.pot[r] >= .35 && R.hab[r] >= .30 && R.civ[r] >= 0 && den[r] > maxDen * 0.004
+        && (continentPopulation.get(R.landComp[r]) || 0) >= totalPopulation / (4*nCradle))
+      .sort((a,b) => valleyScore[b] - valleyScore[a] || a-b);
+    const continents = [...new Set(localCandidates.map(r => R.landComp[r]))]
+      .sort((a,b) => (continentPopulation.get(b) || 0) - (continentPopulation.get(a) || 0));
+    for (const lc of continents) {
+      if (cradleR.length >= nCradle) break;
+      const r = localCandidates.find(r => R.landComp[r] === lc && cradleR.every(c => centerDist(c, r) >= minKm));
+      if (r !== undefined) cradleR.push(r);
+    }
     for (const r of order) { if (cradleR.length >= nCradle) break; if (cradleR.every(c => centerDist(c, r) >= minKm)) cradleR.push(r); }
     if (!cradleR.length) { // 没有像样的大河：退而取土地潜力最高、人口最密的区块
       let b = 1, bv = -1; for (let r = 1; r <= nR; r++) { const v = R.pot[r] * (0.3 + den[r] / Math.max(1e-12, maxDen)) * TYPE[typeOf(r)].cradle; if (v > bv) { bv = v; b = r; } } cradleR.push(b); }
+    cradleR.sort((a,b) => valleyScore[b] - valleyScore[a] || a-b);
     // 流域：沿河谷向两侧扩展到分数仍高的相邻区块
     const riverByRegion = new Map(); (opt.riverNames || []).forEach(rn => { const hx = Math.min(h.W - 1, Math.max(0, (rn.x / 2) | 0)), hy = Math.min(h.H - 1, Math.max(0, (rn.y / 2) | 0)); const r = R.regionOf[hy * h.W + hx]; if (r && !riverByRegion.has(r)) riverByRegion.set(r, rn); });
     const inCradle = new Int16Array(nR + 1).fill(-1);
@@ -163,7 +179,7 @@
       for (let r = 1; r <= nR; r++) { const v = reqMax[r]; if (v < INF) { Y[base + r] = v; src[base + r] = reqSrc[r]; } }
     }
     // 军事思潮：主思潮推演完毕之后，用独立的随机序列逐条推演
-    { const rndM = mulberry32((h.seed | 0) + 7717); IDEAS.forEach((o, k) => { if (o.mil) spreadIdea(k, o.s, rndM, null, null); }); }
+    { const rndM = mulberry32(((h.seedDawn ?? h.seed) | 0) + 7717); IDEAS.forEach((o, k) => { if (o.mil) spreadIdea(k, o.s, rndM, null, null); }); }
     function spreadIdea(k, s, rnd, reqMax, reqSrc) {
       const prev = (s - 1) * NN, gap = Math.max(60, 0.35 * (S[s] - S[s - 1]));
       const lb = r => s === 1 ? 0 : Y[prev + r] >= INF ? INF : Y[prev + r] + gap;
@@ -261,7 +277,7 @@
       finalStage[r] = fs; };
     // 现在的政治地图由历史决定（apply.js），这里不再按它约束发展阶段；只保留各时代的上限与荒野地带（自然条件）的上限
     for (let r = 1; r <= nR; r++) {
-      if (R.country[r] < 0 && !(nwNative[r] && stageAt(r, E) >= 3)) { const fs = Math.min(2, stageAt(r, E)); setStage(r, habitable(r) ? Math.max(1, fs) : 0, 0); continue; }
+      if (R.country[r] < 0 && !(habitable(r) && R.civ[r] >= 0) && !(nwNative[r] && stageAt(r, E) >= 3)) { const fs = Math.min(2, stageAt(r, E)); setStage(r, habitable(r) ? Math.max(1, fs) : 0, 0); continue; }
       for (let s2 = maxStage + 1; s2 <= 8; s2++) Y[s2 * NN + r] = INF;
       finalStage[r] = stageAt(r, E);
     }

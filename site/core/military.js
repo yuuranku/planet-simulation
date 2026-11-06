@@ -72,7 +72,7 @@
     const campaigns=[], effects=[], effectByCampaign=new Map(), used=new Map(), garrisons=new Map(), routes=new Map();
     const overland=fullTerrain?G.NavigationOverland.create(fullTerrain):null;
     const summary={campaigns:0,mobilized:0,deaths:0,combat:0,disease:0,starvation:0,extraFood:0,lostProduction:0,garrisonFood:0};
-    let tick = null;
+    let tick = null, attempt = null;
     // Regional cells choose the corridor; the unchanged physical grid decides
     // whether its coast and lake crossings are actually walkable. Only rejected
     // corridors need a finer search, limited to the same two adjacent regions.
@@ -159,10 +159,25 @@
     const pressure = new Float64Array(R.nR+1), armies = new Map();
     function spend(r, extraFood, lostProduction) {
       if (extraFood<0 || lostProduction<0 || extraFood+lostProduction>remaining(r)+1e-7) throw Error('军事供给超出当期剩余预算');
+      if(attempt) attempt.spending.push([r,extraFood,lostProduction]);
       tick.food.foodAvailable[r]-=extraFood+lostProduction;
       tick.food.foodProduction[r]-=lostProduction;
       tick.food.militaryExtra[r]+=extraFood; tick.food.militaryLaborLoss[r]+=lostProduction;
       if(tick.account){summary.extraFood+=extraFood; summary.lostProduction+=lostProduction;}
+    }
+    function usePeople(k,n) {
+      if(attempt && !attempt.used.has(k)) attempt.used.set(k,used.has(k)?used.get(k):null);
+      used.set(k,n);
+    }
+    function cancelAttempt() {
+      for(const [r,extra,labor] of attempt.spending) {
+        tick.food.foodAvailable[r]+=extra+labor; tick.food.foodProduction[r]+=labor;
+        tick.food.militaryExtra[r]-=extra; tick.food.militaryLaborLoss[r]-=labor;
+        if(tick.account){summary.extraFood-=extra;summary.lostProduction-=labor;}
+      }
+      for(const [k,n] of attempt.used) { if(n===null) used.delete(k); else used.set(k,n); }
+      for(const [station,n] of attempt.stations) station.free=n;
+      attempt=null;
     }
     // 兵种素质：受科技阶段上限约束；世界设定的训练 / 装备投入整体放大或压低
     const tf=rules.training/DEFAULTS.training, ef=rules.equipment/DEFAULTS.equipment;
@@ -216,9 +231,9 @@
         if(!own.length||!sys.standing.length){record(army,x,[]);continue;}
         let pop=0;for(const r of own)pop+=human.total(r);
         const sources=own.slice().sort((a,b)=>human.total(b)-human.total(a)||a-b).slice(0,4),srcPop=sources.reduce((s,r)=>s+human.total(r),0);
-        // 边地驻点：与他国接壤的地区，按近年战事压力与关堡排序
+        // 边地驻点：与他国或有人居住的无主部族接壤，按近年战事压力与关堡排序
         const edgeScore=[];
-        for(const r of own){let border=false;for(let k=R.off[r];k<R.off[r+1];k++){const b=R.nbr[k];if(R.edges[R.eid[k]].sea)continue;const o=tick.owner[b];if(o>=0&&o!==x.p){border=true;break;}}
+        for(const r of own){let border=false;for(let k=R.off[r];k<R.off[r+1];k++){const b=R.nbr[k];if(R.edges[R.eid[k]].sea)continue;const o=tick.owner[b];if(o!==x.p&&(o>=0||human.total(b)>0)){border=true;break;}}
           if(border)edgeScore.push([r,1+pressure[r]+(garrisons.has(r)?50:0)+human.total(r)*1e-4]);}
         edgeScore.sort((a,b)=>b[1]-a[1]||a[0]-b[0]);
         const nEdge=Math.min(3,1+Math.floor(own.length/12)),edges=edgeScore.slice(0,nEdge),edgeSum=edges.reduce((s,e)=>s+e[1],0);
@@ -263,7 +278,7 @@
       const out=[];
       for(const unit of army.units)for(const st of unit.stations){
         const far=!near.has(st.r);if(far&&!(capitalReach>0&&st.r===tick.sys.get(p).cap&&kmBetween(st.r,r)/22<capitalReach))continue;
-        const n=Math.floor(st.free*(far?share*.6:share));if(n<1)continue;st.free-=n;
+        const n=Math.floor(st.free*(far?share*.6:share));if(n<1)continue;if(attempt&&!attempt.stations.has(st))attempt.stations.set(st,st.free);st.free-=n;
         out.push({unit,station:st,n,far,km:far?kmBetween(st.r,r):0});
       }
       return out;
@@ -302,7 +317,7 @@
             force.requested+=share; force.supply.requested+=share*(extraEach+laborEach);
             const n=Math.min(share,Math.floor(remaining(origin)/Math.max(.0001,extraEach+laborEach)));
             if(!n)continue;
-            unit.mobilized=unit.remaining=n;force.groups.push(unit); used.set(key(origin,g),(used.get(key(origin,g))||0)+n);
+            unit.mobilized=unit.remaining=n;force.groups.push(unit); usePeople(key(origin,g),(used.get(key(origin,g))||0)+n);
             const extra=n*extraEach, labor=n*laborEach;spend(origin,extra,labor);
             force.supply.extraFood+=extra; force.supply.lostProduction+=labor; force.travelDays+=travel*n; force.mobilized+=n;
           }
@@ -329,7 +344,7 @@
         const want=cityGarrison(x.city.pop,sysKey,x.city.capital),pop=human.total(r),productionPerPerson=tick.food.foodProduction[r]/Math.max(1,pop);
         for(const g of human.view(r)){const occupied=used.get(key(r,g))||0,share=Math.min(Math.floor(want*g.population/Math.max(1,pop)),Math.floor(g.population*.06)-occupied);if(share<1)continue;
           const unit=group(r,g,0,'garrison','watch',stage),each=.25*unit.foodNeed+productionPerPerson*.5,n=Math.min(share,Math.floor(remaining(r)/Math.max(1e-4,each)));if(n<1)continue;
-          unit.mobilized=unit.remaining=n;unit.march=0;force.groups.push(unit);force.mobilized+=n;force.requested+=n;used.set(key(r,g),occupied+n);spend(r,n*.25*unit.foodNeed,n*productionPerPerson*.5);force.supply.extraFood+=n*.25*unit.foodNeed;}
+          unit.mobilized=unit.remaining=n;unit.march=0;force.groups.push(unit);force.mobilized+=n;force.requested+=n;usePeople(key(r,g),occupied+n);spend(r,n*.25*unit.foodNeed,n*productionPerPerson*.5);force.supply.extraFood+=n*.25*unit.foodNeed;}
       }
       if(force.mobilized) {
         force.travelDays/=force.mobilized;
@@ -410,6 +425,9 @@
       const won=record.status==='won',S=record.siege;
       const sideOf=k=>{const f=record.forces[k];return f.standing?`其中常备 ${f.standing.toLocaleString('zh-CN')} 人`:'全部为战时应召';};
       node(0,'muster',0,1);event(0,'mobilization','集结出征',`进攻方动员 ${A.mobilized.toLocaleString('zh-CN')} 人（${sideOf('attacker')}），防守方动员 ${D.mobilized.toLocaleString('zh-CN')} 人（${sideOf('defender')}）。`);
+      const AL=record.allies||{},sumN=L=>(L||[]).reduce((a,b)=>a+b.mobilized,0);
+      if(AL.attacker?.length)event(plan.muster,'allies','盟军会师',`${AL.attacker.length} 国盟军共 ${sumN(AL.attacker).toLocaleString('zh-CN')} 人自各自边境出兵，与主力联合进军。`,'attacker');
+      if(AL.defender?.length)event(plan.muster+.5,'allies','盟军来援',`${AL.defender.length} 国盟军共 ${sumN(AL.defender).toLocaleString('zh-CN')} 人赶来助守。`,'defender');
       node(plan.muster,'march',0,1);event(plan.muster,'march','部队开拔',`沿陆地通道进军，部队加权行程 ${A.travelDays.toFixed(1)} 日。`,'attacker');
       if(S){
         node(plan.contact,'siege',1,1);
@@ -451,6 +469,17 @@
       record.events.sort((a,b)=>a.dayOffset-b.dayOffset);
       dateRecord(record,record.year);
     }
+    function mergeForce(force,add,ally){
+      if(!(add.mobilized>0))return 0;const n0=force.mobilized,n1=add.mobilized,N=n0+n1;
+      for(const g of add.groups){g.ally=ally;force.groups.push(g);}
+      force.travelDays=(force.travelDays*n0+add.travelDays*n1)/N;
+      for(const stat of ['attack','defense'])force.traits[stat]=(force.traits[stat]*n0+add.traits[stat]*n1)/N;
+      force.training=(force.training*n0+add.training*n1)/N;force.equipment=(force.equipment*n0+add.equipment*n1)/N;force.morale=(force.morale*n0+add.morale*n1)/N;
+      force.mobilized=N;force.eligible+=add.eligible;force.requested+=add.requested;force.standing+=add.standing;
+      for(const k of ['extraFood','lostProduction','requested'])force.supply[k]+=add.supply[k];
+      force.supply.ratio=force.requested?Math.min(1,force.mobilized/force.requested):0;force.comp=compOf(force.groups);
+      return n1;
+    }
     function resolve(x) {
       if(!tick||tick.year!==x.year)throw Error('战役年份未建立供给预算');
       let edge=typeof x.edge==='number'?R.edges[x.edge]:x.edge;
@@ -464,8 +493,23 @@
       record.route=routeFor(edge,x.source);
       if(!record.route){chronicle(record,false);return record;}
       edge={...edge,km:record.route.km};
+      // 不足以构成战争的尝试不消耗粮食、兵员或驻军，也不生成战役记录。
+      attempt={spending:[],used:new Map(),stations:new Map()};
       const attacker=recruit(x.source,'attacker',x,edge);
       const defender=recruit(x.target,'defender',x,edge);record.forces={attacker,defender};
+      // 盟军：盟国从自己与目标接壤的地区出兵，沿各自的通道赶到战场，与主力合为一军
+      if(x.allies){record.allies={attacker:[],defender:[]};
+        for(const side of ['attacker','defender'])for(const al of x.allies[side]||[]){
+          const e2=R.edges[al.edge];if(!e2||e2.sea||tick.owner[al.source]!==al.p||!((e2.a===al.source&&e2.b===x.target)||(e2.b===al.source&&e2.a===x.target)))continue;
+          const rt=routeFor(e2,al.source);if(!rt)continue;
+          const f=recruit(al.source,'attacker',{...x,attacker:al.p,stage:al.stage,cohesion:al.cohesion,objective:'border',religion:undefined},{...e2,km:rt.km});
+          const n=mergeForce(side==='attacker'?attacker:defender,f,al.p);if(n>0)record.allies[side].push({p:al.p,source:al.source,mobilized:n,route:rt});}
+        if(!record.allies.attacker.length&&!record.allies.defender.length)delete record.allies;}
+      if(attacker.mobilized<1000 || defender.mobilized<1000) {
+        cancelAttempt(); campaigns.pop(); summary.campaigns--;
+        return {...record,id:null,forces:null,reason:'mobilization'};
+      }
+      attempt=null;
       let won=false, engaged=false;
       if(!attacker.requested) record.reason=attacker.eligible?'unreachable':'mobilization';
       else if(attacker.mobilized<1||attacker.supply.ratio<.25)record.reason='supply';
@@ -553,11 +597,12 @@
       for(const region of [x.source,x.target])exposure.set(region,{region,combat:engaged&&region===x.target,mobilized:0,deaths:0});
       for(const force of [attacker,defender])for(const g of force.groups){let local=exposure.get(g.source);if(!local)exposure.set(g.source,local={region:g.source,combat:false,mobilized:0,deaths:0});local.mobilized+=g.mobilized;local.deaths+=g.deaths.combat+g.deaths.disease+g.deaths.starvation;}
       if(attacker.mobilized+defender.mobilized){const effect={id:`effect-${record.id}`,campaignId:record.id,kind:'war',startYear:record.startTime,endYear:record.endTime,
-        regions:[...new Set([x.source,x.target,...attacker.groups.map(g=>g.source),...defender.groups.map(g=>g.source)])],participants:[x.attacker,x.defender].filter(p=>p>=0),
+        regions:[...new Set([x.source,x.target,...attacker.groups.map(g=>g.source),...defender.groups.map(g=>g.source)])],participants:[x.attacker,x.defender,...(record.allies?[...record.allies.attacker,...record.allies.defender].map(a=>a.p):[])].filter(p=>p>=0),
         exposure:[...exposure.values()],severity:clamp(deaths/Math.max(1,attacker.mobilized+defender.mobilized)*4,0,1),consequences:{mobilized:attacker.mobilized+defender.mobilized,deaths,controlChanged:won,reason:record.reason}};effects.push(effect);effectByCampaign.set(record.id,effect);}
+      if(record.allies)for(const side of ['attacker','defender'])for(const al of record.allies[side]){let d=0;for(const g of record.forces[side].groups)if(g.ally===al.p)d+=g.deaths.combat+g.deaths.disease+g.deaths.starvation;al.deaths=d;}
       // 战报只保留人口来源与兵种；结算用的中间量不进入输出，同来源同兵种的几支合并为一条
       for(const force of [attacker,defender]){const m=new Map();
-        for(const g of force.groups){const k=`${g.source},${g.species},${g.culture},${g.religion},${g.unit},${g.role}`,o=m.get(k);if(o)o.mobilized+=g.mobilized;else m.set(k,{source:g.source,species:g.species,culture:g.culture,religion:g.religion,mobilized:g.mobilized,role:g.role,unit:g.unit});}
+        for(const g of force.groups){const k=`${g.source},${g.species},${g.culture},${g.religion},${g.unit},${g.role},${g.ally??''}`,o=m.get(k);if(o)o.mobilized+=g.mobilized;else m.set(k,{source:g.source,species:g.species,culture:g.culture,religion:g.religion,mobilized:g.mobilized,role:g.role,unit:g.unit,...(g.ally!==undefined?{ally:g.ally}:{})});}
         force.groups=[...m.values()];}
       const guard=garrisons.get(x.target);if(guard){const last=guard.fort.log[guard.fort.log.length-1];last[1]=guard.groups.reduce((n,g)=>n+g.remaining,0);}
       return record;

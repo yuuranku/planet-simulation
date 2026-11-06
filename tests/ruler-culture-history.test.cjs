@@ -12,7 +12,7 @@ test('house creation uses its actual cultural era, retaining an existing family 
 });
 test('new rulers and governance use the culture at their recorded year, never the final culture',()=>{
  const q=polity();G.HistoryPolity.buildDynastyHouses(q,[q],libAt,random,G.CultureExt);
- G.HistoryPolity.buildDynastyRulers(q,{CE:G.CultureExt,libAt,rnd:random,end:300,govKey:()=> 'king',formAt:()=> 'kingdom',religions:[],regCount:new Map(),firstOf:new Map()});
+ G.HistoryPolity.buildDynastyRulers(q,{CE:G.CultureExt,libAt,rnd:random,accessionRnd:()=>0.5,end:300,govKey:()=> 'king',formAt:()=> 'kingdom',religions:[],regCount:new Map(),firstOf:new Map()});
  const before=q.rulers.filter(x=>x[0]<150),middle=q.rulers.filter(x=>x[0]>=150&&x[0]<200),after=q.rulers.filter(x=>x[0]>=200);
  assert.ok(before.length&&middle.length&&after.length);
  assert.ok(before.every(x=>x[1].includes('路易')&&x[2]==='国王'&&x[4]===0));
@@ -41,14 +41,14 @@ test('an inherited older foreign house preserves its original family culture and
 test('government style changes at settlement even when the culture itself stays the same',()=>{
  const q={...polity(),civ:0,initialCiv:0,settled:undefined,settledCiv:undefined,rulingCulture:[[0,0]],settled:155,settledCiv:0,dyn:[]};
  G.HistoryPolity.buildDynastyHouses(q,[q],libAt,random,G.CultureExt);
- G.HistoryPolity.buildDynastyRulers(q,{CE:G.CultureExt,libAt,rnd:random,end:300,govKey:()=> 'king',governmentStyle:(_q,y)=>y>=155?'feudal':'tribal',formAt:()=> 'kingdom',religions:[],regCount:new Map(),firstOf:new Map()});
+ G.HistoryPolity.buildDynastyRulers(q,{CE:G.CultureExt,libAt,rnd:random,accessionRnd:()=>0.5,end:300,govKey:()=> 'king',governmentStyle:(_q,y)=>y>=155?'feudal':'tribal',formAt:()=> 'kingdom',religions:[],regCount:new Map(),firstOf:new Map()});
  assert.equal(q.gov[0][3],'tribal');assert.equal(q.gov.find(x=>x[0]===155)[3],'feudal');
 });
 test('regnal numbering never combines identical given names from different culture libraries',()=>{
  const a={id:'number-a',x:{family:'romance',people:{surnames:['甲'],given:['同名']}}},b={id:'number-b',x:{family:'germanic',people:{surnames:['乙'],given:['同名']}}};
  const q={...polity(),born:0,died:12,initialCiv:0,civ:0,settled:6,settledCiv:1,rulingCulture:[[0,0],[6,1]],dyn:[]};const lookup=(p,y)=>[a,b][G.HistoryPolity.rulingCultureAt(p,y)];
  G.HistoryPolity.buildDynastyHouses(q,[q],lookup,()=>0,G.CultureExt);
- G.HistoryPolity.buildDynastyRulers(q,{CE:G.CultureExt,libAt:lookup,rnd:()=>0,end:12,govKey:()=> 'king',formAt:()=> 'kingdom',religions:[],regCount:new Map(),firstOf:new Map()});
+ G.HistoryPolity.buildDynastyRulers(q,{CE:G.CultureExt,libAt:lookup,rnd:()=>0,accessionRnd:()=>0.5,end:12,govKey:()=> 'king',formAt:()=> 'kingdom',religions:[],regCount:new Map(),firstOf:new Map()});
  assert.equal(q.rulers[0][1],'同名');assert.equal(q.rulers[1][1],'同名');
 });
 test('jitter cannot move a ruler or government record across its original culture boundary',()=>{
@@ -63,7 +63,7 @@ test('real history output keeps ruler, house and government provenance aligned t
  const lib={...french,cat:'agrarian',n:{states:['法'],cities:['法城'],provinces:['法省']},c:{roots:['法'],prefixes:['新'],suffixes:['地']},traits:[]};
  const h={seed:1,W:10,H:5,R:6400,popTotal:10000,civLib:[lib],speciesLibraries:[G.HumanRules.SPECIES[0]],settlements:[{cell:0,pop:1000,name:'城'}]},C={cities:[{r:1,idx:0,name:'城',founded:0,final:1000}],pop:Float32Array.from([1000,1000]),popN:2,popStep:500,roads:[],plagues:[],events:[]};
  require('./military-fixture-terrain.cjs')(G,R,h);
- const out=G.HistoryPolity.run(h,R,D,C,{targetCountries:80,provinces:[],religions:[],cultureNames:['法文明'],routes:[],admin:{response:80,road:90,sea:160}}), q=out.polities.find(p=>p.rulingCulture[0][1]===0);
+ const out=G.HistoryPolity.run(h,R,D,C,{targetCountries:80,targetTribal:0.35,provinces:[],religions:[],cultureNames:['法文明'],routes:[],admin:{response:80,road:90,sea:160}}), q=out.polities.find(p=>p.rulingCulture[0][1]===0);
  assert.ok(out.polities.every(p=>p.born>=200&&p.rulingCulture.every(x=>x[1]!==-1)));
  assert.ok(q);assert.ok(q.houses.length&&q.rulers.length&&q.gov.length);
  for(const r of q.rulers){const c=G.HistoryPolity.datedName(q.rulingCulture,r[0])[1];assert.equal(r[4],c);assert.ok(r[3]>=0&&r[3]<q.houses.length);if(c===-1)assert.equal(r[1],'姓名未详');else assert.ok(french.x.people.given.includes(r[5]));}
@@ -73,7 +73,7 @@ test('real history output keeps ruler, house and government provenance aligned t
 
 test('rebellion leaders use the current cultural name pool instead of an inherited foreign house',()=>{
  const q={...polity(),dyn:[]}; G.HistoryPolity.buildDynastyHouses(q,[q],libAt,random,G.CultureExt);
- G.HistoryPolity.buildDynastyRulers(q,{CE:G.CultureExt,libAt,rnd:random,end:300,govKey:()=> 'rebel',formAt:()=> 'kingdom',religions:[],regCount:new Map(),firstOf:new Map()});
+ G.HistoryPolity.buildDynastyRulers(q,{CE:G.CultureExt,libAt,rnd:random,accessionRnd:()=>0.5,end:300,govKey:()=> 'rebel',formAt:()=> 'kingdom',religions:[],regCount:new Map(),firstOf:new Map()});
  const later=q.rulers.filter(x=>x[0]>=150);assert.ok(later.length);assert.ok(later.every(x=>x[1].includes('源')&&!x[1].includes('卡佩')));
 });
 test('refined settlement boundary retains pre-settlement government before the style change',()=>{

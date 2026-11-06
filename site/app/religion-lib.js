@@ -30,7 +30,7 @@
   function selectedCount() { const s = getSel(); return s ? s.length : (builtin ? builtin.length : (window.RELIGION_LIBRARIES || []).length || 15); }
   function modal(title, body, foot) { $('libModalBody').innerHTML = `<header class="lm-head"><h3>${title}</h3><button class="x" data-lm-close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header><div class="lm-body">${body}</div>${foot ? `<footer class="lm-foot">${foot}</footer>` : ''}`; $('libModal').hidden = false; }
   const close = () => { $('libModal').hidden = true; };
-  async function show() { $('relPage').hidden = false; $('relGrid').innerHTML = '<p class="home-empty">正在载入宗教库…</p>'; await load(); render(); }
+  async function show() { G.LibNav && G.LibNav('relPage'); $('relPage').hidden = false; $('relGrid').innerHTML = '<p class="home-empty">正在载入宗教库…</p>'; await load(); render(); }
   function render() {
     const libs = all(), sel = getSel() || libs.map(l => l.id), T = TYPES();
     $('relSummary').textContent = `已选 ${sel.length} / ${libs.length} 个宗教库 · 推演时按宗教发源地的文明（生计大类、写实或架空风格）匹配所选库。宗教的类型与传播方式会改变传教、改宗、教派分裂、神权与教民起义的走向。`;
@@ -80,7 +80,7 @@
     };
   }
   function bind() {
-    $('relBack').onclick = () => { $('relPage').hidden = true; if (G.Home && !$('home').hidden) G.Home.renderHome(); };
+    $('relBack').onclick = () => { if (G.LibNav) G.LibNav(null); else $('relPage').hidden = true; if (G.Home && !$('home').hidden) G.Home.renderHome(); };
     $('relTabs').addEventListener('click', e => { const b = e.target.closest('[data-rtab]'); if (b) { tab = b.dataset.rtab; render(); } });
     $('relGrid').addEventListener('change', e => { const c = e.target.closest('[data-rsel]'); if (!c) return; let sel = getSel() || all().map(l => l.id); if (c.checked) { if (!sel.includes(c.dataset.rsel)) sel.push(c.dataset.rsel); } else { if (sel.length <= 1) { c.checked = true; alert('至少选择一个宗教库'); return; } sel = sel.filter(x => x !== c.dataset.rsel); } put(SEL, sel); render(); });
     $('relGrid').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const find = id => all().find(l => l.id === id);

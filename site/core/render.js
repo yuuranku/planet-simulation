@@ -19,7 +19,7 @@
     agri: lut([[0, '#f3eedf'], [0.2, '#eadb9c'], [0.45, '#b9d27c'], [0.7, '#6fb35f'], [1, '#2f7d45']], 0, 1),
     habit: lut([[0, '#f2ece4'], [0.2, '#f1c98c'], [0.45, '#e8e08a'], [0.7, '#8fcf86'], [1, '#2f9a7a']], 0, 1),
     veg: lut([[0, '#f1e9d2'], [0.25, '#dccf92'], [0.5, '#9ccc6e'], [0.75, '#5aa85a'], [1, '#2d7a46']], 0, 1),
-    pop: lut([[0, '#f6f1e8'], [0.3, '#f4dfb4'], [1, '#f2b46a'], [1.6, '#e07a46'], [2.1, '#b8403c'], [2.7, '#6e1d3c']], 0, 2.7),
+    pop: lut([[0, '#f6f1e8'], [1, '#f4dfb4'], [2, '#f2b46a'], [3, '#e07a46'], [4, '#b8403c'], [5, '#6e1d3c']], 0, 5),
     sprecip: lut([[0, '#f3e6c4'], [40, '#ece0a4'], [120, '#c4df9c'], [260, '#7cc8ae'], [500, '#4c9ad4'], [900, '#3561bd'], [1500, '#2b3f93']], 0, 1500),
     stemp: lut([[-45, '#323a8f'], [-25, '#5774cc'], [-8, '#9fc4ec'], [3, '#d8ecf2'], [12, '#f4f1c6'], [20, '#f6cd82'], [28, '#ec8d55'], [36, '#c9433d'], [44, '#8a1b35']], -45, 44)
   };
@@ -57,6 +57,13 @@
 
   function create(world) {
     const { P, Cl, K, Hy, Cv } = world;
+    const popPosition = value => {
+      if (!(value > 0)) return 0;
+      if (Cv.stats.populationDensityUniform) return 2.5 * Math.min(1, value / Cv.stats.populationDensityHigh);
+      const cuts = Cv.stats.populationDensityBreaks; let c = 0; while (c < cuts.length && (c === 0 ? value > cuts[c] : value >= cuts[c])) c++;
+      const lo = c ? cuts[c - 1] : 0, hi = c < cuts.length ? cuts[c] : Cv.stats.populationDensityHigh;
+      return c + (hi > lo ? Math.max(0, Math.min(1, (value - lo) / (hi - lo))) : 0.5);
+    };
     const W = P.W, H = P.H, cW = P.cW, cH = P.cH, vW = Cv.W, vH = Cv.H;
     const elev = P.elev, elevD = Hy.dispElev || P.elev; // elevD：与水系对齐的显示地表（湖面齐平、洼地填平、湖口开谷），只用于设色、晕渲与等高线
     if (P.terrainImport) { G.TerrainImport.bind(P); for (const field of [elevD, Hy.lakeSoft, Hy.lakeView]) G.Noise.bindTerrain(field, P.terrainImport); }
@@ -121,6 +128,8 @@
     const tmpC = [0, 0, 0], acc = [0, 0, 0];
     // 国家 / 实际治理 / 省份：使用全分辨率细化疆界（与矢量国界、省界完全一致）
     const FULL = { country: 1, govern: 1, province: 1, heritage: 1, atlas: 1, system: 1 };
+    // 附庸国 → 直接宗主（-1 为独立）；地图上附庸只用同色系，不画斜纹
+    const VAS = (() => { const v = new Int16Array(Cv.countries.length).fill(-1); let any = false; Cv.countries.forEach((k, i) => { if (k.liege !== undefined && k.liege >= 0 && k.liege !== i) { v[i] = k.liege; any = true; } }); return any ? v : null; })();
     const fullCol = (topic, f, out) => {
       const y = (f / W) | 0, x = f - y * W, vi = Math.min(vH - 1, y >> 1) * vW + Math.min(vW - 1, x >> 1);
       const k = Cv.countryF[f];
@@ -176,7 +185,7 @@
       const t = { arr, gw, gh };
       if (FULL[name] && Cv.countryF && gw === W) { // 标签：省份图按省，其余按国；无国家的陆地区分名义宣称与荒野
         const M = political().M, toLab = name === 'province' ? (m => m) : topicOf;
-        t.lab = name === 'province' ? M : Int32Array.from(M, topicOf); t.map = toLab; }
+        t.lab = name === 'province' ? M : Int32Array.from(M, topicOf); t.map = toLab; t.index = name === 'province' ? POL.I : POL.countryI; }
       tables.set(name, t); return t;
     }
     // 政区标签（全分辨率）：1000000+省 / 2000000+无省的国家 / -1 名义宣称的无主地 / -3 荒野 / -4 冰盖 / -2 水
@@ -192,7 +201,10 @@
         else if (k === -4) M[f] = -4;
         else { const vi = Math.min(vH - 1, ((f / W) | 0) >> 1) * vW + Math.min(vW - 1, (f % W) >> 1); M[f] = Cv.nominal[vi] >= 0 ? -1 : -3; } }
       const C = G.Edges.chains(M, W, H, (a, b) => a !== -2 && b !== -2);
-      POL = { M, C, I: G.Edges.index(C, W, H), topicOf };
+      // 国家专题只索引国家间界线，不能让邻近的省界抢走最近界线，
+      // 否则国界附近填色可能跳到另一侧。
+      const countryC = G.Edges.chains(M, W, H, (a, b) => a !== -2 && b !== -2 && topicOf(a) !== topicOf(b));
+      POL = { M, C, I: G.Edges.index(C, W, H), countryI: G.Edges.index(countryC, W, H), topicOf };
       return POL;
     }
     const wetF = Hy.wetSoft || null, deltaF = Hy.deltaSoft || null, plumeF = Hy.plume || null;
@@ -223,7 +235,7 @@
       if (uni) { best = l0; bw = 1; }
       else { best = -9; bw = -1;
         // 先看离这里最近的界线：点在线的哪一侧就取哪一侧的颜色（填色与界线是同一条曲线）
-        const m = t.map && POL ? G.Edges.side(POL.I, gx, gy, 1) : undefined;
+        const m = t.map && POL ? G.Edges.side(t.index, gx, gy, 1) : undefined;
         if (m !== undefined) { const lab = t.map(m); for (let n = 0; n < 16; n++) if (L[cIds[n]] === lab) { best = lab; bw = 1; break; } }
         if (best === -9) for (let n = 0; n < 16; n++) { const lab = L[cIds[n]]; if (lab === -2 || lab === best) continue; let sw = 0; for (let m = 0; m < 16; m++) if (L[cIds[m]] === lab) sw += cWt[m]; if (sw > bw) { bw = sw; best = lab; } } }
       if (best === -9) { acc[0] = WILD[0]; acc[1] = WILD[1]; acc[2] = WILD[2]; return acc; }
@@ -362,12 +374,14 @@
             else if (topic === 'agri' || topic === 'habit' || topic === 'pop' || topic === 'veg') {
               let v; const L = RAMPS[topic];
               if (topic === 'veg') v = bilinR(Cl.veg, gx, rpW, W) / 255;
-              else { v = bilinR(topic === 'agri' ? Cv.agri : topic === 'habit' ? Cv.hab : Cv.popDensity, gx, rpV, vW); if (topic === 'pop') v = Math.log10(1 + v); }
+              else { v = bilinR(topic === 'agri' ? Cv.agri : topic === 'habit' ? Cv.hab : Cv.populationDensitySmoothed, gx, rpV, vW);
+                if (topic === 'pop') v = popPosition(v); }
               const k = Math.max(0, Math.min(L.n - 1, ((v - L.lo) / (L.hi - L.lo) * (L.n - 1)) | 0)) * 3; r = L.out[k]; g = L.out[k + 1]; b = L.out[k + 2];
             } else if (topic === 'sprecip' || topic === 'stemp') {
               let v = bilinR(topic === 'sprecip' ? K.Ps[season] : K.T0[season], gx, rpC, cW); if (topic === 'stemp') v -= 0.0065 * e;
               const L = RAMPS[topic]; const k = Math.max(0, Math.min(L.n - 1, ((v - L.lo) / (L.hi - L.lo) * (L.n - 1)) | 0)) * 3; r = L.out[k]; g = L.out[k + 1]; b = L.out[k + 2];
             } else { r = LANDFLAT[0]; g = LANDFLAT[1]; b = LANDFLAT[2]; }
+            // 附庸不再画斜纹：同色系已能看出宗藩关系
             if (aux.elev !== false) {
               const xl = px > 0 ? eb[o - 1] : e, xr = px < w - 1 ? eb[o + 1] : e, yu = py > 0 ? eb[o - w] : e, yd = py < h - 1 ? eb[o + w] : e;
               const dzx = (Math.max(0, xr) - Math.max(0, xl)) / (2 * pxKmX * 1000) * Z, dzy = (Math.max(0, yd) - Math.max(0, yu)) / (2 * pxKmY * 1000) * Z;

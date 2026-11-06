@@ -56,12 +56,57 @@
     let fort=0;for(const f of H.forts||[]){if(f.region!==region)continue;const st=G.FortLifecycle?.at(f,time);if(st?.status!=='active')continue;const g=G.FortLifecycle.guardAt(f,time);if(g&&g[3]===owner)fort+=g[1]||0;}
     const sn=standing.reduce((s,x)=>s+x.n,0);return {sys,watch,standing,fort,total:watch+sn+fort};
   }
-  // 一场战役的称呼：目标地 + 之战 / 围城
-  function title(H,c,time){
-    const place=placeName(H,c.target,time,'边境');
-    if(!c.forces||!c.battle)return `${place}出兵`;
-    if(c.battle.kind==='siege')return c.siege?.fort&&!c.siege?.walls?`${place}关堡之战`:`${place}围城战`;
-    return `${place}之战`;
+  // 一场战役的称呼：以战地命名。战地无名时借最近的城邑与方位（某城以北、某城东南），再按战法与规模取名（渡口之战、夜袭、会战……），同名者依次称“第二次……”
+  const DIR8=['东','东南','南','西南','西','西北','北','东北'],CN=['','','二','三','四','五','六','七','八','九','十'];
+  const titleCache=new WeakMap();
+  // 地理名称（平原、盆地、高原、丘陵、山脉、半岛、湖……）：战地无城可名时，借山川之名
+  const GEO_KIND={plain:1,basin:1,plateau:1,hills:1,range:1,ridge:1,peninsula:1,lake:1,snow:1,island:1};
+  const geoIdx=new WeakMap();
+  function geoOf(){const d=G.app?.data;if(!d?.labels)return [];let L=geoIdx.get(d);if(!L){L=d.labels.filter(l=>GEO_KIND[l.type]&&l.name&&Number.isFinite(l.x));geoIdx.set(d,L);}return L;}
+  const unnamed=n=>!n||/^未命名/.test(n);
+  function anchorOf(H,region,time){
+    const own=placeName(H,region,time,null);if(own&&!unnamed(own))return{name:own,local:true};
+    const at=cutoff(time),Q=G.HistoryQuery;
+    for(const f of H.forts||[])if(f.region===region&&f.year<=at&&f.name&&!unnamed(f.name))return{name:f.name,local:true,fort:true};
+    if(!(region>0)||!H.cx)return null;
+    const W=H.FW||(H.W||0)*2,spacing=Math.sqrt(W*(H.H||1)*2/Math.max(1,H.nR||1)),x0=H.cx[region],y0=H.cy[region];
+    const wrap=dx=>{if(W){if(dx>W/2)dx-=W;if(dx<-W/2)dx+=W;}return dx;};
+    // 1. 身处某片平原、山地之中：直接以山川为名
+    let geo=null,gd=Infinity;for(const l of geoOf()){const dx=wrap(x0-l.x),dy=y0-l.y,r=Math.max(spacing*1.2,Math.sqrt(l.size||1)*1.4),d=Math.hypot(dx,dy)/r;if(d<gd){gd=d;geo=l;}}
+    if(geo&&gd<1)return{name:geo.name,local:true,geo:geo.type};
+    // 2. 附近的城邑 + 方位
+    let best=null,bd=Infinity;
+    for(const city of H.cities){if(!Q.exists(city,at))continue;const nm=Q.rowAt(city.names,at)?.[1]||city.name;if(unnamed(nm))continue;const dx=wrap(x0-city.x),dy=y0-city.y,d=dx*dx+dy*dy;if(d<bd){bd=d;best={nm,dx,dy};}}
+    if(best&&Math.sqrt(bd)<=spacing*5){
+      const dir=DIR8[((Math.round(Math.atan2(best.dy,best.dx)/(Math.PI/4))%8)+8)%8],near=Math.sqrt(bd)<spacing*1.6;
+      return{name:dir.length>1?`${best.nm}${dir}`:near?`${best.nm}${dir}郊`:`${best.nm}以${dir}`,local:false};
+    }
+    // 3. 稍远的山川
+    if(geo&&gd<2.5)return{name:geo.name,local:true,geo:geo.type};
+    return null;
+  }
+  function baseTitle(H,c){
+    const time=c.resultTime??c.startTime,a=anchorOf(H,c.target,time);
+    if(!a)return c.defender>=0?`${name(H,c.attacker,time)}伐${name(H,c.defender,time).replace(/(帝国|王国|公国|国)$/,'')}之役`:`${name(H,c.attacker,time)}远征`;
+    const p=a.name;
+    if(!c.forces||!c.battle)return `${p}出兵`;
+    if(c.battle.kind==='siege')return c.siege?.fort&&!c.siege?.walls?`${a.fort?p:p+'关堡'}之战`:`${p}围城战`;
+    const tac=new Map((c.tactics||[]).map(t=>[t.id,t])),mob=(c.forces.attacker?.mobilized||0)+(c.forces.defender?.mobilized||0);
+    if(tac.has('ambush'))return /渡口|半渡/.test(tac.get('ambush').detail||'')?`${p}渡口之战`:a.geo==='range'||a.geo==='ridge'||a.geo==='hills'?`${p}山道伏击战`:`${p}伏击战`;
+    if(tac.has('supply-raid')&&c.status!=='won'&&(tac.get('supply-raid').effect?.attackerShortage||0)>=.2)return `${p}粮道之战`; // 断粮而退，才以粮道为名
+    if(tac.has('surprise'))return `${p}夜袭`;
+    if(tac.has('feigned-retreat'))return `${p}诱敌之战`;
+    if(mob>=60000)return `${p}会战`;
+    if(mob<2500)return `${p}遭遇战`;
+    let hsh=0;for(const ch of String(c.id))hsh=(hsh*31+ch.charCodeAt(0))|0;
+    return Math.abs(hsh)%3===0?`${p}之役`:`${p}之战`;
+  }
+  function title(H,c){
+    let m=titleCache.get(H);
+    if(!m){m=new Map();const list=[...(H.military?.campaigns||[])].sort((a,b)=>(a.resultTime??a.startTime)-(b.resultTime??b.startTime)),seen=new Map();
+      // 同名战役：前五次称“第二次……”，再多就冠以年份
+      for(const x of list){const b=baseTitle(H,x),n=(seen.get(b)||0)+1;seen.set(b,n);m.set(x.id,n===1?b:n<=5?`第${CN[n]}次${b}`:`${Math.floor(x.resultTime??x.startTime)} 年${b}`);}titleCache.set(H,m);}
+    return m.get(c.id)||baseTitle(H,c);
   }
   function verdict(c,state,perspective){
     if(!state?.finished)return {k:'live',t:state?.phase==='muster'||state?.phase==='march'?'进军中':c.battle?.kind==='siege'?'围城中':'交战中'};
@@ -219,7 +264,7 @@
     const force=c.forces[side],s=state[side],p=c[side];
     const dead=s.deaths||{combat:0,disease:0,starvation:0},lost=dead.combat+dead.disease+dead.starvation;
     return `<div class="wr-side ${side}" style="--sc:${colorOf(H,p)}"><p class="wr-who"><i></i><b>${esc(name(H,p,time))}</b></p>
-      <p class="wr-role">${side==='attacker'?'进攻':'防守'} · ${esc(sysName(force.sys))}</p>
+      <p class="wr-role">${side==='attacker'?'进攻':'防守'} · ${esc(sysName(force.sys))}</p>${c.allies?.[side]?.length?`<p class="wr-allies" title="盟军与主力合为一军">盟军 ${c.allies[side].map(a=>`<span style="--ac:${colorOf(H,a.p)}">${esc(name(H,a.p,time))} ${count(a.mobilized)}</span>`).join('')}</p>`:''}
       <p class="wr-num"><b>${count(s.remaining)}</b><span>/ ${count(s.mobilized)}</span></p>
       <p class="wr-loss">${lost?`损失 ${count(lost)} <small>战 ${short(dead.combat)} · 病 ${short(dead.disease)} · 饥 ${short(dead.starvation)}</small>`:'<small>尚无损失</small>'}</p></div>`;
   }

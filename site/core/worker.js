@@ -2,7 +2,8 @@
 (function () {
   'use strict';
   const inWorker = typeof document === 'undefined' && typeof importScripts === 'function';
-  if (inWorker) importScripts('noise.js', 'edges.js', 'libraries.js', 'culture-ext.js', 'admin.js', 'religions.js', 'human-rules.js', 'human-anchors.js', 'human-population.js', 'human-economy.js', 'human-fortifications.js', 'holy-war.js', 'history/date.js', 'military.js', 'terrain-coast.js', 'terrain-import.js', 'planet.js', 'climate.js', 'hydro.js', 'navigation-overland.js', 'navigation.js', 'history/query.js', 'life-paths.js', 'life-story.js', 'life.js', 'life-text.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js', 'history/regions.js', 'history/dawn.js', 'history/cities.js', 'history/administration.js', 'history/territory.js', 'history/polity.js', 'history/outline.js', 'history/heritage.js', 'history/apply.js', 'history/index.js');
+  const RESOURCE_BUILD = '20261106f';
+  if (inWorker) importScripts(...['noise.js', 'edges.js', 'libraries.js', 'culture-ext.js', 'admin.js', 'religions.js', 'human-rules.js', 'human-anchors.js', 'human-population.js', 'human-economy.js', 'human-fortifications.js', 'holy-war.js', 'history/date.js', 'military.js', 'terrain-coast.js', 'terrain-import.js', 'planet.js', 'climate.js', 'hydro.js', 'navigation-overland.js', 'navigation.js', 'history/query.js', 'life-paths.js', 'life-story.js', 'life.js', 'life-text.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js', 'history/regions.js', 'history/dawn.js', 'history/cities.js', 'history/domestic-roads.js', 'history/administration.js', 'history/territory.js', 'history/polity.js', 'history/outline.js', 'history/heritage.js', 'history/apply.js', 'history/index.js'].map(src => src + '?build=' + RESOURCE_BUILD));
   const G = self;
   let world = null, R = null;
 
@@ -59,11 +60,11 @@
   }
   // 等高线按海岸地表裁剪：陆上等高线只留在陆上、海深线只留在海里。
   // 设色海岸用 coastSurface（带格下小岬、小湾），等高线取自格网高程，二者在近岸会错开——不裁剪时低等高线会伸出海岸、漂在海面上。
-  function clipCoast(list, A, W, H, STEP) {
+  function clipCoast(list, A, W, H, STEP, border = false) {
     const out = [], cs = (x, y) => G.Noise.coastSurface(A, W, H, x, y, true);
     for (const c of list) {
       // 陆上等高线还要落在近岸收口后的地表上（与设色、晕渲的岸坡一致），不再一头扒到海岸线上
-      const a = c.pts, want = c.level > 0, L = c.level, ok = want ? (v, x, y) => G.Noise.coastKeeps(L, v, A, W, H, x, y) : v => v <= 0;
+      const a = c.pts, want = border || c.level > 0, L = c.level, ok = border ? v => v > 0 : want ? (v, x, y) => G.Noise.coastKeeps(L, v, A, W, H, x, y) : v => v <= 0;
       let run = null;
       const flush = () => { if (run && run.length >= 4) out.push(Object.assign({}, c, { pts: Float32Array.from(run) })); run = null; };
       let px = a[0], py = a[1], pv = cs(px, py);
@@ -152,12 +153,76 @@
     out.sort((a, b) => b.n - a.n); const main = out.slice(0, cap);
     extra.sort((a, b) => b.d - a.d); return main.concat(extra.slice(0, 2500));
   }
+  function blurPopulationGrid(F, cw, ch) { const N = cw * ch; let A = Float32Array.from(F); const T = new Float32Array(N), r = 2; for (let it = 0; it < 2; it++) {
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { let s = 0; for (let k = -r; k <= r; k++) s += A[y * cw + (x + k + cw) % cw]; T[y * cw + x] = s / (2 * r + 1); }
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { let s = 0, n = 0; for (let k = -r; k <= r; k++) { const yy = y + k; if (yy < 0 || yy >= ch) continue; s += T[yy * cw + x]; n++; } A[y * cw + x] = s / n; } } return A; }
+  function populationDensityScale(Cv) {
+    // 同一世界以有人陆地的面积加权分位数分级；平滑时海洋、冰盖和无人区不参与平均。
+    const { W, H } = Cv, N = Cv.popDensity.length;
+    const smoothDensity = Cv.populationDensitySmoothed = new Float32Array(N), weights = new Float32Array(N);
+    const tmpDensity = new Float32Array(N), tmpWeights = new Float32Array(N);
+    const occupied = i => Cv.land[i] && !Cv.ice[i] && Cv.popDensity[i] > 0;
+    for (let i = 0; i < N; i++) if (occupied(i)) { smoothDensity[i] = Cv.popDensity[i]; weights[i] = 1; }
+    // 滑动窗口一次处理人口和覆盖面积，复用四张网格，避免逐格重复求和与分配多组临时数组。
+    for (let it = 0; it < 2; it++) {
+      for (let y = 0; y < H; y++) {
+        const row = y * W; let v = 0, w = 0;
+        for (let k = -2; k <= 2; k++) { const i = row + (k + W) % W; v += smoothDensity[i]; w += weights[i]; }
+        for (let x = 0; x < W; x++) {
+          const i = row + x; tmpDensity[i] = v / 5; tmpWeights[i] = w / 5;
+          const a = row + (x >= 2 ? x - 2 : x - 2 + W), b = row + (x + 3 < W ? x + 3 : x + 3 - W);
+          v += smoothDensity[b] - smoothDensity[a]; w += weights[b] - weights[a];
+        }
+      }
+      for (let x = 0; x < W; x++) {
+        let v = 0, w = 0, n = 0;
+        for (let y = 0; y < Math.min(3, H); y++) { const i = y * W + x; v += tmpDensity[i]; w += tmpWeights[i]; n++; }
+        for (let y = 0; y < H; y++) {
+          const i = y * W + x; smoothDensity[i] = v / n; weights[i] = w / n;
+          const a = y - 2, b = y + 3;
+          if (a >= 0) { v -= tmpDensity[a * W + x]; w -= tmpWeights[a * W + x]; n--; }
+          if (b < H) { v += tmpDensity[b * W + x]; w += tmpWeights[b * W + x]; n++; }
+        }
+      }
+    }
+    let minDensity = Infinity, maxDensity = 0, inhabitedArea = 0, inhabitants = 0;
+    for (let i = 0; i < smoothDensity.length; i++) if (occupied(i)) {
+      smoothDensity[i] /= weights[i];
+      const v = smoothDensity[i], area = Cv.hist.area[(i / Cv.W) | 0];
+      minDensity = Math.min(minDensity, v); maxDensity = Math.max(maxDensity, v); inhabitedArea += area; inhabitants += Cv.popDensity[i] * area;
+    }
+    // 非居住格也保留覆盖率渐变；仅在海洋和冰盖上裁掉显示。
+    // 用连续覆盖率衰减密度，避免无人区边缘出现半分辨率方块。
+    for (let i = 0; i < smoothDensity.length; i++) {
+      if (!occupied(i)) smoothDensity[i] = weights[i] > 1e-6 ? smoothDensity[i] / weights[i] : 0;
+      const coverage = Math.min(1, Math.max(0, weights[i]));
+      smoothDensity[i] *= coverage * coverage * (3 - 2 * coverage);
+    }
+    Cv.stats.populationDensityMean = inhabitedArea > 0 ? inhabitants / inhabitedArea : 0;
+    Cv.stats.populationDensityUniform = maxDensity > 0 && maxDensity - minDensity <= maxDensity * 1e-6;
+    Cv.stats.populationDensityBreaks = [];
+    Cv.stats.populationDensityHigh = maxDensity;
+    if (maxDensity > 0 && !Cv.stats.populationDensityUniform) {
+      // 对数直方图近似面积分位；格数固定，避免在手机上排序整个世界的栅格。
+      const bins = 2048, hist = new Float64Array(bins), lo = Math.log(minDensity), span = Math.log(maxDensity) - lo;
+      for (let i = 0; i < smoothDensity.length; i++) if (occupied(i)) {
+        const k = Math.min(bins - 1, Math.floor((Math.log(smoothDensity[i]) - lo) / span * bins));
+        hist[k] += Cv.hist.area[(i / Cv.W) | 0];
+      }
+      const percentiles = [0.1, 0.35, 0.65, 0.9, 0.95], values = []; let sum = 0, next = 0;
+      for (let k = 0; k < bins && next < percentiles.length; k++) {
+        sum += hist[k]; while (next < percentiles.length && sum >= inhabitedArea * percentiles[next]) {
+          values.push(k === 0 ? minDensity : Math.exp(lo + span * k / bins)); next++;
+        }
+      }
+      Cv.stats.populationDensityBreaks = values.slice(0, 4);
+      Cv.stats.populationDensityHigh = values[4];
+    }
+  }
   function topicZones(P, Cl, Hy, Cv, riverNames, Z, push) {
     const cw = Cv.W, ch = Cv.H, N = cw * ch, FW = P.W, land = Cv.land, ice = Cv.ice;
     const full = (A, none) => { const o = new Int16Array(N); for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const v = A[(2 * y) * FW + 2 * x]; o[y * cw + x] = v === none || !land[y * cw + x] ? -1 : v; } return o; };
-    const blur = (F) => { let A = Float32Array.from(F); const T = new Float32Array(N), r = 2; for (let it = 0; it < 2; it++) {
-      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { let s = 0; for (let k = -r; k <= r; k++) s += A[y * cw + (x + k + cw) % cw]; T[y * cw + x] = s / (2 * r + 1); }
-      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { let s = 0, n = 0; for (let k = -r; k <= r; k++) { const yy = y + k; if (yy < 0 || yy >= ch) continue; s += T[yy * cw + x]; n++; } A[y * cw + x] = s / n; } } return A; };
+    const blur = F => blurPopulationGrid(F, cw, ch);
     const binned = (F, th, mask) => { const B = blur(F), o = new Int16Array(N); for (let i = 0; i < N; i++) { if (!mask(i)) { o[i] = -1; continue; } let c = 0; while (c < th.length && B[i] >= th[c]) c++; o[i] = c; } return o; };
     const cat = (A) => { const o = new Int16Array(N); for (let i = 0; i < N; i++) o[i] = land[i] && A[i] >= 0 ? A[i] : -1; return o; };
     const MIN = Math.max(6, Math.round(N / 90000));
@@ -169,7 +234,16 @@
     push(() => { if (G.AdminSys) { const ord = G.AdminSys.ORDER, sysOf = Cv.countries.map(k => ord.indexOf(k.sys || G.AdminSys.classOfCountry(k))), o = new Int16Array(N);
       for (let i = 0; i < N; i++) { const k = Cv.country[i]; o[i] = k >= 0 ? sysOf[k] : -1; } Z.system = zoneLabels(o, cw, ch, MIN, 200); } });
     push(() => { const o = new Int16Array(N); for (let i = 0; i < N; i++) { const k = Cv.country[i]; o[i] = k < 0 ? -1 : Cv.gov[i] >= 171 ? 0 : Cv.gov[i] >= 87 ? 1 : 2; } Z.govern = zoneLabels(o, cw, ch, MIN * 2, 160); });
-    push(() => { Z.pop = zoneLabels(binned(Cv.popDensity, [1, 10, 50, 200], dry), cw, ch, MIN * 2, 160); });
+    push(() => {
+      const F = Cv.populationDensitySmoothed, thresholds = Cv.stats.populationDensityBreaks;
+      const cls = new Int16Array(N);
+      for (let i = 0; i < N; i++) {
+        if (!dry(i) || !(Cv.popDensity[i] > 0)) { cls[i] = -1; continue; }
+        if (Cv.stats.populationDensityUniform) { cls[i] = 2; continue; }
+        let c = 0; while (c < thresholds.length && (c === 0 ? F[i] > thresholds[c] : F[i] >= thresholds[c])) c++; cls[i] = c;
+      }
+      Z.pop = zoneLabels(cls, cw, ch, MIN * 2, 160);
+    });
     push(() => { Z.agri = zoneLabels(binned(Cv.agri, [0.2, 0.45, 0.7], dry), cw, ch, MIN * 2, 160); });
     push(() => { Z.habit = zoneLabels(binned(Cv.hab, [0.2, 0.45, 0.7], dry), cw, ch, MIN * 2, 160); });
     push(() => { const v = new Float32Array(N); for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) v[y * cw + x] = Cl.veg[(2 * y) * FW + 2 * x] / 255; Z.veg = zoneLabels(binned(v, [0.25, 0.5, 0.75], dry), cw, ch, MIN * 2, 160); });
@@ -186,14 +260,22 @@
     const t0 = Date.now();
     STRIP_JOBS.clear(); // 新世界作废所有在途条带
     const progress = (stage, f) => post({ type: 'progress', stage, f });
-    const P = G.Planet.build(cfg, progress, terrainRaster);
-    const K = G.Climate.simulate(P, cfg, progress);
-    const Cl = G.Climate.derive(P, K, cfg, progress);
-    const Hy = G.Hydro.simulate(P, Cl, cfg, progress);
-    const Cv = G.Society.run(P, Cl, Hy, cfg, progress);
+    // 专题图单独重摇：各推演阶段可用独立的种子偏移（rolls），上游阶段不变，下游随之重算
+    const RL = cfg.rolls || {}, SALT = { t: 0x51ed27, c: 0x2c9277, w: 0x6a09e6, s: 0x3c6ef3, d: 0x1f83d9, h: 0x5be0cd };
+    const salted = k => RL[k] > 0 ? ((cfg.seed | 0) + Math.imul(RL[k] | 0, 0x9e3779b1) + SALT[k]) | 0 : cfg.seed;
+    const cfgAt = k => { if (!(RL[k] > 0)) return cfg; const o = Object.assign({}, cfg, { seed: salted(k) });
+      if (k === 'c') { const r = G.Noise.mulberry32(o.seed ^ 0x7f4a7c15); o.tempBias = cfg.tempBias + (r() * 2 - 1) * 1.6; o.moisture = cfg.moisture * (0.86 + 0.28 * r()); } // 气候重摇：环流扰动换种子，并在 ±1.6°C、±14% 水汽内微调——同一类星球，换一种天气格局
+      return o; };
+    const P = G.Planet.build(cfgAt('t'), progress, terrainRaster); // 水系由地形决定，随地形一起重摇
+    const K = G.Climate.simulate(P, cfgAt('c'), progress);
+    const Cl = G.Climate.derive(P, K, cfgAt('c'), progress);
+    const Hy = G.Hydro.simulate(P, Cl, cfgAt('t'), progress);
+    const Cv = G.Society.run(P, Cl, Hy, cfgAt('s'), progress);
+    if (Cv.hist && RL.h > 0) { const h0 = Cv.hist.seed; Cv.hist.seedDawn = (h0 + Math.imul(RL.h | 0, 0x9e3779b1) + SALT.d) | 0; Cv.hist.seed = (h0 + Math.imul(RL.h | 0, 0x9e3779b1) + SALT.h) | 0; } // 历史重摇：文明兴起的先后与列国兴亡一起换
     // 历史与现在互为因果：从文明之初自由推演到现在，终局写回现在的地图（国家、省份、文化、宗教、国界省界）
     const Hc = G.History.core({ P, Hy, Cl, Cv, cfg }, progress);
     G.HistoryApply.apply({ P, Hy, Cl, Cv, cfg }, Hc);
+    populationDensityScale(Cv);
     Cl.Ts = null; Cl.Ps = null; // 释放全分辨率四季场
     const nextWorld = { P, K, Cl, Hy, Cv, cfg, Hc }, nextRenderer = G.Render.create(nextWorld);
     // 23 层等高线（原版 hypsometry：24 档、档界按平方递增，低地加密）+ 海深线的档位
@@ -294,7 +376,10 @@
         if ((ca >= 0) === (cb >= 0) || a === -4 || b === -4) continue;
         const m = o0 + (((o1 - o0) >> 2) << 1), x = Math.floor(C.pts[m]), y = Math.min(P.H - 1, Math.max(0, Math.floor(C.pts[m + 1])));
         if (!iceAt(y * FW2 + ((x % FW2) + FW2) % FW2)) frontier.push(C.pts.slice(o0, o1)); }
-      Object.assign(D.borders, { country, frontier, province }); });
+      // 边界来自栅格标签，而显示海岸是连续地表；沿同一海岸场裁剪，
+      // 防止界线末端漂到水面。保留原曲线，陆上填色与界线仍同源。
+      const clipped = lines => clipCoast(lines.map(pts => ({ pts })), P.elev, P.W, P.H, 0.25, true).map(c => c.pts);
+      Object.assign(D.borders, { country: clipped(country), frontier: clipped(frontier), province: clipped(province) }); });
     OVERLAY_TASKS.push(() => { D.borders.claim = boundaryLines(nm, cw, chh, (a, b, i, j) => a !== b && Cv.land[i] && Cv.land[j] && (st[i] < 0 || st[j] < 0) && (a >= 0 || b >= 0), 2); });
     // 专题注记（逐类）
     const Z = D.zones = {};

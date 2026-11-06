@@ -2,7 +2,7 @@
  * 参考：罗洪先《广舆图》（1555）卷首图例——府从□、州从◇、县从○、驿从△、卫从■——中国最早成体系的地图图例；
  *       城郭一律画成平面“方城”，按行政等级由小到大、由实到框：
  *         小聚落 △ 驿 · 城镇 ■ 实心小方 · 城市 □ 方城 · 大都会 回 府城 · 都城 朱印（红底白框的方印）· 古城 赭色缺角方城；
- *       要塞取欧洲棱堡（trace italienne）平面的五角星形，关隘为“墙中开门”，废弃旧关为只剩四角的残垣；
+ *       要塞画成带雉堞与拱门的城堡，关隘为“墙中开门”，废弃旧关为只剩四角的残垣；
  *       圣城为紫色光轮；遗迹、摇篮、圣地、思潮为六角形徽章（白色图形画在类别色上）。
  * 画布用 draw*()，图例用 svg*()，两边画出来一模一样。 */
 (function (G) {
@@ -16,7 +16,7 @@
     siege: { d: 'M2.5 21.5v-11h3v2.5h3v-2.5h3v2.5h3v-2.5h3v2.5h3v-2.5h3v11Z M12.6 12.5l-2.2 3.2 2.6 1.8-1.8 4h1.9l2-4.3-2.5-1.7 2-3Z' },     // 裂开的城墙：围城
     battle: { s: 1, d: 'M5 5 18.5 18.5 M19 5 5.5 18.5 M14.5 20.5l6-6 M3.5 14.5l6 6 M15 6l3-3 M9 6 6 3' },                                       // 交叉的双剑：古战场
     burned: { d: 'M12.5 2c1.2 4 6 6.2 6 12a6.5 6.5 0 0 1-13 0c0-3.2 2-4.8 3.2-6.6.2 2.2 1.3 3.4 2.6 3.6-.6-3.6.4-6.4 1.2-9Z' },                // 火焰：毁于战火
-    fort: { d: 'M12 2.2 14.6 7.6 20.9 7.9 16.4 12.1 18.1 18.5 12 15.3 5.9 18.5 7.6 12.1 3.1 7.9 9.4 7.6Z M12 8.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8Z' }, // 棱堡：旧关塞
+    fort: { d: 'M4.5 21.5V9.2L3 7.6V3.5h3.2v2h2.3v-2h2.3v2h1.4v-2h2.3v2h2.3v-2H21v4.1l-1.5 1.6v12.3Z M9.6 21.5v-4.3a2.4 2.4 0 0 1 4.8 0v4.3Z M7.2 11.4h2v3h-2Z M14.8 11.4h2v3h-2Z' }, // 城堡：雉堞、箭窗与拱门（关塞、要塞）
     revolt: { d: 'M4.5 2.5h2.2v19H4.5Z M6.7 3.5h13l-3.3 4.3 3.3 4.3h-13Z' },                                                                // 旗帜：起事处
     ruin: { d: 'M3 3h6v2.4H5.4V9H3Z M15 3h6v6h-2.4V5.4H15Z M3 15h2.4v3.6H9V21H3Z M18.6 15H21v6h-6v-2.4h3.6Z M10.5 10.5h3v3h-3Z' },          // 残垣：古城废墟
     capital: { d: 'M3 3h18v18H3Z M6.5 6.5v11h11v-11Z M9.5 9.5h5v5h-5Z' },                                                                     // 回字方印：古都
@@ -68,7 +68,7 @@
     if (kind === 'metro') { const s = Math.max(1.1, r * 0.42); c.fillStyle = INK; c.fillRect(x - s, y - s, 2 * s, 2 * s); }
     c.restore(); return r;
   }
-  // 要塞（棱堡五角星）与关隘（墙中开门）
+  // 要塞（城堡）与关隘（墙中开门）
   function drawFort(c, x, y, type, k) {
     k = k || 4.2; c.save(); c.lineJoin = 'miter';
     if (type === 'pass-fort') {
@@ -76,9 +76,9 @@
       c.beginPath(); c.rect(x - w, y - h, w - g, 2 * h); c.rect(x + g, y - h, w - g, 2 * h); c.rect(x - g - t, y - t * 1.35, t, t * 2.7); c.rect(x + g, y - t * 1.35, t, t * 2.7);
       c.lineWidth = 2.2; c.strokeStyle = 'rgba(255,253,247,.95)'; c.stroke(); c.fillStyle = '#4b3a2c'; c.fill();
     } else {
-      starPath(c, x, y + k * 0.06, k * 1.12, k * 0.66, 5);
-      c.lineWidth = 2.4; c.strokeStyle = 'rgba(255,253,247,.95)'; c.stroke(); c.fillStyle = '#c7a465'; c.fill(); c.lineWidth = 1.1; c.strokeStyle = '#4b3a2c'; c.stroke();
-      c.beginPath(); c.arc(x, y + k * 0.06, k * 0.26, 0, 7); c.fillStyle = '#4b3a2c'; c.fill();
+      // 城堡：雉堞、箭窗、拱门（白边描出，深褐填色）
+      const sc = k * 2.75 / 24; c.translate(x - 12 * sc, y - 12.5 * sc); c.scale(sc, sc); c.lineJoin = 'round';
+      c.lineWidth = 3.6; c.strokeStyle = 'rgba(255,253,247,.95)'; c.stroke(path('fort')); c.fillStyle = '#5a4430'; c.fill(path('fort'), 'evenodd');
     }
     c.restore(); return k;
   }
@@ -122,7 +122,7 @@
   const svgFort = type => {
     if (type === 'pass-fort') { const k = 4.4, x = 14, y = 7, w = k * 1.15, h = k * 0.42, g = k * 0.36, t = k * 0.5;
       return wrap(`<path d="M${x - w} ${y - h}h${w - g}v${2 * h}h${-(w - g)}Z M${x + g} ${y - h}h${w - g}v${2 * h}h${-(w - g)}Z M${x - g - t} ${y - t * 1.35}h${t}v${t * 2.7}h${-t}Z M${x + g} ${y - t * 1.35}h${t}v${t * 2.7}h${-t}Z" style="fill:#4b3a2c;stroke:none"/>`); }
-    return wrap(`<path d="${starD(14, 7.3, 5.3, 3.1, 5)}" style="fill:#c7a465;stroke:#4b3a2c;stroke-width:1;stroke-linejoin:miter"/><circle cx="14" cy="7.3" r="1.2" style="fill:#4b3a2c"/>`);
+    return wrap(`<path d="${GLYPH.fort.d}" transform="translate(8.2 1.1) scale(.5)" style="fill:#5a4430;stroke:rgba(255,253,247,.95);stroke-width:2.4;paint-order:stroke;stroke-linejoin:round;fill-rule:evenodd"/>`);
   };
   const svgHoly = col => { col = col || HOLY; let rays = ''; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; rays += `M${(14 + Math.cos(a) * 3.4).toFixed(2)} ${(7 + Math.sin(a) * 3.4).toFixed(2)}L${(14 + Math.cos(a) * 6).toFixed(2)} ${(7 + Math.sin(a) * 6).toFixed(2)}`; }
     return wrap(`<path d="${rays}" style="stroke:${col};stroke-width:1.3;stroke-linecap:round"/><circle cx="14" cy="7" r="2.5" style="fill:${col}"/>`); };

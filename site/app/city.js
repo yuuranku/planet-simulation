@@ -120,6 +120,7 @@
       <p class="city-eyebrow">${[role, TYPE[c.type] || '', k ? k.name : '无国家统治'].filter(Boolean).join(' · ')}</p><h3 data-name-id="city:${idx}" title="双击改名">${c.name}</h3>
       <dl class="city-facts">${f('人口', fmtPop(c.pop))}${f('建成区', area < 10 ? area.toFixed(1) + ' km²' : Math.round(area) + ' km²')}${f('省份', pv ? `<span data-name-id="province:${c.prov}">${pv.name}</span>` : '—')}${absorbed.map(([fort,st]) => f('旧关沿革', `${safe(app.nameOf('fort:'+fort.id,fort.name))} · ${G.HistoryDate.label(fort.year)}建造，${G.HistoryDate.label(st.since)}并入已有聚落`)).join('')}${f('文明', cu)}${f('语言', la)}${f('宗教', re)}${c.holy && c.holy.length ? f('圣城', c.holy.map(i => d.religions[i] ? '<span style="color:#6b3fa0">✦ ' + d.religions[i].name + '</span>' : '').join('、') + '的圣地') : ''}</dl>
       <div class="row" style="gap:6px;margin-top:8px"><button class="chip" id="cityZoom">放大到城市</button><button class="chip" id="cityFrom">从这里出发</button><button class="chip" id="cityTo">到这里去</button></div>`;
+    { const el = $('cityCard'); el.classList.add('has-vig'); el.style.setProperty('--vig', `url("${new URL('app/ui/vig-city.webp', location.href).href}")`); } // 卡头插画
     $('cityCard').hidden = false;
     const zoomTo = () => { const m = app.map, r = m.urbanRadiusPx(c) / m.view.s, want = 0.4 * Math.min(m.vw, m.vh) / Math.max(1e-6, r), z = Math.max(4, Math.min(1500, want / m.fitScale())); m.flyTo(c.x, c.y, z); };
     zoomTo();
@@ -288,6 +289,7 @@
     const info=app.fortInfo(fort,year), safe=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     const previous=lastActiveYear(fort,year); const box=$('cityCard');
     box.innerHTML=`<button class="city-x" id="cityCardX" title="关闭">×</button><p class="city-eyebrow">关塞沿革</p><h3>${safe(info.title)}</h3><dl class="city-facts">${info.rows.map(([a,b])=>fact(safe(a),safe(b))).join('')}</dl><div class="row" style="gap:6px;margin-top:8px"><button class="chip" id="cityZoom">地图定位</button>${previous!==null?'<button class="chip" id="fortPrevious">查看撤守前布局</button>':''}</div>`;
+    box.classList.add('has-vig'); box.style.setProperty('--vig',`url("${new URL('app/ui/vig-fort.webp', location.href).href}")`);
     box.hidden=false; $('cityCardX').onclick=close; $('cityZoom').onclick=()=>app.map.flyTo(fort.x,fort.y,10);
     if(previous!==null) $('fortPrevious').onclick=()=>{if(token===pendingToken)openFort(fort,previous);}; app.map.draw();
   }

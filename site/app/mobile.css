@@ -29,7 +29,7 @@
 
   /* 触屏没有悬停：去掉“点一下就粘住”的悬停底色 */
   .rail-btn:hover, .zoom button:hover, .x:hover, .results button:hover, .menu button:hover, .list button:hover, .tl-icon:hover, .tl-chip:hover, .city-x:hover { background: transparent; }
-  .btn.ghost:hover { background: #f1f4f6; } .btn.primary:hover { background: var(--accent); }
+  .btn.ghost:hover { background: #f7f2ea; } .btn.primary:hover { background: var(--accent); }
 
   /* ---------- 左侧工具栏 ---------- */
   .rail { width: calc(var(--rail) + var(--salz)); padding: 6px 0 6px var(--salz); gap: 0; justify-content: space-between; }
@@ -105,7 +105,7 @@
   /* ---------- 首页 / 文化库 / 宗教库 ---------- */
   .home { overscroll-behavior: contain; }
   .home-inner { max-width: none; padding: 0 calc(24px + var(--sarz)) 28px calc(24px + var(--salz)); }
-  .home-head { position: sticky; top: 0; z-index: 3; background: #f2f5f7; padding: 12px 0; margin-bottom: 16px; flex-wrap: nowrap; }
+  .home-head { position: sticky; top: 0; z-index: 3; background: #f7f3ec; padding: 12px 0; margin-bottom: 16px; flex-wrap: nowrap; }
   .home-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .home-actions .btn { white-space: nowrap; flex: none; }
   .home h2 { font-size: 24px; }

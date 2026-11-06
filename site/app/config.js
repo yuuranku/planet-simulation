@@ -175,7 +175,7 @@
     };
   }
   const VERSION = '1.4.3'; // 世界存档格式版本
-  const APP_VERSION = '1.4.3.1';
+  const APP_VERSION = '1.4.4';
   const verOf = f => f && f.engineVersion ? String(f.engineVersion) : '';
   const verCmp = (a, b) => { const pa = String(a).split('.').map(n => parseInt(n, 10) || 0), pb = String(b).split('.').map(n => parseInt(n, 10) || 0); for (let k = 0; k < 3; k++) { const d = (pa[k] || 0) - (pb[k] || 0); if (d) return d; } return 0; };
   // 世界文件必须包含可复现的完整设定；缺项或无效值明确报错，不重写用户的数据。
@@ -203,8 +203,12 @@
     G.HumanRules.species({ speciesLibraries: st.slibs.libraries });
     if (st.terrainInput) { const input=G.TerrainImport.validateInput(st.terrainInput), grid=gridOf(st); if(input.width>grid.W||input.height>grid.H) throw new Error('原图超过当前物理网格，请选择更大网格或明确缩小原图；不会自动降低精度'); }
     G.Military.validateRules(st.militaryRules);
+    if (st.rolls !== undefined && st.rolls !== null) { if (typeof st.rolls !== 'object' || Array.isArray(st.rolls)) throw new Error('专题重摇记录无效'); for (const [k, v] of Object.entries(st.rolls)) if (!ROLL_KEYS.includes(k) || !Number.isInteger(v) || v < 0 || v > 9999) throw new Error('专题重摇记录无效：' + k); }
     return st;
   }
+  // 专题图单独重摇：t 地形与水系 · c 气候 · s 人文分布 · h 列国历史
+  const ROLL_KEYS = ['t', 'c', 's', 'h'];
+  const rollsOf = st => { const r = {}; for (const k of ROLL_KEYS) { const v = st && st.rolls && st.rolls[k]; if (Number.isInteger(v) && v > 0) r[k] = v; } return r; };
   function randomize(st) {
     const r = Math.random;
     for (const q of Q) st.a[q.id] = q.o[(r() * q.o.length) | 0][0];
@@ -248,7 +252,8 @@
       admin: st.townsCustom ? +st.admin : tw, transport: st.townsCustom ? +st.transport : tw,
       tempBias: st.climateCustom ? +st.tempBias : cl[0], moisture: st.climateCustom ? +st.moisture : cl[1],
       lakeFactor: { A: 0.45, B: 1, C: 2.2 }[a.lakes || 'B'],
-      newWorld: a.newWorld === 'yes' ? true : a.newWorld === 'no' ? false : 'random'
+      newWorld: a.newWorld === 'yes' ? true : a.newWorld === 'no' ? false : 'random',
+      rolls: rollsOf(st)
     };
     // 文化库快照（所选内置库 id + 自定义库内容）
     if (st.libs) { out.cultureSelection = st.libs.ids; out.customLibraries = st.libs.custom || []; }
@@ -295,7 +300,7 @@
   function encode(st) {
     const ans = Q.map(q => q.o.findIndex(o => o[0] === st.a[q.id])).join('');
     const cj = Object.entries(st.custom || {}).filter(([, o]) => o.on).map(([q, o]) => q + ':' + Object.entries(o.v || {}).map(([k, v]) => k + '=' + v).join(',')).join(';');
-    const x = [cj ? 'u' + encodeURIComponent(cj) : '', st.popMode === 'range' ? `p${st.popLo}-${st.popHi}` : '', st.townsCustom ? `t${st.townsN}-${st.admin}-${st.transport}` : '', st.climateCustom ? `c${st.tempBias}_${st.moisture}` : ''].filter(Boolean).join('~');
+    const x = [cj ? 'u' + encodeURIComponent(cj) : '', st.popMode === 'range' ? `p${st.popLo}-${st.popHi}` : '', st.townsCustom ? `t${st.townsN}-${st.admin}-${st.transport}` : '', st.climateCustom ? `c${st.tempBias}_${st.moisture}` : '', (r => Object.keys(r).length ? 'g' + ROLL_KEYS.map(k => r[k] || 0).join('-') : '')(rollsOf(st))].filter(Boolean).join('~');
     const q = new URLSearchParams({ w: ans, s: st.seed }); if (st.res) q.set('r', st.res);
     if (x) q.set('x', x);
     q.set('h', libraryDigest(st));
@@ -316,8 +321,9 @@
       if (part[0] === 'p') { const [lo, hi] = part.slice(1).split('-'); st.popMode = 'range'; st.popLo = +lo; st.popHi = +hi; }
       if (part[0] === 't') { const [n, ad, tr] = part.slice(1).split('-'); st.townsCustom = true; st.townsN = +n; st.admin = +ad; st.transport = +tr; }
       if (part[0] === 'c') { const [tb, mo] = part.slice(1).split('_'); st.climateCustom = true; st.tempBias = +tb; st.moisture = +mo; }
+      if (part[0] === 'g') { const v = part.slice(1).split('-').map(Number); const r = {}; ROLL_KEYS.forEach((k, i) => { if (Number.isInteger(v[i]) && v[i] > 0 && v[i] <= 9999) r[k] = v[i]; }); if (Object.keys(r).length) st.rolls = r; }
     }
     return st;
   }
-  G.Config = { Q, PAGES, CUSTOM, HINTS, hintOf, VERSION, APP_VERSION, verOf, verCmp, validateState, defaults, randomize, toCfg, encode, decode, ERA_RANGE, AGE, ageLabel, CLIMATE, gridFor, gridOf };
+  G.Config = { ROLL_KEYS, rollsOf, Q, PAGES, CUSTOM, HINTS, hintOf, VERSION, APP_VERSION, verOf, verCmp, validateState, defaults, randomize, toCfg, encode, decode, ERA_RANGE, AGE, ageLabel, CLIMATE, gridFor, gridOf };
 })(window);

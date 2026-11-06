@@ -13,10 +13,10 @@
 .tl-focus .wr-card > summary:hover { background: var(--hover); }
 .tl-focus .wr-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .tl-focus .wr-title b { font: 600 15px/1.3 var(--font); color: var(--t1); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tl-focus .wr-pill { flex: none; margin-left: auto; font: 600 10.5px/18px var(--font); font-style: normal; padding: 0 7px; border-radius: 5px; background: rgba(15,17,20,.06); color: var(--t2); }
-.tl-focus .wr-pill.win { background: #fbe9e6; color: #a3291e; }
-.tl-focus .wr-pill.lose { background: #e9eef3; color: #3f5366; }
-.tl-focus .wr-pill.live { background: #a3291e; color: #fff; }
+.tl-focus .wr-pill { flex: none; margin-left: auto; font: 600 10.5px/18px var(--font); font-style: normal; padding: 0 7px; border-radius: 5px; background: rgba(19, 17, 14,.06); color: var(--t2); }
+.tl-focus .wr-pill.win { background: #f5f0e6; color: #a3291e; }
+.tl-focus .wr-pill.lose { background: #f3eee3; color: #3f5366; }
+.tl-focus .wr-pill.live { background: #a3291e; color: #fbf6ea; }
 .tl-focus .wr-meta { font: 400 11px var(--font); color: var(--t3); font-variant-numeric: tabular-nums; }
 .tl-focus .wr-vsline { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 12px; color: var(--t1); min-width: 0; }
 .tl-focus .wr-vsline i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
@@ -25,18 +25,18 @@
 .tl-focus .wr-h { margin: 16px 0 4px; font: 600 12px var(--font); color: var(--t1); }
 
 /* 对阵图 */
-.tl-focus .wr-fig { margin: 4px 0 0; padding: 8px 6px 6px; border-radius: 10px; background: #f6f7f5; box-shadow: inset 0 0 0 1px var(--hair); }
+.tl-focus .wr-fig { margin: 4px 0 0; padding: 8px 6px 6px; border-radius: 10px; background: #f8f5ee; box-shadow: inset 0 0 0 1px var(--hair); }
 .tl-focus .wr-fig svg { display: block; width: 100%; height: auto; overflow: visible; stroke: none; stroke-width: 1; fill: none; }
 .tl-focus .wr-fig svg text { stroke: none; }
-.tl-focus .wr-fig .fb-n { font: 600 10.5px var(--num); fill: #1d2024; }
-.tl-focus .wr-fig .fb-l { font: 500 9.5px var(--font); fill: #5b6169; }
-.tl-focus .wr-fig .fb-u { font: 400 9px var(--font); fill: #9aa0a7; }
-.tl-focus .wr-fig .fb-in { font: 500 9px var(--font); fill: #3d4248; }
-.tl-focus .wr-fig .fb-side { font: 600 10px var(--font); fill: #1d2024; }
+.tl-focus .wr-fig .fb-n { font: 600 10.5px var(--num); fill: #241f1a; }
+.tl-focus .wr-fig .fb-l { font: 500 9.5px var(--font); fill: #6d5d4d; }
+.tl-focus .wr-fig .fb-u { font: 400 9px var(--font); fill: #ac9e8c; }
+.tl-focus .wr-fig .fb-in { font: 500 9px var(--font); fill: #4a3f34; }
+.tl-focus .wr-fig .fb-side { font: 600 10px var(--font); fill: #241f1a; }
 .tl-focus .wr-fig .fb-note { font: 500 9.5px var(--font); fill: #8a2f24; }
 .tl-focus .wr-fig .fb.fade { opacity: .45; }
 .tl-focus .wr-fig figcaption { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; }
-.tl-focus .wr-fig figcaption span { font-size: 10.5px; line-height: 18px; padding: 0 6px; border-radius: 4px; background: #fff; color: var(--t2); box-shadow: inset 0 0 0 1px var(--hair); }
+.tl-focus .wr-fig figcaption span { font-size: 10.5px; line-height: 18px; padding: 0 6px; border-radius: 4px; background: #fbf6ea; color: var(--t2); box-shadow: inset 0 0 0 1px var(--hair); }
 
 /* 对阵双方 */
 .tl-focus .wr-sides { display: grid; grid-template-columns: 1fr 44px 1fr; margin: 12px 0 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
@@ -61,23 +61,23 @@
 .tl-focus .wr-row > b { font: 500 11px var(--num); color: var(--t2); }
 .tl-focus .wr-row > b:last-child { text-align: right; }
 .tl-focus .wr-row > span { font-size: 10.5px; color: var(--t3); text-align: center; }
-.tl-focus .wr-bar { display: flex; height: 6px; border-radius: 3px; background: rgba(15,17,20,.06); overflow: hidden; }
+.tl-focus .wr-bar { display: flex; height: 6px; border-radius: 3px; background: rgba(19, 17, 14,.06); overflow: hidden; }
 .tl-focus .wr-bar.a { justify-content: flex-end; }
-.tl-focus .wr-bar s { display: block; height: 100%; background: rgba(15,17,20,.22); text-decoration: none; border-radius: 3px; }
+.tl-focus .wr-bar s { display: block; height: 100%; background: rgba(19, 17, 14,.22); text-decoration: none; border-radius: 3px; }
 .tl-focus .wr-row.lead-a .wr-bar.a s, .tl-focus .wr-row.lead-d .wr-bar.d s { background: var(--t1); }
 .tl-focus .wr-row.lead-a > b:first-child, .tl-focus .wr-row.lead-d > b:last-child { color: var(--t1); font-weight: 600; }
 
 /* 战术 */
 .tl-focus .wr-tactics { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 0; }
-.tl-focus .wr-tactics span { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 3px; border-radius: 999px; background: rgba(15,17,20,.05); font-size: 11px; color: var(--t1); cursor: help; }
-.tl-focus .wr-tactics i { font-style: normal; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 9.5px; font-weight: 700; color: #fff; background: #a3291e; }
+.tl-focus .wr-tactics span { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 3px; border-radius: 999px; background: rgba(19, 17, 14,.05); font-size: 11px; color: var(--t1); cursor: help; }
+.tl-focus .wr-tactics i { font-style: normal; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 9.5px; font-weight: 700; color: #fbf6ea; background: #a3291e; }
 .tl-focus .wr-tactics .defender i { background: #3f5366; }
 
 /* 战役经过 */
 .tl-focus .wr-steps { list-style: none; display: grid; grid-template-columns: repeat(6, 1fr); margin: 8px 0 6px; padding: 0; }
 .tl-focus .wr-steps li { position: relative; text-align: center; font-size: 10.5px; color: var(--t3); padding-top: 12px; }
-.tl-focus .wr-steps li::before { content: ''; position: absolute; top: 2px; left: 50%; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1.5px rgba(15,17,20,.2); z-index: 1; }
-.tl-focus .wr-steps li::after { content: ''; position: absolute; top: 5px; left: -50%; width: 100%; height: 1.5px; background: rgba(15,17,20,.1); }
+.tl-focus .wr-steps li::before { content: ''; position: absolute; top: 2px; left: 50%; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%; background: #fbf6ea; box-shadow: inset 0 0 0 1.5px rgba(19, 17, 14,.2); z-index: 1; }
+.tl-focus .wr-steps li::after { content: ''; position: absolute; top: 5px; left: -50%; width: 100%; height: 1.5px; background: rgba(19, 17, 14,.1); }
 .tl-focus .wr-steps li:first-child::after { display: none; }
 .tl-focus .wr-steps li.done { color: var(--t2); }
 .tl-focus .wr-steps li.done::before, .tl-focus .wr-steps li.done::after { background: var(--t1); box-shadow: none; }
@@ -87,7 +87,7 @@
 .tl-focus .wr-route em { font-style: normal; margin: 0 4px; color: var(--t2); }
 .tl-focus .wr-log { list-style: none; margin: 0; padding: 0; }
 .tl-focus .wr-log li { position: relative; display: grid; grid-template-columns: 52px 1fr; gap: 10px; padding: 5px 6px 6px; margin: 0 -6px; border-radius: 6px; }
-.tl-focus .wr-log li::before { content: ''; position: absolute; left: 56px; top: 11px; width: 6px; height: 6px; border-radius: 50%; background: rgba(15,17,20,.2); }
+.tl-focus .wr-log li::before { content: ''; position: absolute; left: 56px; top: 11px; width: 6px; height: 6px; border-radius: 50%; background: rgba(19, 17, 14,.2); }
 .tl-focus .wr-log li > div { padding-left: 10px; }
 .tl-focus .wr-log li.t-attack::before, .tl-focus .wr-log li.t-result::before, .tl-focus .wr-log li.t-siege::before, .tl-focus .wr-log li.t-encounter::before { background: #a3291e; }
 .tl-focus .wr-log li.t-tactic::before { background: #c48a1c; }
@@ -98,9 +98,9 @@
 .tl-focus .wr-log li.cur { background: rgba(163,41,30,.05); }
 .tl-focus .wr-log li.cur time { color: #a3291e; font-weight: 600; }
 .tl-focus .wr-empty { font-size: 11.5px; color: var(--t3); }
-.tl-focus .wr-result { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; font-size: 11.5px; line-height: 1.6; color: var(--t2); background: rgba(15,17,20,.04); }
-.tl-focus .wr-result.win { background: #fbefed; }
-.tl-focus .wr-result.lose { background: #eef2f5; }
+.tl-focus .wr-result { margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; font-size: 11.5px; line-height: 1.6; color: var(--t2); background: rgba(19, 17, 14,.04); }
+.tl-focus .wr-result.win { background: #f7f3eb; }
+.tl-focus .wr-result.lose { background: #f5f1e7; }
 .tl-focus .wr-result b { color: var(--t1); }
 
 /* 部队构成 */
@@ -129,7 +129,7 @@
 .tl-focus .wr-stations span { font: 500 11.5px var(--num); color: var(--t2); }
 .tl-focus .wr-stations small { grid-column: 1 / -1; font-size: 10.5px; color: var(--t3); }
 .tl-focus .wr-ideas { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 8px; }
-.tl-focus .wr-ideas span { font-size: 10.5px; padding: 1px 7px; border-radius: 5px; background: #fbe9e6; color: #a3291e; cursor: pointer; }
+.tl-focus .wr-ideas span { font-size: 10.5px; padding: 1px 7px; border-radius: 5px; background: #f5f0e6; color: #a3291e; cursor: pointer; }
 .tl-focus .wr-kpis { grid-template-columns: repeat(4, 1fr); margin: 0 0 4px; }
 .tl-focus .wr-kpis b { font-size: 16px; }
 .tl-focus .mr-sec .wr-card:first-of-type { margin-top: 4px; }
@@ -137,23 +137,23 @@
 /* 战事簿：分页签 + 历代战役列表 */
 .military-panel { width: 360px; }
 .military-panel .tf-eyebrow i { background: #a3291e; }
-.tl-focus .ml-tabs { display: flex; gap: 2px; margin: 14px 0 6px; padding: 3px; border-radius: 10px; background: #f3efe8; }
+.tl-focus .ml-tabs { display: flex; gap: 2px; margin: 14px 0 6px; padding: 3px; border-radius: 10px; background: #f3ede2; }
 .tl-focus .ml-tabs button { flex: 1; height: 30px; border-radius: 8px; font-size: 12.5px; color: var(--t2); display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 .tl-focus .ml-tabs button small { font: 600 10.5px var(--num); color: var(--t3); }
-.tl-focus .ml-tabs button.on { background: #fff; color: var(--t1); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+.tl-focus .ml-tabs button.on { background: #fbf6ea; color: var(--t1); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0,.1); }
 .tl-focus .ml-tabs button.on small { color: #9b2a1f; }
 .tl-focus .ml-sum { grid-template-columns: repeat(4, 1fr); margin: 10px 0 8px; }
 .tl-focus .ml-filter { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
-.tl-focus .ml-filter input[type=search], .tl-focus .ml-filter select { height: 32px; border: 1px solid #e3e0da; border-radius: 8px; padding: 0 10px; font: 12.5px var(--font); background: #fbfaf8; color: var(--t1); min-width: 0; }
-.tl-focus .ml-filter input[type=search]:focus { outline: none; border-color: #b08a5a; background: #fff; }
+.tl-focus .ml-filter input[type=search], .tl-focus .ml-filter select { height: 32px; border: 1px solid #eae0cd; border-radius: 8px; padding: 0 10px; font: 12.5px var(--font); background: #fbf6ea; color: var(--t1); min-width: 0; }
+.tl-focus .ml-filter input[type=search]:focus { outline: none; border-color: #b08a5a; background: #fbf6ea; }
 .tl-focus .ml-filter label { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--t2); cursor: pointer; }
 .tl-focus .ml-filter label input { margin: 0; accent-color: #9b2a1f; }
 .tl-focus .ml-count { margin: 8px 0 4px; font-size: 11px; color: var(--t3); }
 .tl-focus .ml-list { list-style: none; margin: 0; padding: 0; }
 .tl-focus .ml-item { border-bottom: 1px solid var(--hair); cursor: default; }
 .tl-focus .ml-row { width: 100%; display: grid; grid-template-columns: 46px minmax(0, 1fr) auto 26px; align-items: center; gap: 8px; padding: 8px 4px; text-align: left; border-radius: 8px; }
-.tl-focus .ml-row:hover { background: #faf6ef; }
-.tl-focus .ml-item.open .ml-row { background: #f7f0e4; }
+.tl-focus .ml-row:hover { background: #f7f3ec; }
+.tl-focus .ml-item.open .ml-row { background: #f3ede2; }
 .tl-focus .ml-row time { font: 500 10.5px var(--num); color: var(--t3); font-variant-numeric: tabular-nums; }
 .tl-focus .ml-main { min-width: 0; display: flex; flex-direction: column; }
 .tl-focus .ml-main b { font: 600 13px/1.35 var(--font); color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -164,8 +164,8 @@
 .tl-focus .ml-num b { font: 600 12px var(--num); color: var(--t1); }
 .tl-focus .ml-num small { font-size: 10px; color: #8a2f24; }
 .tl-focus .ml-seal { min-width: 24px; height: 18px; padding: 0 5px; display: grid; place-items: center; border-radius: 5px; font: 600 10.5px var(--font); }
-.tl-focus .ml-seal.win { color: #a3291e; background: #fbe9e6; }
-.tl-focus .ml-seal.lose { color: #3f5366; background: #e9eef3; }
+.tl-focus .ml-seal.win { color: #a3291e; background: #f5f0e6; }
+.tl-focus .ml-seal.lose { color: #3f5366; background: #f3eee3; }
 .tl-focus .ml-open { padding: 0 0 10px; }
 .tl-focus .ml-open .wr-card { border-bottom: 0; }
 .tl-focus .ml-open .wr-card > summary { display: none; }
@@ -177,14 +177,17 @@
 .tl-focus .mr-sum small { font-size: 10.5px; color: var(--t3); }
 
 /* 城市卡：守军与攻守城记录 */
-.tl-city .tl-garrison { font: 600 13px var(--num, ui-monospace, monospace); color: #2b2420; }
+.tl-city .tl-garrison { font: 600 13px var(--num, ui-monospace, monospace); color: #2a241e; }
 .tl-city .tl-sieges { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
-.tl-city .tl-sieges li { display: grid; grid-template-columns: 84px 1fr auto; gap: 8px; align-items: baseline; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; cursor: pointer; font-size: 12px; color: #2b2420; }
-.tl-city .tl-sieges li:hover { background: rgba(15,17,20,.04); }
+.tl-city .tl-sieges li { display: grid; grid-template-columns: 84px 1fr auto; gap: 8px; align-items: baseline; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; cursor: pointer; font-size: 12px; color: #2a241e; }
+.tl-city .tl-sieges li:hover { background: rgba(19, 17, 14,.04); }
 .tl-city .tl-sieges li b { margin: 0; font: 500 11px ui-monospace, monospace; }
-.tl-city .tl-sieges li small { display: block; font-size: 10.5px; color: #8a8070; }
+.tl-city .tl-sieges li small { display: block; font-size: 10.5px; color: #8b7763; }
 .tl-city .tl-sieges li em { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 0 6px; line-height: 18px; border-radius: 5px; white-space: nowrap; }
-.tl-city .tl-sieges em.win { background: #fbe9e6; color: #a3291e; }
-.tl-city .tl-sieges em.lose { background: #e9eef3; color: #3f5366; }
-.tl-city .tl-sieges em.live { background: #a3291e; color: #fff; }
+.tl-city .tl-sieges em.win { background: #f5f0e6; color: #a3291e; }
+.tl-city .tl-sieges em.lose { background: #f3eee3; color: #3f5366; }
+.tl-city .tl-sieges em.live { background: #a3291e; color: #fbf6ea; }
 .tl-legend .tl-armykey { display: inline-flex; align-items: center; gap: 5px; }
+/* 盟军：国色小签 */
+.tl-focus .wr-allies { margin: 3px 0 0; font-size: 10.5px; color: var(--t3); display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.tl-focus .wr-allies span { padding: 0 6px; border-radius: 9px; background: color-mix(in srgb, var(--ac) 22%, #fffaf0); border: 1px solid color-mix(in srgb, var(--ac) 55%, transparent); color: #3a2f25; }

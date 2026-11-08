@@ -187,8 +187,15 @@
       app.ui && app.ui.refresh(); }
     if (!H || hFor !== app.data) {
       $('tlLoading').hidden = false; $('tlLoadText').textContent = '正在推演历史…'; $('tlLoadBar').style.width = '5%';
-      const d = app.data; loading = loading || app.call('history', {});
-      const m = await loading; loading = null;
+      const d = app.data, job = loading = loading || app.call('history', {});
+      let m;
+      try { m = await job; }
+      catch (error) {
+        if (loading === job) loading = null;
+        if (error.name !== 'AbortError' && on && app.data === d) $('tlLoadText').textContent = '历史加载失败，请关闭后重试';
+        return;
+      }
+      if (loading === job) loading = null;
       if (!on || app.data !== d) return;
       if (!m || !m.data) { $('tlLoadText').textContent = '历史推演失败，请重新推演世界后再试'; return; }
       H = m.data; app.history = H; hFor = d; prepare(); year = 0;
@@ -197,7 +204,14 @@
     prefixChanged();
     renderLegend(); drawBand(); setYear(year, true);
   }
+  function cancelLoading() {
+    if (!loading) return;
+    const job = loading; loading = null;
+    app.cancelHistory(job.requestId);
+    $('tlLoadText').textContent = '历史加载已取消，请重新打开历史地图';
+  }
   function close() {
+    cancelLoading();
     on = false; setPlaying(false);G.Person?.hide();G.MilitaryMap?.hide();G.PowerRank?.hide();
     for (const id of ['timeline', 'tlTicker', 'tlLegend', 'tlDrawer', 'tlCity', 'tlProv', 'tlFocus', 'tlFeedAll']) $(id).hidden = true; provCard = null; provPath = null; feedAllOpen = false; pulses = []; $('tlRiver').hidden = true; cardCity = -1; focusP = -1; ghostPath = null;
     document.body.classList.remove('tl-on');
@@ -1455,6 +1469,6 @@
     el.style.left = (a * 100) + '%'; el.style.width = (w * 100) + '%'; el.hidden = false;
     el.innerHTML = `<b>${esc(span.name)}</b>` + (span.marks || []).map(t => `<i style="left:${Math.max(0, Math.min(100, (tOf(t) - a) / w * 100))}%"></i>`).join('');
   }
-  G.Timeline = { get playing() { return playing; }, personBand, prefixChanged, fortAt, clearDetails, pause:()=>setPlaying(false), setFocus: p => setFocus(p), clearFocus: () => clearFocus(), flyTo: r => app.map.flyTo(H.cx[r], H.cy[r], 3), dots: () => dots, click, tip, init, open, close, toggle, reset, progress, get on() { return on; }, get data() { return H; }, get pulses() { return pulses.length; }, setYear: y => setYear(y), get year() { return year; }, get month() { return monthIndex(year) % 12 + 1; }, setLayer: l => { const b = document.querySelector(`#tlLayer [data-l=${l}]`); if (b) b.click(); }, toggleDrawer };
+  G.Timeline = { get playing() { return playing; }, cancelLoading, personBand, prefixChanged, fortAt, clearDetails, pause:()=>setPlaying(false), setFocus: p => setFocus(p), clearFocus: () => clearFocus(), flyTo: r => app.map.flyTo(H.cx[r], H.cy[r], 3), dots: () => dots, click, tip, init, open, close, toggle, reset, progress, get on() { return on; }, get data() { return H; }, get pulses() { return pulses.length; }, setYear: y => setYear(y), get year() { return year; }, get month() { return monthIndex(year) % 12 + 1; }, setLayer: l => { const b = document.querySelector(`#tlLayer [data-l=${l}]`); if (b) b.click(); }, toggleDrawer };
 })(window);
 

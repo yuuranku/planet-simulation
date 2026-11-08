@@ -602,6 +602,23 @@
     scheduleOverlays();
   }
 
+  // 历史军报可能很大；页面确认收到一批后再发下一批，避免一次克隆整份军报。
+  const historyJobs = new Map(), HISTORY_BATCH = 64;
+  function sendHistoryBatch(id, post) {
+    const job = historyJobs.get(id);
+    if (!job) return;
+    while (job.field < job.fields.length) {
+      const key = job.fields[job.field], items = job.military[key];
+      if (job.offset >= items.length) { job.field++; job.offset = 0; continue; }
+      const data = items.slice(job.offset, job.offset + HISTORY_BATCH);
+      job.offset += data.length;
+      post({ type: 'historyChunk', id, key, data });
+      return;
+    }
+    historyJobs.delete(id);
+    post({ type: 'history', id, done: true });
+  }
+
   function handle(m, post) {
     try {
       if (m.type === 'generate') generate(m.cfg, post, m.terrainRaster);
@@ -625,8 +642,15 @@
       else if (m.type === 'fortSite') post({ type: 'fortSite', id: m.id, data: world ? G.CitySite.fortPayload(world, m.fortId, m.year) : null });
       else if (m.type === 'history') { // 历史时间线：按需推演一次，结果缓存在本世界上
         if (!world) post({ type: 'history', id: m.id, data: null });
-        else { if (!world.history) world.history = G.History.run(world, (stage, f) => post({ type: 'histProgress', stage, f })); post({ type: 'history', id: m.id, data: world.history }); }
+        else {
+          if (!world.history) world.history = G.History.run(world, (stage, f) => post({ type: 'histProgress', stage, f }));
+          const military = world.history.military;
+          historyJobs.set(m.id, { military, fields: ['campaigns', 'effects', 'armies'], field: 0, offset: 0 });
+          post({ type: 'historyStart', id: m.id, data: { ...world.history, military: { ...military, campaigns: [], effects: [], armies: [] } } });
+        }
       }
+      else if (m.type === 'historyNext') sendHistoryBatch(m.id, post);
+      else if (m.type === 'historyCancel') historyJobs.delete(m.id);
       else if (m.type === 'route') post({ type: 'route', id: m.id, data: world ? roadRoute(m.points, m.mode || 'walk', m.year) : null });
       else if (m.type === 'personGenerate') {
         if (!world || !world.history) throw Error('请先载入该世界已有历史。');
@@ -635,7 +659,8 @@
         post({ type: 'personGenerate', id: m.id, data: person });
       }
     } catch (err) {
-      post({ type: 'error', id:m.id, requestType:m.type, message: String(err && err.stack || err) });
+      if (m.type === 'history' || m.type === 'historyNext') historyJobs.delete(m.id);
+      post({ type: 'error', id:m.id, requestType:m.type === 'historyNext' ? 'history' : m.type, message: String(err && err.stack || err) });
     }
   }
 

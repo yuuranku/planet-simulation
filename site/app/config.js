@@ -189,7 +189,7 @@
     };
   }
   const VERSION = '1.4.3'; // 世界存档格式版本
-  const APP_VERSION = '1.4.5.2';
+  const APP_VERSION = '1.4.5.3';
   const verOf = f => f && f.engineVersion ? String(f.engineVersion) : '';
   const verCmp = (a, b) => { const pa = String(a).split('.').map(n => parseInt(n, 10) || 0), pb = String(b).split('.').map(n => parseInt(n, 10) || 0); for (let k = 0; k < 3; k++) { const d = (pa[k] || 0) - (pb[k] || 0); if (d) return d; } return 0; };
   // 世界文件必须包含可复现的完整设定；缺项或无效值明确报错，不重写用户的数据。

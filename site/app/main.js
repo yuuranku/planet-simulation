@@ -134,7 +134,7 @@
   let worker = null, seq = 0;
   const pending = new Map(), strips = new Map();
   function startWorker() {
-    worker = new Worker('core/worker.js?build=20261108d');
+    worker = new Worker('core/worker.js?build=20261108e');
     worker.onmessage = e => onMsg(e.data);
     worker.onerror = e => {
       const error = new Error('推演线程失败：' + e.message);
@@ -145,8 +145,20 @@
     };
   }
   function post(m) { worker.postMessage(m); }
-  function call(type, payload) { return new Promise((resolve,reject) => { const id = ++seq; pending.set(id, {resolve,reject}); post({ type, id, ...payload }); }); }
+  function call(type, payload) {
+    const id = ++seq;
+    const promise = new Promise((resolve, reject) => { pending.set(id, { resolve, reject, type }); try { post({ type, id, ...payload }); } catch (error) { pending.delete(id); reject(error); } });
+    promise.requestId = id;
+    return promise;
+  }
   app.call = call;
+  app.cancelHistory = id => {
+    const request = pending.get(id);
+    if (!request || request.type !== 'history') return;
+    pending.delete(id);
+    try { post({ type: 'historyCancel', id }); } catch (_) { /* Worker 已不可用 */ }
+    request.reject(new DOMException('历史加载已取消', 'AbortError'));
+  };
   app.generatePerson = async request => {
     const worldKey = app.worldKey();
     if (request.worldKey !== worldKey) throw new Error('人物请求不属于当前世界。');
@@ -157,19 +169,34 @@
   function onMsg(m) {
     if (m.type === 'progress') return onProgress(m);
     if (m.type === 'histProgress') return G.Timeline && G.Timeline.progress(m);
+    if (m.type === 'historyStart' || m.type === 'historyChunk') {
+      const request = pending.get(m.id);
+      if (!request || request.type !== 'history') return;
+      try {
+        if (m.type === 'historyStart') request.history = m.data;
+        else for (const item of m.data) request.history.military[m.key].push(item);
+        post({ type: 'historyNext', id: m.id });
+      } catch (error) {
+        pending.delete(m.id);
+        try { post({ type: 'historyCancel', id: m.id }); } catch (_) { /* Worker 已不可用 */ }
+        request.reject(error);
+      }
+      return;
+    }
     if (m.type === 'ready') return onReady(m);
     if (m.type === 'overlays') return onOverlays(m);
     if (m.type === 'strip' || m.type === 'stripEnd') { const cb = strips.get(m.id); if (cb) { if (m.type === 'strip') cb(m); else strips.delete(m.id); } return; }
     if (m.type === 'contoursFine') { if (app.data) { app.data.contoursFine = m.contours; if (map.paths) { map.paths.cont.fine = null; map.draw(); } } return; }
     if (m.type === 'error') {
       const request = pending.get(m.id); strips.delete(m.id);
+      if (!request && m.requestType === 'history') return; // 已取消的请求可能仍在 Worker 中完成
       if (request) { pending.delete(m.id); request.reject(new Error(m.message)); }
       if (m.requestType === 'generate' && pendingGeneration) { console.error(m.message); generationFailed(new Error(m.message)); return; }
       // 人物条件错误由人物表单呈现，不应误报为整个世界推演失败。
       if (request && m.requestType === 'personGenerate') return;
       console.error(m.message); toast('推演出错：' + m.message.split('\n')[0]); return;
     }
-    const r = pending.get(m.id); if (r) { pending.delete(m.id); r.resolve(m); }
+    const r = pending.get(m.id); if (r) { pending.delete(m.id); if (m.type === 'history' && m.done) m.data = r.history; r.resolve(m); }
   }
   app.render = function (req, onStrip) {
     const id = ++seq;
@@ -252,6 +279,7 @@
   // restore：从存档 / 世界文件打开时传入 { name, ms }，进度卡说明这是按存档设置重新推演
   async function generate(st, restore, preparedTerrain, opts) {
     if (pendingGeneration) { toast('当前世界仍在推演，请等待完成'); return; }
+    G.Timeline?.cancelLoading();
     pendingGeneration = { state:st, restore, preparedTerrain, opts };
     try {
     await Promise.all([G.Home.loadBuiltin(), G.RelLib.load()]);

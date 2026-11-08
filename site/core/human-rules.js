@@ -128,7 +128,7 @@
   const RELIGION_SPREADS = ['missionary','ethnic','syncretic'];
   const FAMILIES = ['sinitic','japanese','korean','germanic','latin','romance','slavic','steppe','persian','arabic','indic','malay','celtic','finnic','arctic'];
   const NAME_KEYS = ['states','provinces','cities','mountains','rivers','lakes','seas','regions','streets'];
-  const TITLE_KEYS = ['monarchy','duchy','empire','republic','city','cityRepublic','nomadic','nomadEmpire','chiefdom','league','jimi','nomad','tribe','vassal','colony','theocracy'];
+  const TITLE_KEYS = ['monarchy','duchy','empire','republic','city','cityRepublic','nomadic','nomadEmpire','chiefdom','league','jimi','nomad','tribal','primitive','tribe','clan','vassal','colony','theocracy'];
   const RULER_KEYS = ['chief','city','king','empire','nomad','nomadEmpire','republic','vassal','colony','rebel'];
   const ORG_KEYS = ['chief','city','king','empire','feudal','central','nomad','republic','theo','vassal','colony','rebel'];
   function object(value, field) { if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error(field+' 必须为对象'); }

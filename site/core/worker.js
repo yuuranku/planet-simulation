@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const inWorker = typeof document === 'undefined' && typeof importScripts === 'function';
-  const RESOURCE_BUILD = '20261108a';
+  const RESOURCE_BUILD = '20261108d';
   if (inWorker) importScripts(...['noise.js', 'edges.js', 'libraries.js', 'culture-ext.js', 'admin.js', 'religions.js', 'human-rules.js', 'human-anchors.js', 'human-population.js', 'human-economy.js', 'human-fortifications.js', 'holy-war.js', 'history/date.js', 'military.js', 'terrain-coast.js', 'terrain-import.js', 'planet.js', 'climate.js', 'hydro.js', 'navigation-overland.js', 'navigation.js', 'history/query.js', 'life-paths.js', 'life-story.js', 'life.js', 'life-text.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js', 'history/regions.js', 'history/dawn.js', 'history/cities.js', 'history/domestic-roads.js', 'history/administration.js', 'history/territory.js', 'history/polity.js', 'history/outline.js', 'history/heritage.js', 'history/apply.js', 'history/index.js'].map(src => src + '?build=' + RESOURCE_BUILD));
   const G = self;
   let world = null, R = null;

@@ -134,7 +134,7 @@
   let worker = null, seq = 0;
   const pending = new Map(), strips = new Map();
   function startWorker() {
-    worker = new Worker('core/worker.js?build=20261108a');
+    worker = new Worker('core/worker.js?build=20261108d');
     worker.onmessage = e => onMsg(e.data);
     worker.onerror = e => {
       const error = new Error('推演线程失败：' + e.message);

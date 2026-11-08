@@ -119,13 +119,14 @@
   .lform { grid-template-columns: 1fr 1fr 1fr; }
   .lform .lx-body { grid-template-columns: 1fr 1fr 1fr; }
 
-  /* ---------- 城市生成器（嵌入页）：全屏铺开 ---------- */
-  .citygen-box { top: 0; right: 0; bottom: 0; left: 0; width: auto; min-width: 0; border-radius: 0; z-index: 20; padding: 0 var(--sar) 0 var(--sal); }
+  /* ---------- 城市地图：右侧浮动面板，保留周围世界地图 ---------- */
+  .citygen-box { top: 8px; right: calc(8px + var(--sar)); bottom: 8px; left: auto; width: min(64vw, 620px); min-width: 0; border-radius: 14px; z-index: 20; padding: 0; }
   .citygen-bar { flex-wrap: nowrap; padding: 5px 8px 5px 18px; }
   .citygen-bar span:not(.sp) { order: 0; flex: 0 1 auto; flex-basis: auto; }
+  .citygen-bar .city-x { width: calc(40px / var(--z)); height: calc(40px / var(--z)); }
 
-  /* 旧版城市详情面板：全屏，左资料右地图（不缩放，地图要按原坐标拖动） */
-  .city-panel { top: 0; right: 0; bottom: 0; left: 0; width: auto; min-width: 0; border-radius: 0; z-index: 20; padding: 0 var(--sar) 0 var(--sal); display: grid; grid-template-columns: min(240px, 30vw) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; font-size: 12px; }
+  /* 旧版城市详情：保留左资料、右城市地图，并露出世界地图。 */
+  .city-panel { top: 8px; right: calc(8px + var(--sar)); bottom: 8px; left: auto; width: min(64vw, 620px); min-width: 0; border-radius: 14px; z-index: 20; padding: 0; display: grid; grid-template-columns: min(150px, 35%) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; font-size: 12px; }
   .city-head { grid-column: 1; grid-row: 1; padding: 8px 6px 2px 12px; }
   .city-head h2 { font-size: 17px; }
   .city-facts { grid-column: 1; grid-row: 2; grid-template-columns: 1fr 1fr; margin: 2px 12px 6px; gap: 4px 10px; overflow-y: auto; align-content: start; }
@@ -168,7 +169,7 @@
   .tl-rows { max-height: calc(var(--vh) * .42); }
   .tl-city, .tl-focus { right: calc(var(--gap) + var(--sarz)); top: var(--gap); width: 300px; max-height: calc(var(--vh) - var(--tlh) - 30px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
   .tl-city::-webkit-scrollbar { display: none; }
-  .tl-river, .tl-river.tall { left: calc(var(--rail) + var(--salz) + var(--gap)); right: calc(var(--gap) + var(--sarz)); top: var(--gap); bottom: calc(var(--tlh) + 14px); height: auto; min-height: 0; }
+  .tl-river, .tl-river.tall { left: auto; right: calc(var(--gap) + var(--sarz)); top: var(--gap); bottom: calc(var(--tlh) + 14px); width: min(700px, calc(var(--vw) * .64)); height: auto; min-height: 0; }
   .tl-river header small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 }
 
@@ -184,6 +185,22 @@
   .wiz { grid-template-columns: calc(150px + var(--salz)) minmax(0, 1fr); }
   .wiz-foot #wizSaved { display: none; }
   .lform, .lform .lx-body { grid-template-columns: 1fr 1fr; }
+}
+/* 竖屏城市页面留出上方世界地图，城市地图在下方浮动面板内操作。 */
+@media (orientation: portrait) and (max-width: 760px) {
+  :root { --phone-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .citygen-box, .city-panel { top: auto; right: 8px; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); left: 8px; width: auto; min-width: 0; height: min(55vh, 520px); border-radius: 14px; }
+  .city-panel #city-map-viewport { min-height: 0; }
+  .tl-bar { bottom: calc(var(--phone-bottom) + 8px); }
+  .tl-main { gap: 6px; }
+  .tl-year { width: 108px; }
+  .tl-track { min-width: 0; }
+  #tlSpeed { order: -1; min-width: 44px; height: 36px; }
+  body.tl-on .bottomright, .tl-legend, .tl-feedall { bottom: calc(var(--phone-bottom) + var(--tlh) + var(--tld) + 26px); }
+  .tl-caption { bottom: calc(var(--phone-bottom) + var(--tlh) + var(--tld) + 80px); }
+  .tl-drawer, .tl-river { bottom: calc(var(--phone-bottom) + var(--tlh) + 24px); }
+  .tl-river.tall { height: calc(100vh - var(--phone-bottom) - var(--tlh) - 60px); }
+  .tl-city, .tl-focus { max-height: calc(100vh - var(--phone-bottom) - var(--tlh) - 48px); overflow-y: auto; }
 }
 /* App 内：分享链接没有意义（地址是本机的），隐藏 */
 html.m-app [data-act=share] { display: none; }

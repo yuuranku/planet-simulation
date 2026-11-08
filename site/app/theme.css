@@ -280,10 +280,18 @@ body { background: var(--navy); color: var(--ink); }
 @media (orientation: landscape) and (max-height: 540px) {
   :root { --bar: 0px; }
   .appbar, .map-frame i { display: none; }
-  .home-main .home-head { position: static; height: auto; padding: 6px 0 10px; }
+  /* 与缩放后的侧栏对齐，避免首页边缘露出底下的搜索面板。 */
+  .home, .home-main .home-bg { inset: 0 0 0 calc(var(--rail) * var(--z) + var(--sal)); }
+  .home-main .home-inner { padding: 14px 24px 34px; }
+  .home-main .home-head { position: static; height: auto; padding: 4px 12px; gap: 12px; background: rgba(10, 39, 43, .92); border: 1px solid rgba(199, 161, 90, .4); border-radius: 10px; }
   .home-main .home-logo { display: flex; color: #f1e3c0; font-family: var(--serif); }
   .home-main .home-logo span svg { width: 28px; height: 28px; }
-  .home-main .home-actions { flex-wrap: wrap; }
+  .home-main .home-actions { flex-wrap: nowrap; min-width: 0; }
+  .home-main .hbtn { min-height: 44px; padding: 0 12px; }
+  .home-main .hbtn small { display: none; }
+  .home-main #homeCreate { height: 44px; flex: none; }
+  .home-main.is-empty #homeCreate { display: none; }
+  .home-main .home-bg::after { background: linear-gradient(180deg, rgba(8, 28, 32, .62), rgba(8, 28, 32, .27) 46%, rgba(8, 28, 32, .5)); }
   .home-main h2 { font-size: 24px; }
   .home-empty-card { padding: 16px 20px; }
   .home-empty-card h3 { font-size: 22px; }

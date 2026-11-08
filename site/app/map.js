@@ -160,19 +160,22 @@
   };
   MP.stopMotion = function () { if (this.motion) cancelAnimationFrame(this.motion); this.motion = 0; };
   // 可见区域的中心：右侧纸页、底部时间轴、左侧抽屉盖住的部分不算（每帧重算——纸页常在镜头起飞后才展开）
-  const OCCLUDERS = '.tl-city,.tl-focus,.person-panel,#cityCard,#cityPanel,#timeline,#tlDrawer,#layerPanel,#infoPanel,#savedPanel,#stylePanel,#tipPanel,.mil-panel';
+  const OCCLUDERS = '.tl-city,.tl-focus,.person-panel,#cityCard,#cityPanel,#cityGenBox,#timeline,#tlDrawer,#layerPanel,#infoPanel,#savedPanel,#stylePanel,#tipPanel,.mil-panel';
   MP.focusCenter = function () {
-    const cr = this.cv.getBoundingClientRect(), vw = this.vw, vh = this.vh; let l = 0, t = 0, r = vw, b = vh;
+    const cr = this.cv.getBoundingClientRect(), vw = this.vw, vh = this.vh; let l = 0, t = 0, r = vw, b = vh, mobileCityPanel = false;
     for (const el of document.querySelectorAll(OCCLUDERS)) {
       if (el.hidden || !el.offsetParent && getComputedStyle(el).position !== 'fixed') continue;
       const q = el.getBoundingClientRect(); if (q.width < 2 || q.height < 2) continue;
       const L = q.left - cr.left, T = q.top - cr.top, R = q.right - cr.left, B = q.bottom - cr.top;
       if (R < 0 || L > vw || B < 0 || T > vh) continue;
-      if (L > vw * 0.45 && q.height > vh * 0.25) r = Math.min(r, L - 12);
+      if (el.id === 'cityGenBox' && matchMedia('(orientation: landscape) and (max-height: 540px)').matches && L > 0 && q.height > vh * 0.25) { r = Math.min(r, L - 12); mobileCityPanel = true; }
+      else if (el.id === 'cityGenBox' && matchMedia('(orientation: portrait) and (max-width: 760px)').matches && T > 0 && q.width > vw * 0.35) b = Math.min(b, T - 12);
+      else if (el.id === 'cityGenBox') continue;
+      else if (L > vw * 0.45 && q.height > vh * 0.25) r = Math.min(r, L - 12);
       else if (T > vh * 0.5 && q.width > vw * 0.35) b = Math.min(b, T - 12);
       else if (R < vw * 0.5 && q.height > vh * 0.3) l = Math.max(l, R + 12);
     }
-    if (r - l < 220) { l = 0; r = vw; } if (b - t < 160) { t = 0; b = vh; }
+    if (r - l < (mobileCityPanel ? 64 : 220)) { l = 0; r = vw; } if (b - t < 160) { t = 0; b = vh; }
     return [(l + r) / 2, (t + b) / 2];
   };
   // 镜头飞向某点：目标点在屏幕上沿直线滑向可见区域中心，同时按指数缩放——全程不会甩出画面、也不会先偏后回

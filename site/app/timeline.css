@@ -465,6 +465,10 @@ body.tl-on .tl-city { top: 12px; }
 
 @media (orientation: landscape) and (max-height: 540px) and (max-width: 820px) { body.tl-on .tl-year { width: 125px; } .tl-year b { font-size: 13px; } }
 
+/* 倍速始终放在手机工具栏开头，避免被横向滚动或窄屏隐藏。 */
+@media (orientation: landscape) and (max-height: 540px) {
+  #tlSpeed { display: block; order: -1; min-width: calc(44px / var(--z)); height: calc(36px / var(--z)); }
+}
 /* 君主世系：王朝色带 + 分组名册 */
 .tf-reign-now { display: flex; flex-direction: column; padding: 10px 12px; border-radius: 10px; background: rgba(var(--pc), .08); border-left: 3px solid rgb(var(--pc)); }
 .tf-reign-now small { font-size: 10.5px; color: var(--t3); }

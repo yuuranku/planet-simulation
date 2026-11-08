@@ -57,6 +57,14 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        // Match the system bars and display-cutout safe area to the app's dark frame.
+        int frameColor = 0xff0c2c2e;
+        getWindow().setStatusBarColor(frameColor);
+        getWindow().setNavigationBarColor(frameColor);
+        View decor = getWindow().getDecorView();
+        decor.setSystemUiVisibility(decor.getSystemUiVisibility()
+                & ~(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));
+        if (Build.VERSION.SDK_INT >= 29) getWindow().setNavigationBarContrastEnforced(false);
         WebViewAssetLoader.AssetsPathHandler assets = new WebViewAssetLoader.AssetsPathHandler(this);
         assetLoader = new WebViewAssetLoader.Builder().addPathHandler("/", path -> {
             if (path.contains("..") || path.contains("\\")) return missing();
@@ -82,7 +90,7 @@ public final class MainActivity extends Activity {
         }).build();
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setBackgroundColor(0xfff5f2e9);
+        content.setBackgroundColor(frameColor);
         webView = new WebView(this);
         if (Build.VERSION.SDK_INT >= 35) {
             content.setOnApplyWindowInsetsListener((view, windowInsets) -> {

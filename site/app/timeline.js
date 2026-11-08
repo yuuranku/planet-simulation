@@ -91,6 +91,7 @@
         <button class="tl-chip" id="tlSpeed" title="1×：每秒前进 1 个月；一年分为 12 个月">1×</button>
         <button class="tl-chip tl-pre" id="tlPrefix" title="关闭国号前缀：后唐帝国显示为唐帝国、东法兰克王国显示为法兰克王国（人文图同步）">去前缀</button>
         <i class="tl-div"></i>
+        <button class="tl-chip tl-ico" id="tlPowerBtn" title="综合国力排行：当年各国的经济、人口、军力、疆域与文治"><svg viewBox="0 0 24 24"><path d="M4 20h16M6 20v-6M10 20V9M14 20v-8M18 20V5"/></svg>国力</button>
         <button class="tl-chip tl-ico" id="tlWar" title="战事簿：当月战斗与历代战役记录"><svg viewBox="0 0 24 24"><path d="M5 19 19 5M19 19 5 5M4 15l5 5M20 15l-5 5"/></svg>战事</button>
         <button class="tl-chip tl-ico" id="tlRiverBtn" title="世系河流图：各国按时间排开，分裂处分叉、吞并处汇流"><svg viewBox="0 0 24 24"><path d="M3 6c5 0 6 4 9 4s4-3 9-3M3 12c4 0 6-2 9-2s5 4 9 4M3 18c5 0 6-3 9-3s4 2 9 2"/></svg>世系</button>
         <button class="tl-chip tl-ico" id="tlPeople" title="已保存人物与人生轨迹"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c.8-3.8 3.6-5.8 7-5.8s6.2 2 7 5.8"/></svg>人物</button>
@@ -137,6 +138,8 @@
     $('tlPeople').onclick = () => G.Person.list();
     $('tlWar').onclick = () => { if (G.MilitaryMap?.open) G.MilitaryMap.hide(); else G.MilitaryMap?.openLog('month'); };
     $('tlRiverBtn').onclick = () => toggleRiver();
+    $('tlPowerBtn').onclick = () => G.PowerRank && G.PowerRank.toggle();
+    if (G.PowerRank) G.PowerRank.init({ get H() { return H; }, get year() { return year; }, get focus() { return focusP; }, ownerAt, countryOf, isRebel, capAt, stageAt, alive, popAt, liegeAt, realmAt, vassalTint, polName, dateLabel, snapshotAt: humanSnapshotAt, setFocus: p => setFocus(p), closeOthers: () => { if (feedAllOpen) toggleFeedAll(false); toggleRiver(false); } });
     const rv = document.createElement('section'); rv.className = 'card tl-river'; rv.id = 'tlRiver'; rv.hidden = true;
     rv.innerHTML = `<header><b>世系河流图</b><small>河宽为当时所占世界陆地的份额；同一国统的改朝换代连成一条河，分裂者紧挨母国分出，被吞并者以弧线汇入吞并者，虚线为复国。点一条河进入单国视角</small><button class="tl-icon" id="tlRiverX" title="关闭"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></header><div class="tl-river-body"><canvas id="tlRiverCv"></canvas><div class="tl-river-tip" id="tlRiverTip" hidden></div></div>`;
     document.body.appendChild(rv);
@@ -195,7 +198,7 @@
     renderLegend(); drawBand(); setYear(year, true);
   }
   function close() {
-    on = false; setPlaying(false);G.Person?.hide();G.MilitaryMap?.hide();
+    on = false; setPlaying(false);G.Person?.hide();G.MilitaryMap?.hide();G.PowerRank?.hide();
     for (const id of ['timeline', 'tlTicker', 'tlLegend', 'tlDrawer', 'tlCity', 'tlProv', 'tlFocus', 'tlFeedAll']) $(id).hidden = true; provCard = null; provPath = null; feedAllOpen = false; pulses = []; $('tlRiver').hidden = true; cardCity = -1; focusP = -1; ghostPath = null;
     document.body.classList.remove('tl-on');
     app.onHistory && app.onHistory(false);
@@ -205,7 +208,7 @@
     app.map.draw();
   }
   const toggle = () => on ? close() : open();
-  function reset() { if (on) close(); G.MilitaryMap?.reset(); G.Person && G.Person.reset(); app.history = null; H = null; hFor = null; loading = null; ov = null; }
+  function reset() { if (on) close(); G.PowerRank?.reset(); G.MilitaryMap?.reset(); G.Person && G.Person.reset(); app.history = null; H = null; hFor = null; loading = null; ov = null; }
   function progress(m) { if (!on) return; $('tlLoadText').textContent = '正在推演历史 · ' + m.stage; $('tlLoadBar').style.width = Math.round(m.f * 100) + '%'; }
 
   // ---------- 配色：相邻者不同色 ----------
@@ -632,9 +635,9 @@
     $('tlCity').hidden = true; cardCity = -1; closeProv(); renderFocus(); dirty = true;
     const life = $('tlLife'); life.hidden = false; life.style.left = (tOf(q.born) * 100) + '%'; life.style.width = ((tOf(lifeEnd(p)) - tOf(q.born)) * 100) + '%';
     const c = capAt(p, Math.min(Math.max(year, q.born), lifeEnd(p))); if (c) app.map.flyTo(H.cx[c[2]], H.cy[c[2]], Math.max(1.6, app.map.zoomRel()));
-    renderLegend(); app.map.draw();
+    renderLegend(); app.map.draw(); G.PowerRank?.onYear();
   }
-  function clearFocus() { focusP = -1; focusLin = null; ghostPath = null; feedSig = ''; setTimeout(renderFeed, 0); $('tlFocus').hidden = true; $('tlLife').hidden = true; dirty = true; renderLegend(); app.map.draw(); }
+  function clearFocus() { focusP = -1; focusLin = null; ghostPath = null; feedSig = ''; setTimeout(renderFeed, 0); $('tlFocus').hidden = true; $('tlLife').hidden = true; dirty = true; renderLegend(); app.map.draw(); G.PowerRank?.onYear(); }
   function clearDetails(){ $('tlCity').hidden=true;cardCity=-1;closeProv();if(feedAllOpen)toggleFeedAll(false);clearFocus(); }
   const PV_KIND = { establish: '初置', 'from-state': '以国为省', conquer: '攻取改隶', inherit: '承继', secede: '割据而得', reform: '改制', split: '析置' };
   const RTYPE = { monotheist: '一神天启', dualist: '光暗二元', polytheist: '多神信仰', dharmic: '轮回觉悟', ancestral: '祖灵礼教', shamanic: '萨满万灵', philosophy: '哲学教化' };
@@ -1010,7 +1013,7 @@
       if (!$('tlRiver').hidden) drawRiver();
     }
     if (focusP >= 0) renderFocusLive();
-    G.MilitaryMap?.onTime(year,{animate:playing,duration:Math.min(420,900/speed)}); G.Person?.onYear(year);
+    G.MilitaryMap?.onTime(year,{animate:playing,duration:Math.min(420,900/speed)}); G.Person?.onYear(year); G.PowerRank?.onYear();
     if (changed) app.map.draw(); else app.map.drawDynamic();
   }
   // 近事：最近一段时间里各地发生的几件事（播放越快，回看的年数越长），地图上同时以涟漪标出发生地
@@ -1072,7 +1075,7 @@
   function toggleFeedAll(force) {
     feedAllOpen = force === undefined ? !feedAllOpen : force; const el = $('tlFeedAll');
     el.hidden = !feedAllOpen; $('tlTicker').hidden = feedAllOpen || !feedSig.split('|')[0];
-    if (feedAllOpen) { G.Person?.hide();setPlaying(false); $('tlCity').hidden = true; cardCity = -1; feedAllSig = ''; renderFeedAll(); el.querySelector('ul').scrollTop = 0; }
+    if (feedAllOpen) { G.Person?.hide();G.PowerRank?.hide();setPlaying(false); $('tlCity').hidden = true; cardCity = -1; feedAllSig = ''; renderFeedAll(); el.querySelector('ul').scrollTop = 0; }
   }
   /* 事件发生地的涟漪：时间走到一件事时在那里荡开一圈，一秒多就消失；暂停时不会停在地图上 */
   let pulses = [], pulseRaf = 0; const PULSE_MS = 1500, PULSE_MAX = 28;
@@ -1187,7 +1190,7 @@
   }
   // ---------- 世系河流图 ----------
   const RIV = { data: null, cache: null, geo: null };
-  function toggleRiver(force) { const el = $('tlRiver'); el.hidden = force === undefined ? !el.hidden : !force; $('tlRiverBtn').classList.toggle('on', !el.hidden); if (!el.hidden) { if (!RIV.data) RIV.data = buildRiver(); RIV.cache = null; drawRiver(); } }
+  function toggleRiver(force) { const el = $('tlRiver'); el.hidden = force === undefined ? !el.hidden : !force; $('tlRiverBtn').classList.toggle('on', !el.hidden); if (!el.hidden) { G.PowerRank?.hide(); if (!RIV.data) RIV.data = buildRiver(); RIV.cache = null; drawRiver(); } }
   function buildRiver() {
     const P = H.polities, nP = P.length, O = H.own; let minB = H.E; for (const q of P) if (q.born < minB) minB = q.born;
     const STEP = 25, S = [], t0 = Math.max(0, Math.floor((minB - 60) / STEP) * STEP); for (let t = t0; t < H.E; t += STEP) S.push(t); S.push(H.E); const nS = S.length; /* 从第一个国家兴起前不久开始：史前不占画面 */
@@ -1443,7 +1446,7 @@
   function prefixChanged() {
     const b = $('tlPrefix'); if (b) { b.classList.toggle('on', !!app.noPrefix); b.textContent = app.noPrefix ? '前缀已关' : '去前缀'; }
     if (!H || !on) return; preFor = null; dirty = true; feedSig = ''; feedAllSig = ''; RIV.cache = null;
-    renderLegend(); renderFeed(); if (focusP >= 0) renderFocus(); if (cardCity >= 0) renderCityCard(); if (!$('tlRiver').hidden) drawRiver(); app.map.draw();
+    renderLegend(); renderFeed(); G.PowerRank?.on && G.PowerRank.refresh(); if (focusP >= 0) renderFocus(); if (cardCity >= 0) renderCityCard(); if (!$('tlRiver').hidden) drawRiver(); app.map.draw();
   }
   // 人物一生在时间轴上的一段（出生 → 去世 / 推演终点），圆点为人生事件
   function personBand(span) {

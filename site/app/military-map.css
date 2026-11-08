@@ -38,6 +38,25 @@
 .tl-focus .wr-fig figcaption { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 0; }
 .tl-focus .wr-fig figcaption span { font-size: 10.5px; line-height: 18px; padding: 0 6px; border-radius: 4px; background: #fbf6ea; color: var(--t2); box-shadow: inset 0 0 0 1px var(--hair); }
 
+/* 渡海：舰队与海战 */
+.tl-focus .wr-naval { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: linear-gradient(180deg, #eef4f8, #e6eef4); box-shadow: inset 0 0 0 1px rgba(47,111,166,.18); }
+.tl-focus .wr-naval-h { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #2f5f86; }
+.tl-focus .wr-naval-h svg { width: 14px; height: 14px; fill: none; stroke: #2f6fa6; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; flex: none; }
+.tl-focus .wr-naval-h b { margin-left: auto; font-weight: 600; color: #1f4e74; white-space: nowrap; }
+.tl-focus .wr-fleets { display: grid; grid-template-columns: 1fr 64px 1fr; align-items: center; margin: 6px 0 0; }
+.tl-focus .wr-fleet { min-width: 0; display: grid; gap: 1px; }
+.tl-focus .wr-fleet.defender { text-align: right; justify-items: end; }
+.tl-focus .wr-fleet i { width: 8px; height: 8px; border-radius: 2px; background: var(--sc); }
+.tl-focus .wr-fleet b { font: 600 11.5px var(--font); color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tl-focus .wr-fleet span { font: 600 15px/1.2 var(--num); color: #1f4e74; }
+.tl-focus .wr-fleet span small { margin-left: 4px; font: 400 10px var(--font); color: var(--t3); }
+.tl-focus .wr-fleet em { font-style: normal; font-size: 10.5px; color: #9b2a1f; }
+.tl-focus .wr-fleet-vs { display: grid; justify-items: center; text-align: center; }
+.tl-focus .wr-fleet-vs b { font: 600 13px var(--num); color: #1f4e74; }
+.tl-focus .wr-fleet-vs small { font-size: 9.5px; color: var(--t3); }
+.tl-focus .wr-log li.t-naval b { color: #1f5f93; }
+.tl-focus .wr-log li.t-landing b { color: #6a4a1f; }
+
 /* 对阵双方 */
 .tl-focus .wr-sides { display: grid; grid-template-columns: 1fr 44px 1fr; margin: 12px 0 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
 .tl-focus .wr-side { min-width: 0; padding: 10px 0; }

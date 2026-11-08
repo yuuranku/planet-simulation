@@ -144,6 +144,25 @@
     finnic: { monarchy: ['王国'], duchy: [], empire: ['帝国'], chiefdom: ['部'] },
     arctic: { monarchy: ['国'], duchy: [], empire: ['帝国'], chiefdom: ['部'], league: ['部落联盟'] }
   };
+  // ---------- 松散政体（游牧、部落、落后政体）的国号后缀与下辖部众的称谓 ----------
+  // nomadic 游牧政体后缀、tribal 部落政体后缀、primitive 落后政体后缀；nomad / tribe / clan 是它们境内各部的称谓（不设省份，各地是“某某部、某某旗、某某盟”）
+  const LOOSE_DEF = { nomadic: ['部族邦联'], tribal: ['部落联盟'], primitive: ['诸部'], nomad: ['部', '旗', '盟'], tribe: ['部落', '部'], clan: ['氏族', '部落'] };
+  const LOOSE_FAM = {
+    sinitic: { nomadic: ['部'], tribal: ['部落联盟'], primitive: ['诸部'], nomad: ['部', '旗', '盟'], tribe: ['部', '寨', '峒'], clan: ['氏', '部落'] },
+    japanese: { tribal: ['部族连合'], primitive: ['诸部'], tribe: ['部', '族'], clan: ['氏', '部'] },
+    korean: { tribal: ['部族联盟'], primitive: ['诸部'], tribe: ['部', '族'], clan: ['氏', '部'] },
+    steppe: { nomadic: ['汗国'], tribal: ['部落联盟'], primitive: ['林中百姓'], nomad: ['部', '旗', '盟', '鄂托克', '兀鲁思'], tribe: ['部', '兀鲁思'], clan: ['氏族', '林中部'] },
+    arabic: { nomadic: ['部落联盟'], tribal: ['部落联盟'], primitive: ['诸部族'], nomad: ['部落', '部族'], tribe: ['部落', '氏族'], clan: ['氏族', '部落'] },
+    persian: { nomadic: ['部族邦联'], tribal: ['部族联盟'], primitive: ['诸部族'], nomad: ['部族', '伊勒'], tribe: ['部族', '部落'], clan: ['氏族', '部落'] },
+    indic: { nomadic: ['部'], tribal: ['部落联盟'], primitive: ['诸部'], nomad: ['部', '帐'], tribe: ['部', '族'], clan: ['氏族', '部'] },
+    germanic: { nomadic: ['部族邦联'], tribal: ['部族联盟'], primitive: ['诸部族'], nomad: ['部族', '游骑'], tribe: ['部族', '氏族'], clan: ['氏族', '部落'] },
+    celtic: { tribal: ['部族联盟'], primitive: ['诸部族'], tribe: ['部族', '图阿'], clan: ['氏族', '部落'] },
+    finnic: { tribal: ['部族联盟'], primitive: ['诸部'], tribe: ['部', '族'], clan: ['氏族', '部'] },
+    arctic: { nomadic: ['诸部会盟'], tribal: ['部落联盟'], primitive: ['诸部'], nomad: ['部', '营'], tribe: ['部', '营'], clan: ['氏族', '营'] },
+    malay: { tribal: ['部落联盟'], primitive: ['诸部'], tribe: ['部落', '村社'], clan: ['氏族', '部落'] }
+  };
+  // 文化库里填了就用库里的，没填用族系的预设，再没有用通用称谓
+  function looseTitles(lib, key) { const t = lib && lib.t && lib.t[key]; if (Array.isArray(t) && t.length) return t; const f = LOOSE_FAM[famOfLib(lib || {})] || {}; return (f[key] && f[key].length ? f[key] : LOOSE_DEF[key]) || []; }
   // 单个文化库在族系之上的特色
   const TP_LIB = {
     'historical-gaelic': { chiefdom: ['图阿'] },                                   // 爱尔兰的 túath：最小的部族王国
@@ -213,5 +232,5 @@
   const NUM = ['', '一世', '二世', '三世', '四世', '五世', '六世', '七世', '八世', '九世', '十世', '十一世', '十二世', '十三世', '十四世', '十五世'];
   const TEMPLE = ['太祖', '太宗', '世宗', '高宗', '仁宗', '英宗', '神宗', '哲宗', '孝宗', '光宗', '宁宗', '理宗', '中宗', '睿宗', '玄宗', '肃宗', '代宗', '德宗', '顺宗', '宪宗', '穆宗', '敬宗', '文宗', '武宗', '宣宗', '懿宗', '僖宗', '昭宗', '景宗', '显宗', '成宗', '明宗'];
   applyBuiltin();
-  G.CultureExt = { FAMILIES: F, FAMILY_OF, ORG_KEYS, ext, extraTitle, preset, applyBuiltin, bareName, TITLE_PRESET: { family: TP_FAM, lib: TP_LIB }, personName, NUM, TEMPLE, GOV_STYLE: { bureaucratic: '官僚制', feudal: '封建制', tribal: '部族制', mercantile: '商贸型', temple: '神庙型' } };
+  G.CultureExt = { looseTitles, LOOSE_DEF, LOOSE_FAM, FAMILIES: F, FAMILY_OF, ORG_KEYS, ext, extraTitle, preset, applyBuiltin, bareName, TITLE_PRESET: { family: TP_FAM, lib: TP_LIB }, personName, NUM, TEMPLE, GOV_STYLE: { bureaucratic: '官僚制', feudal: '封建制', tribal: '部族制', mercantile: '商贸型', temple: '神庙型' } };
 })(typeof self !== 'undefined' ? self : this);

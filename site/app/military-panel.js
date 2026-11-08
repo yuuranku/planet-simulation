@@ -11,10 +11,10 @@
   const cutoff=t=>(month(t)+1)/12-1e-7;
   const atMonth=(c,t,options)=>G.Military.atTime(c,cutoff(t),options);
   const OBJECTIVES={border:'边境争夺',city:'夺取城邑',homeland:'收复故土','holy-war':'宗教战争'};
-  const REASONS={objective:'达成作战目标',repelled:'攻势被击退',supply:'军需不足，停止进攻',mobilization:'可征召人口已用尽，未能出兵',unreachable:'无法在战役期限内往返','changed-control':'目标或出发地已经易主'};
-  const PHASES={muster:'集结',march:'行军',encounter:'接敌',siege:'围城',battle:'交战',retreat:'撤退',occupation:'占领',ended:'收兵',aborted:'取消'};
+  const REASONS={objective:'达成作战目标',repelled:'攻势被击退',supply:'军需不足，停止进攻',mobilization:'可征召人口已用尽，未能出兵',unreachable:'无法在战役期限内往返','changed-control':'目标或出发地已经易主',naval:'海战失利，未能登陆'};
+  const PHASES={muster:'集结',march:'行军',naval:'渡海',encounter:'接敌',siege:'围城',battle:'交战',retreat:'撤退',occupation:'占领',ended:'收兵',aborted:'取消'};
   const STEPS=[['muster','集结'],['march','行军'],['contact','接敌'],['battle','交战'],['result','结局'],['ended','收兵']];
-  const STEP_OF={muster:0,march:1,encounter:2,siege:2,battle:3,occupation:4,retreat:4,ended:5,aborted:0};
+  const STEP_OF={muster:0,march:1,naval:2,encounter:2,siege:2,battle:3,occupation:4,retreat:4,ended:5,aborted:0};
   const SIEGE_OUT={surrender:'开城投降',open:'不战而下',stormed:'城破',starved:'粮尽城降',relieved:'援军解围','relief-routed':'援军败北 · 城破',repulsed:'久攻不克',lifted:'撤围'};
   const POSTURE={hold:'坚守不出',surrender:'开城投降',sally:'出城逆袭',open:'无兵可守'};
   const phaseLabel=phase=>PHASES[phase]||phase;
@@ -90,6 +90,9 @@
     if(!a)return c.defender>=0?`${name(H,c.attacker,time)}伐${name(H,c.defender,time).replace(/(帝国|王国|公国|国)$/,'')}之役`:`${name(H,c.attacker,time)}远征`;
     const p=a.name;
     if(!c.forces||!c.battle)return `${p}出兵`;
+    if(c.battle.kind==='naval')return `${p}海战`;
+    if(c.naval?.fought&&c.naval.won)return c.siege?`${p}登陆围城战`:`${p}海战与登陆`;
+    if(c.naval)return c.siege?`${p}渡海围城战`:`${p}登陆战`;
     if(c.battle.kind==='siege')return c.siege?.fort&&!c.siege?.walls?`${a.fort?p:p+'关堡'}之战`:`${p}围城战`;
     const tac=new Map((c.tactics||[]).map(t=>[t.id,t])),mob=(c.forces.attacker?.mobilized||0)+(c.forces.defender?.mobilized||0);
     if(tac.has('ambush'))return /渡口|半渡/.test(tac.get('ambush').detail||'')?`${p}渡口之战`:a.geo==='range'||a.geo==='ridge'||a.geo==='hills'?`${p}山道伏击战`:`${p}伏击战`;
@@ -109,7 +112,7 @@
     return m.get(c.id)||baseTitle(H,c);
   }
   function verdict(c,state,perspective){
-    if(!state?.finished)return {k:'live',t:state?.phase==='muster'||state?.phase==='march'?'进军中':c.battle?.kind==='siege'?'围城中':'交战中'};
+    if(!state?.finished)return {k:'live',t:state?.phase==='naval'?(c.naval?.fought?'海战中':'渡海中'):state?.phase==='muster'||state?.phase==='march'?(c.naval?'舰队航行中':'进军中'):c.battle?.kind==='siege'?'围城中':'交战中'};
     if(!c.battle)return {k:'void',t:'未战'};
     const attackerWon=c.status==='won';
     if(perspective===undefined)return attackerWon?{k:'win',t:c.siege?SIEGE_OUT[c.siege.outcome]||'攻克':'攻克'}:{k:'lose',t:c.siege?SIEGE_OUT[c.siege.outcome]||'击退':'击退'};
@@ -256,9 +259,16 @@
   }
 
   // ---------- 战报卡 ----------
-  function stepper(state,siege){
+  // 舰队：双方船只、海战结果（渡海作战的战役才有）
+  function navalStrip(H,c,state){
+    const N=c.naval;if(!N)return '';const seen=state.finished||['encounter','siege','battle','occupation','retreat','ended'].includes(state.phase),sunk=seen&&N.fought;
+    const side=(k,p)=>`<div class="wr-fleet ${k}" style="--sc:${colorOf(H,p)}"><i></i><b>${p>=0?esc(name(H,p,state.time)):'当地'}</b><span>${count(N.ships[k])} 艘${k==='attacker'&&N.transports?`<small>运兵 ${count(Math.min(N.transports,N.ships[k]))}</small>`:''}</span>${sunk?`<em>损失 ${count(N.sunk[k])}</em>`:''}</div>`;
+    const res=!seen?(state.phase==='naval'&&N.fought?'海战进行中':'舰队航行中'):N.fought?(N.won?'攻方舰队取胜，登陆对岸':'攻方舰队败退'):'无人拦截，顺利渡海';
+    return `<div class="wr-naval"><p class="wr-naval-h"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16h16l-2.5 4h-11Z M12 3v12 M12 4l6 9h-6"/></svg>海上 · 航程 ${Math.round(N.km)} 公里<b>${res}</b></p><div class="wr-fleets">${side('attacker',c.attacker)}<span class="wr-fleet-vs">${N.fought&&N.ratio!=null?`<b>${N.ratio.toFixed(2)}</b><small>舰队战力比</small>`:'<small>未遇拦截</small>'}</span>${side('defender',c.defender)}</div></div>`;
+  }
+  function stepper(state,siege,naval){
     const at=state?STEP_OF[state.phase]??0:0,done=state?.finished;
-    return `<ol class="wr-steps">${STEPS.map(([,t],i)=>`<li class="${i<at||(done&&i<=at)?'done':''}${i===at&&!done?' cur':''}">${siege&&i===2?'围城':siege&&i===3?'攻守':t}</li>`).join('')}</ol>`;
+    return `<ol class="wr-steps">${STEPS.map(([,t],i)=>`<li class="${i<at||(done&&i<=at)?'done':''}${i===at&&!done?' cur':''}">${naval&&i===1?'航渡':naval&&i===2&&state?.phase==='naval'?'海战':siege&&i===2?'围城':siege&&i===3?'攻守':t}</li>`).join('')}</ol>`;
   }
   function sideHead(H,c,side,state,time){
     const force=c.forces[side],s=state[side],p=c[side];
@@ -288,15 +298,15 @@
     state.time=time;
     const v=verdict(c,state,perspective),stamp=Math.min(time,c.endTime),events=state.events,A=c.attacker,D=c.defender;
     const ratio=c.battle?c.battle.attack/Math.max(1,c.battle.defense):0;
-    const kind=c.battle?(c.battle.kind==='siege'?(c.siege?.fort&&!c.siege?.walls?'关堡':'围城'):'野战'):'';
+    const kind=c.battle?(c.battle.kind==='naval'?'海战':(c.naval?'渡海 · ':'')+(c.battle.kind==='siege'?(c.siege?.fort&&!c.siege?.walls?'关堡':'围城'):'野战')):'';
     const result=state.finished?`<p class="wr-result ${v.k}"><b>${esc(c.siege?SIEGE_OUT[c.siege.outcome]:REASONS[c.reason]||c.reason)}</b>${c.battle?` · ${c.control.to!==c.control.from?'战后归属 '+esc(name(H,c.control.to,c.resultTime)):'地区归属未变'}${c.control.kind==='vassal'||c.control.kind==='tributary'?'，并建立臣属关系':''}`:''}</p>`:'';
     const tactics=c.tactics?.length&&events.some(e=>e.type==='tactic')?`<div class="wr-tactics">${c.tactics.map(t=>`<span class="${t.side}" title="${esc(t.detail)}"><i>${t.side==='attacker'?'攻':'守'}</i>${esc(t.label)}</span>`).join('')}</div>`:'';
     const log=events.length?`<ol class="wr-log">${events.map(e=>`<li class="t-${e.type} s-${e.side}${month(e.at)===month(time)?' cur':''}"><time>${dateShort(e.at)}</time><div><b>${esc(e.label)}</b>${e.detail?`<p>${esc(e.detail)}</p>`:''}</div></li>`).join('')}</ol>`:'<p class="wr-empty">部队正在集结，尚未出发。</p>';
     const body=c.forces&&c.battle?`
-        ${formation(H,c,state)}
+        ${navalStrip(H,c,state)}${c.battle.kind==='naval'?'':formation(H,c,state)}
         <div class="wr-sides">${sideHead(H,c,'attacker',state,time)}<div class="wr-vs"><b>${ratio.toFixed(2)}</b><small>战力比</small></div>${sideHead(H,c,'defender',state,time)}</div>
         ${compareRows(c,state)}${tactics}
-        <h5 class="wr-h">战役经过</h5>${stepper(state,!!c.siege)}
+        <h5 class="wr-h">战役经过</h5>${stepper(state,!!c.siege,!!c.naval)}
         <p class="wr-route">${esc(placeName(H,c.source,time,'驻地'))}<em>→</em>${esc(placeName(H,c.target,time,'前线'))}${c.route?` · ${Math.round(c.route.km)} 公里`:''} · 约 ${c.forces.attacker.travelDays.toFixed(1)} 日</p>
         ${log}${result}
         <details class="wr-more"><summary>部队构成与军需</summary><div class="wr-groups"><h6>进攻 · ${esc(sysName(c.forces.attacker.sys))} · ${c.forces.attacker.groups.length} 支</h6>${groupsHtml(H,c.forces.attacker,time)}<h6>防守 · ${esc(sysName(c.forces.defender.sys))} · ${c.forces.defender.groups.length} 支</h6>${groupsHtml(H,c.forces.defender,time)}</div><p class="wr-tiny">额外军粮：进攻 ${count(state.attacker?.supply?.extraFood)} · 防守 ${count(state.defender?.supply?.extraFood)} 人年粮；民用产出减少：进攻 ${count(state.attacker?.supply?.lostProduction)} · 防守 ${count(state.defender?.supply?.lostProduction)} 人年粮</p></details>`

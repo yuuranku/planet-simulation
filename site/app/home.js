@@ -7,9 +7,12 @@
   const CAT_LABEL = Object.fromEntries(CATS.map(c => [c[0], c[1]]));
   const MODE_LABEL = { realistic: '写实', historical: '历史', fantasy: '幻想' };
   const KEYS = [['states', '国家'], ['provinces', '省区'], ['cities', '城市'], ['mountains', '山脉'], ['rivers', '河流'], ['lakes', '湖泊'], ['seas', '海域'], ['regions', '地区'], ['streets', '街道（城市详情）']];
-  const TITLE_KEYS = [['monarchy', '君主国'], ['duchy', '公国'], ['empire', '帝国'], ['republic', '共和国'], ['city', '早期城邦'], ['cityRepublic', '海洋城邦 / 一城之国'], ['nomadic', '游牧政权'], ['nomadEmpire', '游牧帝国'], ['chiefdom', '酋邦'], ['league', '联盟'], ['jimi', '羁縻称谓'], ['nomad', '游牧部族称谓'], ['tribe', '部落称谓']];
+  const TITLE_KEYS = [['monarchy', '君主国'], ['duchy', '公国'], ['empire', '帝国'], ['republic', '共和国'], ['city', '早期城邦'], ['cityRepublic', '海洋城邦 / 一城之国'], ['nomadEmpire', '游牧帝国'], ['chiefdom', '酋邦'], ['league', '联盟'], ['jimi', '羁縻称谓'],
+    ['nomadic', '游牧政体'], ['tribal', '部落政体'], ['primitive', '落后政体'], ['nomad', '游牧政体境内各部'], ['tribe', '部落政体境内各部'], ['clan', '落后政体境内各部']];
+  // 松散政体（游牧、部落、落后政体）各有国号后缀；它们不设省份，境内各地以“某某部、某某旗、某某盟”称呼。没填的项用族系预设
+  const LOOSE_KEYS = new Set(['nomadic', 'tribal', 'primitive', 'nomad', 'tribe', 'clan']);
   // 文化库扩展设定（lib.x）：路径、标签、类型（list 列表 / text 文本 / sel 选择）
-  const TITLE_PH = { monarchy: '第一项是王国级后缀；其余项只在现今地图上给大国换着用', duchy: '王国之下一级（小国用），可填多个：公国、伯国、雅尔国……；留空则从君主国后缀里找“公国 / 侯国”，没有就不设，大小国都用君主国后缀', city: '城邦时代的后缀（农耕、山地文明）；留空为“城邦”', cityRepublic: '海洋文明的城邦，以及现今地图上只有一座城的国家', empire: '称帝以后的国号后缀（帝号是文化圈里最高的法理名分）', nomadEmpire: '游牧政权称帝后的后缀；留空则用帝国后缀' };
+  const TITLE_PH = { nomadic: '松散政体 · 草原游牧的国家：汗国、部族邦联……；留空用族系预设', tribal: '松散政体 · 已有酋长与村社的部落国家：部落联盟、诸部会盟……', primitive: '松散政体 · 仍以采集渔猎为生的落后部族：诸部、林中百姓……', nomad: '游牧政体不设省份，境内各部称：部、旗、盟、鄂托克……（随机取用）', tribe: '部落政体境内各部称：部落、寨、峒……', clan: '落后政体境内各部称：氏族、部落……', monarchy: '第一项是王国级后缀；其余项只在现今地图上给大国换着用', duchy: '王国之下一级（小国用），可填多个：公国、伯国、雅尔国……；留空则从君主国后缀里找“公国 / 侯国”，没有就不设，大小国都用君主国后缀', city: '城邦时代的后缀（农耕、山地文明）；留空为“城邦”', cityRepublic: '海洋文明的城邦，以及现今地图上只有一座城的国家', empire: '称帝以后的国号后缀（帝号是文化圈里最高的法理名分）', nomadEmpire: '游牧政权称帝后的后缀；留空则用帝国后缀' };
   const RULER_KEYS = [['chief', '酋邦首领'], ['city', '城邦之主'], ['king', '国王'], ['empire', '皇帝'], ['nomad', '游牧君主'], ['nomadEmpire', '游牧帝国君主'], ['republic', '共和执政'], ['vassal', '附庸之主'], ['colony', '殖民地长官'], ['rebel', '起义首领']];
   const ORG_LABEL = [['chief', '酋邦'], ['city', '城邦'], ['king', '王国'], ['empire', '帝国'], ['feudal', '封建时代'], ['central', '集权时代'], ['nomad', '游牧政权'], ['republic', '共和'], ['theo', '神权'], ['vassal', '附庸'], ['colony', '殖民地'], ['rebel', '起义军']];
   const XFIELDS = () => { const CE = window.CultureExt; const fam = CE ? Object.entries(CE.FAMILIES).map(([k, f]) => [k, f.label]) : [];
@@ -148,8 +151,8 @@
   }
   function settingsHtml(st) {
     const Q = G.Config.Q, cu = st.custom || {};
-    const rows = Q.map((q, i) => { const o = q.o.find(x => x[0] === st.a[q.id]) || q.o[0]; const c = cu[q.id] && cu[q.id].on ? ' · 自定义：' + Object.entries(cu[q.id].v || {}).map(([k, v]) => { const f = (G.Config.CUSTOM[q.id] || []).find(x => x.key === k); return (f ? f.label : k) + ' ' + v; }).join('，') : '';
-      return `<tr><td>${i + 1}</td><td>${q.t}</td><td><b>${'ABCDE'[q.o.indexOf(o)]}</b> ${o[1]}${o[2] ? ' · ' + o[2] : ''}${c}</td></tr>`; }).join('');
+    const rows = Q.map((q, i) => { const o = G.Config.optOf(q, st.a[q.id]) || q.o[0]; const c = cu[q.id] && cu[q.id].on ? ' · 自定义：' + Object.entries(cu[q.id].v || {}).map(([k, v]) => { const f = (G.Config.CUSTOM[q.id] || []).find(x => x.key === k); return (f ? f.label : k) + ' ' + v; }).join('，') : '';
+      return `<tr><td>${i + 1}</td><td>${q.t}</td><td><b>${'ABCDE'[Math.max(0, q.o.indexOf(o), (q.legacy || []).indexOf(o))]}</b> ${o[1]}${o[2] ? ' · ' + o[2] : ''}${c}</td></tr>`; }).join('');
     const libs = st.libs ? (st.libs.ids === null ? '全部内置文化库' : `${(st.libs.ids || []).length + (st.libs.custom || []).length} 个库`) : '全部内置文化库';
     return `<table class="settings">${rows}<tr><td>⚙</td><td>种子 / 网格</td><td>${st.seed} · ${(g => g.W + '×' + g.H)(G.Config.gridOf(st))}（由星球大小决定）</td></tr><tr><td>📚</td><td>文化库</td><td>${libs}</td></tr><tr><td>✦</td><td>宗教库</td><td>${st.rlibs ? (st.rlibs.ids === null ? '全部内置宗教库' : `${(st.rlibs.ids || []).length + (st.rlibs.custom || []).length} 个库`) : '全部内置宗教库'}</td></tr><tr><td>◉</td><td>种族库</td><td>${st.slibs ? (st.slibs.libraries || []).length + ' 个种族' : '默认种族'}</td></tr></table>`;
   }
@@ -185,7 +188,7 @@
     modal(esc(l.label), `<p class="lm-note">${CAT_LABEL[l.cat] || ''} · ${l.builtin ? MODE_LABEL[l.mode] || '' : '自定义'}库。名称用尽后按词根组合生成新名称。</p>`
       + G.TraitEditor.view('culture', l.traits)
       + KEYS.map(([k, lab]) => `<h5>${lab} <small>${(n[k] || []).length}</small></h5><p class="names">${esc((n[k] || []).join('、')) || '—'}</p>`).join('')
-      + `<h5>国家后缀</h5><p class="names">${TITLE_KEYS.map(([k, lab]) => `${lab}：${esc((t[k] || []).join('、'))}`).join('<br>')}</p>`
+      + `<h5>国家后缀</h5><p class="names">${TITLE_KEYS.map(([k, lab]) => `${lab}：${esc(((t[k] && t[k].length ? t[k] : LOOSE_KEYS.has(k) && window.CultureExt ? window.CultureExt.looseTitles(l, k) : t[k]) || []).join('、'))}`).join('<br>')}</p>`
       + (() => { const x = xOf(l); if (!x) return ''; return XFIELDS().map(([g, fs]) => `<h5>${g}</h5><p class="names">${fs.map(([path, lab, ty, opts]) => { let v = getP(x, path); if (ty === 'sel') { const o = (opts || []).find(o => o[0] === v); v = o ? o[1] : v; } return `${lab}：${esc(Array.isArray(v) ? v.join('、') : v || '—')}`; }).join('<br>')}</p>`).join(''); })()
       + (l.c ? `<h5>组合词根</h5><p class="names">前缀：${esc((l.c.prefixes || []).join(' '))}<br>词根：${esc((l.c.roots || []).join(' '))}<br>后缀：${esc((l.c.suffixes || []).join(' '))}</p>` : ''));
   }
@@ -196,7 +199,7 @@
       <label>生计大类<select id="le-cat">${CATS.map(cc => `<option value="${cc[0]}" ${l.cat === cc[0] ? 'selected' : ''}>${cc[1]}</option>`).join('')}</select></label>
       ${G.TraitEditor.editor('culture', l.traits)}
       ${KEYS.map(([k, lab]) => `<label>${lab}（用顿号、逗号或换行分隔）<textarea data-k="${k}" rows="2">${esc((n[k] || []).join('、'))}</textarea></label>`).join('')}
-      ${TITLE_KEYS.map(([k, lab]) => `<label>${lab}后缀<input data-t="${k}" value="${esc((t[k] || []).join('、'))}"${TITLE_PH[k] ? ` placeholder="${esc(TITLE_PH[k])}"` : ''}></label>`).join('')}
+      ${TITLE_KEYS.map(([k, lab]) => `<label>${lab}${/各部$/.test(lab) ? '称谓' : '后缀'}<input data-t="${k}" value="${esc((t[k] || []).join('、'))}"${TITLE_PH[k] ? ` placeholder="${esc(TITLE_PH[k])}"` : ''}></label>`).join('')}
       ${(() => { const x = xOf(l); if (!x) return ''; return `<details class="lx"><summary>更多设定：人名与世系、君主称谓、政府组织、起义名号、地名后缀、附加称号</summary><div class="lx-body">` + XFIELDS().map(([g, fs]) => `<h5>${g}</h5>` + fs.map(([path, lab, ty, opts]) => { const v = getP(x, path); return ty === 'sel' ? `<label>${lab}<select data-x="${path}">${opts.map(o => `<option value="${o[0]}" ${o[0] === v ? 'selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>` : ty === 'list' ? `<label>${lab}<textarea data-x="${path}" data-xl="1" rows="2">${esc((v || []).join('、'))}</textarea></label>` : `<label>${lab}<input data-x="${path}" value="${esc(v || '')}"></label>`; }).join('')).join('') + '</div></details>'; })()}
       <label>组合前缀<input data-c="prefixes" value="${esc(c.prefixes.join('、'))}"></label><label>组合词根<input data-c="roots" value="${esc(c.roots.join('、'))}"></label><label>组合后缀<input data-c="suffixes" value="${esc(c.suffixes.join('、'))}"></label></div>`,
       `<button class="btn ghost" data-lm-close>取消</button><button class="btn primary" id="le-save">保存</button>`);
@@ -248,7 +251,7 @@
       if (b.dataset.del && confirm('删除这个自定义文化库？已推演的世界不受影响（保存时已冻结文化快照）。')) { setCustom(getCustom().filter(l => l.id !== b.dataset.del)); const sel = (getSel() || []).filter(x => x !== b.dataset.del); setSel(sel.length ? sel : libs.filter(l => l.builtin).map(l => l.id)); renderLibrary(); }
     });
     $('libAll').onclick = () => { setSel(allLibs().map(l => l.id)); renderLibrary(); };
-    $('libNew').onclick = () => editLib({ cat: 'agrarian', n: {}, t: { monarchy: ['王国'], empire: ['帝国'], republic: ['共和国'], cityRepublic: ['城邦共和国'], nomadic: ['部族邦联'], chiefdom: ['酋邦'], league: ['联盟'], jimi: ['羁縻州', '土司'], nomad: ['部', '部落'], tribe: ['部落', '氏族'] }, c: { roots: [], prefixes: [], suffixes: [] } }, true);
+    $('libNew').onclick = () => editLib({ cat: 'agrarian', n: {}, t: { monarchy: ['王国'], empire: ['帝国'], republic: ['共和国'], cityRepublic: ['城邦共和国'], nomadic: ['部族邦联'], tribal: ['部落联盟'], primitive: ['诸部'], chiefdom: ['酋邦'], league: ['联盟'], jimi: ['羁縻州', '土司'], nomad: ['部', '旗', '盟'], tribe: ['部落', '寨'], clan: ['氏族'] }, c: { roots: [], prefixes: [], suffixes: [] } }, true);
     $('libExport').onclick = () => { const sel = getSel() || allLibs().map(l => l.id); const data = { schema: 'planet-culture-libraries-v1', libraries: allLibs().filter(l => sel.includes(l.id)).map(({ builtin: b, ...l }) => l) }; const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' })); a.download = '文化库.json'; a.click(); };
     $('libImport').onclick = () => $('libFile').click();
     $('libFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try {

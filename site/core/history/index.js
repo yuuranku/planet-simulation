@@ -2,7 +2,7 @@
  * 第一次打开时间线时，再把同一次推演的结果打包交给页面。 */
 (function (G) {
   'use strict';
-  const VERSION = 20;
+  const VERSION = 23;
   function hsl(h, s, l) { h = ((h % 360) + 360) % 360 / 360; const f = n => { const k = (n + h * 12) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); }; return [f(0), f(8), f(4)]; }
 
   // 核心推演：世界生成时运行（历史的终局写回现在的地图，见 apply.js）
@@ -18,7 +18,7 @@
     progress && progress('历史 · 城市兴衰', 0.966);
     const C = G.HistoryCities.run(h, R, D, { cities: Cv.cities, labels: Cv.labels });
     progress && progress('历史 · 列国争霸到现在', 0.968);
-    const Pol = G.HistoryPolity.run(h, R, D, C, { targetCountries: world.cfg.countries, targetTribal: world.cfg.tribal, provinces: Cv.provinces, religions: Cv.religions, cultureNames: Cv.cultures.map(c => c.name), routes:Cv.routes, admin:Cv.admin, militaryRules:world.cfg.militaryRules, yearDays:world.cfg.yearDays, fullTerrain:{P:world.P,Cl:world.Cl,Hy:world.Hy,cfg:world.cfg} });
+    const Pol = G.HistoryPolity.run(h, R, D, C, { targetCountries: world.cfg.countries, targetTribal: world.cfg.tribal, nomadShare: world.cfg.nomadShare, provinces: Cv.provinces, religions: Cv.religions, cultureNames: Cv.cultures.map(c => c.name), routes:Cv.routes, admin:Cv.admin, militaryRules:world.cfg.militaryRules, yearDays:world.cfg.yearDays, fullTerrain:{P:world.P,Cl:world.Cl,Hy:world.Hy,cfg:world.cfg} });
     for (const list of [D.events, C.events, Pol.events]) for (const event of list) G.HistoryCities.resolveEvent(event, C.cities);
     const t3 = Date.now();
     // 区块边界在全分辨率地形上按“山川形便”细化：沿山脊与大河，平原上有自然的犬牙交错
@@ -72,7 +72,7 @@
       civs, ancient, cradles, religions, events: events.map(G.HistoryDate.event), eraStep: D.eraStep, eraAt: D.eraAt, eraNames: D.ERA_NAME,
       outline: O, regionF, landF, FW, FH,
       polities: Pol.polities, alliances: Pol.alliances || [], forts: Pol.forts, holyWars: Pol.holyWars, own: Pol.own, cultLog: Pol.cultLog, relLog: Pol.relLog, provinces: Pol.provinces, provLog: Pol.provLog, unrest: Pol.unrest, human: Pol.human, Rkm: h.R, EMPN: Pol.EMPN, T0: Pol.T0,
-      cities: C.cities, cityPop: C.popF || C.pop, popStep: C.popF ? C.popStepF : C.popStep, popN: C.popF ? C.popNF : C.popN, regionPop: C.popF ? C.regionPopF : C.regionPop, /* 面板曲线用 10 年一档的细采样 */ pasture: R.pasture, popTotal: h.popTotal, roads: C.roads, plagues: C.plagues, tiers: C.tiers,
+      cities: C.cities, cityPop: C.popF || C.pop, popStep: C.popF ? C.popStepF : C.popStep, popN: C.popF ? C.popNF : C.popN, regionPop: C.popF ? C.regionPopF : C.regionPop, /* 面板曲线用 10 年一档的细采样 */ pasture: R.pasture, popTotal: h.popTotal, roads: C.roads, lanes: C.lanes || [], plagues: C.plagues, tiers: C.tiers,
       stats: { domesticRoads: Hc.roadFix || null, alliances: (Pol.alliances || []).length, regions: R.nR, edges: R.edges.length, core: Hc.ms, polity: Pol.stats, cities: C.cities.length, lost: C.cities.filter(c => c.lost).length, roads: C.roads.length, ms: Date.now() - t0 }
     };
     return data;

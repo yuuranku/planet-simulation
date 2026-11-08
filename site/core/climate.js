@@ -154,6 +154,7 @@
     const contin = new Float32Array(N);
     for (let i = 0; i < N; i++) contin[i] = isLand[i] ? Math.min(1, distOcean[i] / 1800) : 0;
 
+    let adv = null;
     for (let s = 0; s < 4; s++) {
       progress('四季气候 · ' + SEASONS[s], 0.55 + s * 0.05);
       const T = new Float32Array(N);
@@ -233,7 +234,9 @@
       // 迭代步数要足以让水汽走完最宽的大陆（每步约 100 km）；步数过少时水汽前锋到不了内陆，
       // 大陆腹地会被硬性判成零降水，形成成片沙漠和一条条“前锋断层”。
       const IT = Math.max(44, Math.min(130, Math.round(11500 / Math.max(30, cellKm * 1.2))));
-      for (let it = 0; it < IT; it++) {
+      // 风场在本季内不变：每格的上游采样点、插值权重、降水率与再循环系数只算一次，迭代中只搬运水汽（逐位等同于逐步重算）
+      if (!adv) adv = { a: new Int32Array(N), b: new Int32Array(N), c: new Int32Array(N), d: new Int32Array(N), tx: new Float64Array(N), ty: new Float64Array(N), r: new Float64Array(N), rc: new Float64Array(N) };
+      { const { a: A0, b: B0, c: C0, d: D0, tx: TX, ty: TY, r: RR, rc: RC } = adv;
         for (let y = 0; y < cH; y++) {
           const kx = tau / (cellKm * 1000 * Math.max(0.08, C.cosLat[y])), ky = tau / (cellKm * 1000);
           for (let x = 0; x < cW; x++) {
@@ -242,15 +245,23 @@
             if (sy < 0) sy = 0; else if (sy > cH - 1.001) sy = cH - 1.001;
             const x0 = Math.floor(sx), tx = sx - x0, y0 = sy | 0, ty = sy - y0;
             const xa = (x0 % cW + cW) % cW, xb = (xa + 1) % cW, r0 = y0 * cW, r1 = Math.min(cH - 1, y0 + 1) * cW;
-            const mu = (M[r0 + xa] * (1 - tx) + M[r0 + xb] * tx) * (1 - ty) + (M[r1 + xa] * (1 - tx) + M[r1 + xb] * tx) * ty;
             const eu = (eC[r0 + xa] * (1 - tx) + eC[r0 + xb] * tx) * (1 - ty) + (eC[r1 + xa] * (1 - tx) + eC[r1 + xb] * tx) * ty;
             let r = rateB[i] + Math.max(0, eC[i] - Math.max(0, eu)) * 0.00042;
             if (r > 0.65) r = 0.65;
-            let rn, m;
-            if (isLand[i]) { rn = mu * r; m = mu - rn + rn * (0.25 + 0.45 * smoothstep(0, 20, T[i])); } // 陆面蒸散再循环：越暖越强（热带约 0.7）
-            else { rn = mu * r * 0.55; m = mu - rn; m += (evap[i] - m) * 0.22; }
-            Mn[i] = m; rain[i] = rn;
+            A0[i] = r0 + xa; B0[i] = r0 + xb; C0[i] = r1 + xa; D0[i] = r1 + xb; TX[i] = tx; TY[i] = ty; RR[i] = r;
+            RC[i] = isLand[i] ? 0.25 + 0.45 * smoothstep(0, 20, T[i]) : 0;
           }
+        }
+      }
+      const { a: A0, b: B0, c: C0, d: D0, tx: TX, ty: TY, r: RR, rc: RC } = adv;
+      for (let it = 0; it < IT; it++) {
+        for (let i = 0; i < N; i++) {
+          const tx = TX[i], ty = TY[i], r = RR[i];
+          const mu = (M[A0[i]] * (1 - tx) + M[B0[i]] * tx) * (1 - ty) + (M[C0[i]] * (1 - tx) + M[D0[i]] * tx) * ty;
+          let rn, m;
+          if (isLand[i]) { rn = mu * r; m = mu - rn + rn * RC[i]; } // 陆面蒸散再循环：越暖越强（热带约 0.7）
+          else { rn = mu * r * 0.55; m = mu - rn; m += (evap[i] - m) * 0.22; }
+          Mn[i] = m; rain[i] = rn;
         }
         // 涡动扩散：让水汽也能慢慢渗入大陆内部
         for (let y = 1; y < cH - 1; y++) for (let x = 0; x < cW; x++) {

@@ -1,6 +1,6 @@
 # 星球推演 · 世界生成器
 
-当前版本：**1.4.4**。在本机生成世界、探索地图并推演文明历史，Windows 和安卓共用 `site/` 的代码。
+当前版本：**1.4.5**。在本机生成世界、探索地图并推演文明历史，Windows 和安卓共用 `site/` 的代码。
 
 - 调整国家规模分布、地域政权传承、王朝周期和飞地处理，并加入君主上位方式与编年记录。
 - 战役要求双方各至少动员 1,000 人；调整义军与未设省地区的历史表现。
@@ -14,7 +14,7 @@
 
 ## 下载安装
 
-在项目的 Releases 页面下载 Windows 便携版 ZIP 或 Android APK。Windows 完整解压后双击“启动世界生成器.cmd”，使用时保持窗口开启；Android 支持 8.0 及以上，更新已安装的应用需要相同的签名。安卓真机运行和性能尚未完成验证。
+在项目的 Releases 页面下载 Windows 便携版 ZIP 或 Android APK。Windows 完整解压后双击“启动世界生成器.cmd”，使用时保持窗口开启；Android 支持 8.0 及以上，竖屏启动时会提示建议横屏使用；更新已安装的应用需要相同的签名。安卓真机运行和性能尚未完成验证。
 
 世界保存在当前设备的浏览器或应用中，安装包不包含用户存档。更换设备前请导出世界文件及需要保留的城市存档、种族、文化和宗教库。建议更新前导出备份；重新打开世界时会按保存的种子和设置重新推演，政治历史可能变化，已保存的人物经历不会自动重算。
 
@@ -26,11 +26,7 @@
 
 网页所需脚本已随仓库提供。修改球体、世界文件或 PNG 解码入口后，可安装 Node.js 和 npm，运行 `npm ci`，然后按需运行 `npm run build:globe`、`npm run build:world-package` 或 `npm run build:png-decoder`。
 
-建国与历史规则回归可在仓库根目录运行：
-
-```sh
-node --test tests/civilization-statehood.test.cjs tests/life-vassal.test.cjs tests/ruler-culture-history.test.cjs tests/ruler-terminal-names.test.cjs tests/restoration-lineage.test.cjs tests/theocracy-trait.test.cjs tests/rulers-release.test.cjs tests/military-release.test.cjs
-```
+`tests/` 中部分历史规则回归使用旧版测试夹具，尚未适配当前生成数据结构；相关夹具和断言有待更新。
 
 ## 项目结构与授权
 

@@ -13,7 +13,7 @@
 
   function open(state, done, closable, resume) {
     G.MapImport.cancel(st);
-    st = JSON.parse(JSON.stringify(state)); onDone = done; page = resume ? 0 : -2; mapMode = !!st.terrainInput; canClose = !!closable;
+    st = G.Config.migrateAnswers(JSON.parse(JSON.stringify(state))); onDone = done; page = resume ? 0 : -2; mapMode = !!st.terrainInput; canClose = !!closable;
     preparing(false);
     $('wizClose').hidden = false;
     $('wizard').hidden = false;
@@ -64,7 +64,7 @@
     const civ = fact('时代', '·', 'mid', age, yr + (c.endYear >= 4450 ? ' · 已有火药与远洋航海' : c.endYear >= 3500 ? ' · 尚无印刷、火药与远洋航海' : ' · 尚无封建契约与远洋航海'))
       + fact('人口基线', ...step3(c.popIdx, 1, 1), ['较低', '中等', '较高'][c.popIdx], pop + '，实际人口随历史演化')
       + fact('文化', ...step3(c.cultures, 11, 17), c.cultures > 17 ? '多元细碎' : c.cultures < 11 ? '大文化圈' : '中等', `${c.cultures} 个文化圈 · ${c.languages} 种语言 · ${c.religions} 个宗教`)
-      + fact('国家', ...step3(c.countries, 60, 100), c.countries > 100 ? '列国林立' : c.countries < 60 ? '少数大国' : '中等', `目标约 ${c.countries} 国 · 部落空间 ${Math.round(c.tribal * 100)}%`)
+      + fact('国家', ...step3(c.countries, 160, 260), c.countries > 260 ? '列国林立' : c.countries < 160 ? '少数大国' : '列国并立', `约 ${c.countries} 国（其中约 ${Math.round((c.nomadShare || 0) * 100)}% 为游牧、部落等松散政体）`)
       + fact('城镇', ...step3(c.towns, 600, 900), c.towns > 900 ? '城镇密集' : c.towns < 600 ? '城镇疏朗' : '标准', `约 ${c.towns} 座城镇`);
     return `<div class="q"><h4><em>≈</em>世界总结 <small class="trend-sub">这些选择叠加出的整体倾向</small></h4><div class="trend">
       <section><h6>气候</h6>${t1}${w1}${s1}${b1}</section>
@@ -148,7 +148,7 @@
         <button type="button" data-act="rlibs"><b>宗教库</b><span>已选 ${G.RelLib ? G.RelLib.selectedCount() : ''} 个</span><small>按发源地文明匹配；类型与传播方式影响推演</small></button>
         <button type="button" data-act="slibs"><b>种族库</b><span>已选 ${G.SpeciesLib ? G.SpeciesLib.selectedCount() : 0} 个</span><small>体质、寿命与天赋词条</small></button>
       </div>
-      <h5 class="wz-sumtitle">设定一览 <small>点任意一项回到那一步修改</small></h5><div class="summary">${Q.map((q, i) => { const o = q.o.find(x => x[0] === st.a[q.id]); return `<button type="button" data-p="${PAGES.findIndex(pg => pg.q.includes(i))}"><span>${i + 1}. ${q.t}</span><b>${o[1]}</b>${o[2] && o[2].length < 18 ? `<small>${o[2]}</small>` : ''}</button>`; }).join('')}${G.MilitarySettings ? G.MilitarySettings.summary(st).map(m => `<button type="button" data-p="${PAGES.findIndex(pg => pg.military)}"><span>${m.n}. ${m.t}</span><b>${m.b}</b><small>${m.s}</small></button>`).join('') : ''}</div></div>`;
+      <h5 class="wz-sumtitle">设定一览 <small>点任意一项回到那一步修改</small></h5><div class="summary">${Q.map((q, i) => { const o = G.Config.optOf(q, st.a[q.id]) || q.o[0]; return `<button type="button" data-p="${PAGES.findIndex(pg => pg.q.includes(i))}"><span>${i + 1}. ${q.t}</span><b>${o[1]}</b>${o[2] && o[2].length < 18 ? `<small>${o[2]}</small>` : ''}</button>`; }).join('')}${G.MilitarySettings ? G.MilitarySettings.summary(st).map(m => `<button type="button" data-p="${PAGES.findIndex(pg => pg.military)}"><span>${m.n}. ${m.t}</span><b>${m.b}</b><small>${m.s}</small></button>`).join('') : ''}</div></div>`;
     }
     hideTip();
     $('wizBody').innerHTML = html;

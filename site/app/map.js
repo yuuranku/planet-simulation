@@ -30,6 +30,44 @@
   const MP = MapView.prototype;
   MP.level = function () { return levelOf(this.zoomRel()); };
 
+  // ---------- 视口裁剪的矢量路径 ----------
+  // 全图矢量（河流、国界、道路……）按子路径包围盒分进 32×16 个桶。放大后只把视口附近的桶拼成一条路径来描：
+  // 每条子路径整条保留，同一图层仍是一次描边（虚线相位、半透明叠加与原先一致），只是不再让光栅化处理视野外的成千上万段线。
+  // 仍是 Path2D 子类：需要整幅路径的地方（球体纹理、缩略图）照常直接使用。
+  const BIN_X = 32, BIN_Y = 16;
+  let SPath = null;
+  try {
+    SPath = class extends Path2D {
+      constructor(W, H) { super(); this._W = W; this._H = H; this._subs = []; this._cur = null; this._bins = null; this._views = []; }
+      moveTo(x, y) { super.moveTo(x, y); if (this._bins) return; this._cur = { pts: [x, y], closed: false, x0: x, y0: y, x1: x, y1: y }; this._subs.push(this._cur); }
+      lineTo(x, y) { super.lineTo(x, y); const s = this._cur; if (!s || this._bins) return; s.pts.push(x, y); if (x < s.x0) s.x0 = x; else if (x > s.x1) s.x1 = x; if (y < s.y0) s.y0 = y; else if (y > s.y1) s.y1 = y; }
+      closePath() { super.closePath(); if (this._cur && !this._bins) this._cur.closed = true; }
+      _finalize() {
+        const bins = new Map(), bw = this._W / BIN_X, bh = this._H / BIN_Y;
+        for (const sp of this._subs) {
+          const bx = Math.floor((sp.x0 + sp.x1) / 2 / bw), by = Math.max(0, Math.min(BIN_Y - 1, Math.floor((sp.y0 + sp.y1) / 2 / bh))), key = by * 4096 + bx + 2048;
+          let b = bins.get(key); if (!b) bins.set(key, b = { p: new Path2D(), x0: sp.x0, y0: sp.y0, x1: sp.x1, y1: sp.y1 });
+          const a = sp.pts; b.p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) b.p.lineTo(a[k], a[k + 1]); if (sp.closed) b.p.closePath();
+          if (sp.x0 < b.x0) b.x0 = sp.x0; if (sp.x1 > b.x1) b.x1 = sp.x1; if (sp.y0 < b.y0) b.y0 = sp.y0; if (sp.y1 > b.y1) b.y1 = sp.y1;
+        }
+        this._bins = [...bins.values()]; this._subs = null; this._cur = null;
+      }
+      // 当前副本的可见范围（格坐标）→ 视口附近子路径拼成的路径；视野占全图近半时直接用整幅
+      _view(x0, y0, x1, y1) {
+        if (x1 - x0 >= this._W * 0.45) return this;
+        if (!this._bins) this._finalize();
+        const mx = (x1 - x0) * 0.06, my = (y1 - y0) * 0.06;
+        for (const v of this._views) if (v.x0 <= x0 - mx && v.x1 >= x1 + mx && v.y0 <= y0 - my && v.y1 >= y1 + my) return v.p;
+        const px = (x1 - x0) * 0.35, py = (y1 - y0) * 0.35, w = { x0: x0 - px, y0: y0 - py, x1: x1 + px, y1: y1 + py, p: new Path2D() };
+        for (const b of this._bins) if (b.x0 <= w.x1 && b.x1 >= w.x0 && b.y0 <= w.y1 && b.y1 >= w.y0) w.p.addPath(b.p);
+        this._views.unshift(w); if (this._views.length > 3) this._views.pop();
+        return w.p;
+      }
+    };
+    new SPath(2, 1).moveTo(0, 0);
+  } catch (e) { SPath = null; }
+  MP.newPath = function () { return SPath ? new SPath(this.W, this.H) : new Path2D(); };
+
   MP.setData = function (d) {
     this.d = d; this.W = d.W; this.H = d.H; this.cityScore = null; this.urban = new Map(); this.urbanReq = new Set(); this.stemCache = null;
     this.kmPerGrid = 2 * Math.PI * d.cfg.radius / d.W;
@@ -39,19 +77,19 @@
     this.fit(); this.fitted = true;
     this.refreshRaster();
   };
-  const toPath = (lines) => { const p = new Path2D(); for (const a of lines) { p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) p.lineTo(a[k], a[k + 1]); } return p; };
+  const toPath = (lines, mv) => { const p = mv ? mv.newPath() : new Path2D(); for (const a of lines) { p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) p.lineTo(a[k], a[k + 1]); } return p; };
   // 平滑折线（道路/航线）：Chaikin 一次
   const smoothLines = lines => lines.map(a => { if (a.length < 6) return a; const o = [a[0], a[1]]; for (let k = 0; k < a.length - 2; k += 2) o.push(a[k] * 0.75 + a[k + 2] * 0.25, a[k + 1] * 0.75 + a[k + 3] * 0.25, a[k] * 0.25 + a[k + 2] * 0.75, a[k + 1] * 0.25 + a[k + 3] * 0.75); o.push(a[a.length - 2], a[a.length - 1]); return o; });
   MP.buildPaths = function () {
     const d = this.d;
-    const cont = { land: new Path2D(), sea: new Path2D(), index: new Path2D(), fine: null, fineIndex: null };
+    const cont = { land: new Path2D(), sea: this.newPath(), index: new Path2D(), fine: null, fineIndex: null };
     for (const c of d.contours || []) { const p = c.level <= 0 ? cont.sea : c.k % 4 === 0 ? cont.index : cont.land, a = c.pts; p.moveTo(a[0], a[1]); for (let k = 2; k < a.length; k += 2) p.lineTo(a[k], a[k + 1]); }
-    const roads = {}; for (const k of ['trunk', 'regional', 'local', 'sea', 'rail', 'seaTrunk']) roads[k] = toPath(k === 'sea' || k === 'seaTrunk' ? smoothLines(d.roads[k] || []) : d.roads[k] || []); // 陆路已在 Worker 里按水面校验圆滑过，这里再切角会切进水里
-    const BD = d.borders || {}, borders = {}; for (const k of ['country', 'frontier', 'province', 'claim']) borders[k] = toPath(BD[k] || []);
-    const plates = d.plateSegs.map(lines => toPath(lines));
-    const isobars = (d.isobars || []).map(s => toPath(s.lines.map(l => l.pts)));
+    const roads = {}; for (const k of ['trunk', 'regional', 'local', 'sea', 'rail', 'seaTrunk', 'river', 'riverTrunk']) roads[k] = toPath(k === 'sea' || k === 'seaTrunk' ? smoothLines(d.roads[k] || []) : d.roads[k] || [], this); // 陆路已在 Worker 里按水面校验圆滑过，这里再切角会切进水里
+    const BD = d.borders || {}, borders = {}; for (const k of ['country', 'frontier', 'province', 'claim']) borders[k] = toPath(BD[k] || [], this);
+    const plates = d.plateSegs.map(lines => toPath(lines, this));
+    const isobars = (d.isobars || []).map(s => toPath(s.lines.map(l => l.pts), this));
     // 小型湖泊（矢量）：按层级分两组路径，形状为确定性的不规则湖岸
-    const sl = [new Path2D(), new Path2D()], SL = d.smallLakes || [];
+    const sl = [this.newPath(), this.newPath()], SL = d.smallLakes || [];
     for (let k = 0; k < SL.length; k += 5) { const x = SL[k], y = SL[k + 1], r = SL[k + 2], sd = SL[k + 3], p = sl[SL[k + 4] === 1 ? 0 : 1];
       const n = 11, a0 = (sd % 628) / 100, ex = 0.65 + ((sd >> 3) % 70) / 100, rot = ((sd >> 6) % 314) / 100;
       for (let j = 0; j <= n; j++) { const a = j / n * Math.PI * 2, wob = 1 + 0.22 * Math.sin(a * 3 + a0) + 0.12 * Math.sin(a * 5 - a0 * 2), rx = Math.cos(a) * r * wob, ry = Math.sin(a) * r * wob * ex;
@@ -63,7 +101,7 @@
     const key = season == null ? 'ann' : 's' + season;
     if (this.paths.rivers[key]) return this.paths.rivers[key];
     const { pts, offs } = this.d.rivers, qth = this.d.qth, tiers = this.d.rivers.tiers;
-    const mk = () => ({ cls: [new Path2D(), new Path2D(), new Path2D(), new Path2D(), new Path2D()], dry: new Path2D() });
+    const np = () => this.newPath(), mk = () => ({ cls: [np(), np(), np(), np(), np()], dry: np() });
     const byTier = [mk(), mk(), mk(), mk()], all = mk();
     const clsOf = q => { const r = q / qth; return r < 3 ? 0 : r < 10 ? 1 : r < 40 ? 2 : r < 150 ? 3 : 4; };
     for (let r = 0; r < offs.length - 1; r++) {
@@ -122,7 +160,7 @@
   };
   MP.stopMotion = function () { if (this.motion) cancelAnimationFrame(this.motion); this.motion = 0; };
   // 可见区域的中心：右侧纸页、底部时间轴、左侧抽屉盖住的部分不算（每帧重算——纸页常在镜头起飞后才展开）
-  const OCCLUDERS = '.tl-city,.tl-focus,.person-panel,#cityCard,#cityPanel,#timeline,#tlDrawer,#layerPanel,#infoPanel,#savedPanel,#stylePanel,.mil-panel';
+  const OCCLUDERS = '.tl-city,.tl-focus,.person-panel,#cityCard,#cityPanel,#timeline,#tlDrawer,#layerPanel,#infoPanel,#savedPanel,#stylePanel,#tipPanel,.mil-panel';
   MP.focusCenter = function () {
     const cr = this.cv.getBoundingClientRect(), vw = this.vw, vh = this.vh; let l = 0, t = 0, r = vw, b = vh;
     for (const el of document.querySelectorAll(OCCLUDERS)) {
@@ -276,7 +314,11 @@
     c.setTransform(1, 0, 0, 1, 0, 0); c.filter = 'none'; c.fillStyle = VS.bg; c.fillRect(0, 0, this.cv.width, this.cv.height);
     if (!this.d) return;
     const ks = this.copies(), W = this.W, H = this.H, s = v.s;
-    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+    // 镜头移动中的帧用较快的插值缩放底图与瓦片；停下约 0.15 秒后按高质量重画一帧
+    const viewKey = [this.cv.width, this.cv.height, v.x, v.y, v.s].join(':'), moving = this.lastViewKey !== undefined && viewKey !== this.lastViewKey;
+    this.lastViewKey = viewKey; clearTimeout(this.settleTimer);
+    if (moving) { this.motionFrame = true; this.settleTimer = setTimeout(() => { this.settleTimer = 0; if (this.motionFrame) this.draw(); }, 150); } else this.motionFrame = false;
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = moving ? 'low' : 'high';
     if (this.tex) for (const k of ks) { c.setTransform(dpr, 0, 0, dpr, 0, 0); c.drawImage(this.tex, v.x + k * W * s, v.y, W * s, H * s); }
     this.drawTiles(c, ks);
     if (this.app.drawHistory) this.app.drawHistory(c, this, ks); // 历史时间线：区块着色（在河流、海岸等矢量层之下）
@@ -285,17 +327,19 @@
     if (styled) { if (!this.vcv) { this.vcv = document.createElement('canvas'); } if (this.vcv.width !== this.cv.width || this.vcv.height !== this.cv.height) { this.vcv.width = this.cv.width; this.vcv.height = this.cv.height; }
       c = this.vcv.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, this.vcv.width, this.vcv.height); this.ctx = c; }
     const app = this.app, aux = app.aux, tab = app.tab, zr = this.zoomRel(), lv = levelOf(zr), topic = app.topic(), px = 1 / s, d = this.d;
-    const each = (fn) => { for (const k of ks) { c.setTransform(dpr * s, 0, 0, dpr * s, dpr * (v.x + k * W * s), dpr * v.y); fn(k); } };
+    let curK = 0; // 当前世界副本：V(path) 取该副本视口附近的子路径
+    const V = P => P && P._view ? P._view(-v.x / s - curK * W, -v.y / s, (this.vw - v.x) / s - curK * W, (this.vh - v.y) / s) : P;
+    const each = (fn) => { for (const k of ks) { curK = k; c.setTransform(dpr * s, 0, 0, dpr * s, dpr * (v.x + k * W * s), dpr * v.y); fn(k); } };
     c.lineJoin = 'round'; c.lineCap = 'round';
     const POL = !!VS.political; // 政区图：不画陆地等高线，始终显示国界与经纬网
     if (aux.coast && !POL) each(() => {
-      c.strokeStyle = 'rgba(110,150,185,.3)'; c.lineWidth = 0.7 * px; c.stroke(this.paths.cont.sea);
+      c.strokeStyle = 'rgba(110,150,185,.3)'; c.lineWidth = 0.7 * px; c.stroke(V(this.paths.cont.sea));
       // 陆地 23 层等高线改在栅格里按设色地表逐像素描出（core/render.js），与海岸线、色带同源，不再在此叠矢量线
     });
     // 城市建成区（新城市生成器）：在原位绘制建成区、街区、干道、城墙
     // 小型湖泊：区域级起显示较大的，地方级起显示全部（全图不画，节省绘制）
     if (aux.lakes !== false && lv >= 1 && tab !== 'plates') each(() => { c.fillStyle = '#a9d2e6'; c.strokeStyle = 'rgba(72,122,160,.55)'; c.lineWidth = 1.2 * px;
-      const ks = lv >= 2 ? [0, 1] : [0]; for (const k of ks) c.stroke(this.paths.smallLakes[k]); for (const k of ks) c.fill(this.paths.smallLakes[k]); }); // 先描边后填色：相邻小湖融为一体，不出现内部轮廓
+      const ks = lv >= 2 ? [0, 1] : [0]; for (const k of ks) c.stroke(V(this.paths.smallLakes[k])); for (const k of ks) c.fill(V(this.paths.smallLakes[k])); }); // 先描边后填色：相邻小湖融为一体，不出现内部轮廓
     // 河流
     const seasonal = tab === 'season' && app.sx.srivers;
     if (aux.rivers || seasonal) {
@@ -305,41 +349,44 @@
       each(() => {
         for (let t = tierMax; t >= 0; t--) { const T = rp.byTier[t], fade = t < tierMax ? 1 : lv === 0 ? 1 : 0.8;
           c.strokeStyle = fade < 1 ? 'rgba(75,143,198,.85)' : '#4b8fc6';
-          for (let i = 0; i < 5; i++) { c.lineWidth = Math.max(lv === 0 ? 0.9 : 0.5, widths[i] * wf * (lv === 0 ? 1.3 : 1)) * px; c.stroke(T.cls[i]); }
-          if (seasonal) { c.setLineDash([2 * px, 2.5 * px]); c.strokeStyle = 'rgba(75,143,198,.7)'; c.lineWidth = 0.7 * wf * px; c.stroke(T.dry); c.setLineDash([]); } }
+          for (let i = 0; i < 5; i++) { c.lineWidth = Math.max(lv === 0 ? 0.9 : 0.5, widths[i] * wf * (lv === 0 ? 1.3 : 1)) * px; c.stroke(V(T.cls[i])); }
+          if (seasonal) { c.setLineDash([2 * px, 2.5 * px]); c.strokeStyle = 'rgba(75,143,198,.7)'; c.lineWidth = 0.7 * wf * px; c.stroke(V(T.dry)); c.setLineDash([]); } }
       });
     }
     // 边界（矢量）：省界 < 名义宣称 < 部族边疆 < 国界
     const human = tab === 'human', polTopic = human && POLITICAL_TOPIC[topic], showStates = aux.borders || polTopic || (human && topic === 'system') || POL;
     if (tab !== 'plates' && tab !== 'season') each(() => {
-      if (polTopic && (topic === 'province' || lv >= 2)) { c.setLineDash([3 * px, 2.5 * px]); c.strokeStyle = 'rgba(70,60,55,.42)'; c.lineWidth = 0.8 * px; c.stroke(this.paths.borders.province); c.setLineDash([]); }
-      if (aux.nominal) { c.setLineDash([6 * px, 4 * px]); c.strokeStyle = 'rgba(150,70,60,.6)'; c.lineWidth = 1.1 * px; c.stroke(this.paths.borders.claim); c.setLineDash([]); }
+      if (polTopic && (topic === 'province' || lv >= 2)) { c.setLineDash([3 * px, 2.5 * px]); c.strokeStyle = 'rgba(70,60,55,.42)'; c.lineWidth = 0.8 * px; c.stroke(V(this.paths.borders.province)); c.setLineDash([]); }
+      if (aux.nominal) { c.setLineDash([6 * px, 4 * px]); c.strokeStyle = 'rgba(150,70,60,.6)'; c.lineWidth = 1.1 * px; c.stroke(V(this.paths.borders.claim)); c.setLineDash([]); }
       if (showStates && POL) { // 政区图：细而清晰的深灰国界，部族边疆用细虚线
-        c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 2 * px; c.stroke(this.paths.borders.country);
-        c.strokeStyle = 'rgba(78,78,92,.85)'; c.lineWidth = 0.9 * px; c.stroke(this.paths.borders.country);
-        c.setLineDash([3 * px, 2.5 * px]); c.strokeStyle = 'rgba(96,96,110,.6)'; c.lineWidth = 0.8 * px; c.stroke(this.paths.borders.frontier); c.setLineDash([]);
+        c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 2 * px; c.stroke(V(this.paths.borders.country));
+        c.strokeStyle = 'rgba(78,78,92,.85)'; c.lineWidth = 0.9 * px; c.stroke(V(this.paths.borders.country));
+        c.setLineDash([3 * px, 2.5 * px]); c.strokeStyle = 'rgba(96,96,110,.6)'; c.lineWidth = 0.8 * px; c.stroke(V(this.paths.borders.frontier)); c.setLineDash([]);
       } else if (showStates) {
-        c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 3 * px; c.stroke(this.paths.borders.country);
-        c.strokeStyle = 'rgba(70,52,44,.8)'; c.lineWidth = 1.25 * px; c.stroke(this.paths.borders.country);
-        c.setLineDash([1.5 * px, 2.5 * px]); c.strokeStyle = 'rgba(110,80,60,.6)'; c.lineWidth = 1 * px; c.stroke(this.paths.borders.frontier); c.setLineDash([]);
+        c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 3 * px; c.stroke(V(this.paths.borders.country));
+        c.strokeStyle = 'rgba(70,52,44,.8)'; c.lineWidth = 1.25 * px; c.stroke(V(this.paths.borders.country));
+        c.setLineDash([1.5 * px, 2.5 * px]); c.strokeStyle = 'rgba(110,80,60,.6)'; c.lineWidth = 1 * px; c.stroke(V(this.paths.borders.frontier)); c.setLineDash([]);
       }
     });
     // 交通（按分级显示）
     if (aux.roads && tab !== 'plates') each(() => {
       const R = this.paths.roads;
-      if (routeVisible('regional', lv, 'sea')) { c.setLineDash([4 * px, 4 * px]); c.strokeStyle = 'rgba(70,120,165,.5)'; c.lineWidth = 0.9 * px; c.stroke(R.sea); c.setLineDash([]); }
-      else { c.setLineDash([4 * px, 5 * px]); c.strokeStyle = 'rgba(70,120,165,.42)'; c.lineWidth = 0.9 * px; c.stroke(R.seaTrunk); c.setLineDash([]); }
+      // 海运航线：区域航线细虚线，干线航线（大港之间、汇成一束的主航道）粗一些
+      if (routeVisible('regional', lv, 'sea')) { c.setLineDash([4 * px, 3.5 * px]); c.strokeStyle = 'rgba(47,100,152,.62)'; c.lineWidth = 1 * px; c.stroke(V(R.sea)); }
+      c.setLineDash([6 * px, 4 * px]); c.strokeStyle = 'rgba(36,88,140,.72)'; c.lineWidth = 1.5 * px; c.stroke(V(R.seaTrunk)); c.setLineDash([]);
+      { const RV = routeVisible('regional', lv, 'sea') ? R.river : R.riverTrunk, k = lv >= 2 ? 1.25 : 1; // 内河航道：压在通航河道上的深蓝长虚线（比河流本身更深更粗，一眼可辨）
+        c.setLineDash([5 * px * k, 3.2 * px * k]); c.strokeStyle = 'rgba(16,62,112,.9)'; c.lineWidth = 1.7 * px * k; c.stroke(V(RV)); c.setLineDash([]); }
       const rw = Math.min(1.9, 0.85 + 0.28 * Math.log2(Math.max(1, zr)));
-      const road = (P, casing, core, cw, kw) => { c.strokeStyle = casing; c.lineWidth = cw * rw * px; c.stroke(P); c.strokeStyle = core; c.lineWidth = kw * rw * px; c.stroke(P); };
+      const road = (P, casing, core, cw, kw) => { c.strokeStyle = casing; c.lineWidth = cw * rw * px; c.stroke(V(P)); c.strokeStyle = core; c.lineWidth = kw * rw * px; c.stroke(V(P)); };
       if (routeVisible('local', lv, 'road')) road(R.local, 'rgba(255,255,255,.55)', 'rgba(176,128,86,.85)', 1.8, 0.8);
       if (routeVisible('regional', lv, 'road')) road(R.regional, 'rgba(255,255,255,.75)', '#d68845', 2.4, 1.25);
       if (routeVisible('trunk', lv, 'road')) road(R.trunk, 'rgba(255,255,255,.85)', '#c2462f', 3.4, 1.9);
-      if (routeVisible('trunk', lv, 'rail')) { c.strokeStyle = '#3a3f46'; c.lineWidth = 1.6 * px; c.stroke(R.rail); c.setLineDash([3 * px, 3 * px]); c.strokeStyle = '#fff'; c.lineWidth = 0.8 * px; c.stroke(R.rail); c.setLineDash([]); }
+      if (routeVisible('trunk', lv, 'rail')) { c.strokeStyle = '#3a3f46'; c.lineWidth = 1.6 * px; c.stroke(V(R.rail)); c.setLineDash([3 * px, 3 * px]); c.strokeStyle = '#fff'; c.lineWidth = 0.8 * px; c.stroke(V(R.rail)); c.setLineDash([]); }
     });
     if (aux.roads && tab !== 'plates' && lv >= 1) this.drawBridges(ks, lv);
-    if (tab === 'plates') { each(() => { c.strokeStyle = '#d14b42'; c.lineWidth = 2 * px; c.stroke(this.paths.plates[1]); c.strokeStyle = '#e09a37'; c.lineWidth = 1.7 * px; c.setLineDash([5 * px, 3 * px]); c.stroke(this.paths.plates[2]); c.setLineDash([]); c.strokeStyle = '#2f5b4f'; c.lineWidth = 2.4 * px; c.stroke(this.paths.plates[0]); }); this.drawPlateMarks(ks); }
+    if (tab === 'plates') { each(() => { c.strokeStyle = '#d14b42'; c.lineWidth = 2 * px; c.stroke(V(this.paths.plates[1])); c.strokeStyle = '#e09a37'; c.lineWidth = 1.7 * px; c.setLineDash([5 * px, 3 * px]); c.stroke(V(this.paths.plates[2])); c.setLineDash([]); c.strokeStyle = '#2f5b4f'; c.lineWidth = 2.4 * px; c.stroke(V(this.paths.plates[0])); }); this.drawPlateMarks(ks); }
     if (tab === 'season') {
-      if (app.sx.pressure && this.paths.isobars[app.season]) each(() => { c.strokeStyle = 'rgba(90,100,120,.5)'; c.lineWidth = 0.9 * px; c.stroke(this.paths.isobars[app.season]); });
+      if (app.sx.pressure && this.paths.isobars[app.season]) each(() => { c.strokeStyle = 'rgba(90,100,120,.5)'; c.lineWidth = 0.9 * px; c.stroke(V(this.paths.isobars[app.season])); });
       if (app.sx.currents && this.d.currents) this.drawArrows(this.d.currents, 5, ks, true);
       if (app.sx.wind && this.d.winds) this.drawArrows(this.d.winds[app.season], 4, ks, false);
     }
@@ -464,7 +511,7 @@
       d.countries.forEach((k, i) => { if (k.lx !== undefined) items.push([10, 'state', k, 'country:' + i]); });
       if (polTopic && (topic === 'province' || lv >= 2)) d.provinces.forEach((p, i) => items.push([topic === 'province' ? 11 : 12, 'province', p, 'province:' + i]));
     }
-    if (human && (topic === 'country' || topic === 'govern' || topic === 'system')) d.tribes.forEach((t, i) => items.push([18, 'tribe', t, 'tribe:' + i]));
+    if (human && (topic === 'country' || topic === 'govern' || topic === 'system' || topic === 'province')) d.tribes.forEach((t, i) => { if (topic !== 'province' || t.unit) items.push([18, 'tribe', t, 'tribe:' + i]); }); // 松散政体的各部在省份图上代替省名
     if (human && (topic === 'country' || topic === 'govern' || topic === 'system' || topic === 'province') && lv >= 1) (d.jimis || []).forEach((t, i) => items.push([19, 'jimi', t, 'jimi:' + i]));
     const hist = !!(G.Timeline && G.Timeline.on);
     if (aux.names && tab !== 'plates') {
@@ -607,7 +654,7 @@
       else if (kind === 'province') {
         if (o.lx !== undefined) { const pxs = (o.lsize || 1) * s; if (pxs < 9) continue; const size = Math.max(10.5, Math.min(14, 9 + pxs / 10)); each(o.lx, o.ly, (sx, sy) => text(N_(id, o.name), sx, sy, { size, weight: 600, color: '#5c4f46', ls: 2, id })); }
         else { const ct = d.cities[o.seat]; if (ct) each(ct.x, ct.y + 12 / s, (sx, sy) => text(N_(id, o.name), sx, sy, { size: 10.5, color: '#6a5f58', ls: 1, id })); } }
-      else if (kind === 'tribe') { if (o.size * 4 * s * s < 700) continue; each(o.x, o.y, (sx, sy) => text(N_(id, o.name), sx, sy, { size: 11.5, color: '#8a6a4a', ls: 2, weight: 500, id })); }
+      else if (kind === 'tribe') { if (o.size * 4 * s * s < (o.unit ? 3000 : 700)) continue; each(o.x, o.y, (sx, sy) => text(N_(id, o.name), sx, sy, o.unit ? { size: 10.5, color: '#7d6448', ls: 1, weight: 500, id } : { size: 11.5, color: '#8a6a4a', ls: 2, weight: 500, id })); } // 松散政体的各部：放大到省份一级才显示
       else if (kind === 'jimi') { if (o.size * 4 * s * s < 500) continue; each(o.x, o.y, (sx, sy) => text(N_(id, o.name), sx, sy, { size: 11, color: '#7a6a8a', ls: 1, weight: 500, id })); }
       else if (kind === 'geo') {
         const l = o, nm = N_(id, l.name);
@@ -693,7 +740,8 @@
   MP.drawCity = function (ct, sx, sy, free, lv, names, id, label) {
     const c = this.ctx, cap = ct.capital !== undefined;
     const R0 = G.MapIcons.R0, r = cap ? R0.capital : ct.tier === 'metropolis' ? R0.metro : ct.tier === 'city' ? R0.city : ct.tier === 'site' ? R0.site : R0.town;
-    if (!free(sx - r - 1, sy - r - 1, sx + r + 1, sy + r + 1)) return;
+    const port = G.MapIcons.portOf(ct) && ct.tier !== 'site';
+    if (!free(sx - r - 1, sy - r - 1, sx + r + 1, sy + r + 1 + (port ? 10 : 0))) return;
     this.cityDots.push({ id, x: sx, y: sy });
     if (names) {
       const size = cap ? 13 : ct.tier === 'metropolis' ? 12.5 : ct.tier === 'city' ? 12 : 11;
@@ -706,7 +754,7 @@
       }
     }
     const kind = cap ? 'capital' : ct.tier === 'site' ? 'site' : ct.tier === 'metropolis' ? 'metro' : ct.tier === 'city' ? 'city' : 'town';
-    G.MapIcons.drawCity(c, sx, sy, kind, { r, sel: G.City && G.City.current !== null && id === 'city:' + G.City.current });
+    G.MapIcons.drawCity(c, sx, sy, kind, { r, port, sel: G.City && G.City.current !== null && id === 'city:' + G.City.current });
     if (ct.holy && ct.holy.length) G.MapIcons.drawHoly(c, sx - r - 4, sy - r - 4); // 圣城：紫色光轮
   };
 
@@ -714,8 +762,6 @@
   MP.bindInput = function () {
     const cv = this.cv, ptrs = new Map(), samples = [];
     let moved = false, multi = false, downAt = null, wheelExp = 0, wheelXY = [0, 0], wheelFrame = 0, wheelCommit = 0;
-    let hoverFrame = 0, hoverPoint = null;
-    const clearHover = () => { if (hoverFrame) cancelAnimationFrame(hoverFrame); hoverFrame = 0; hoverPoint = null; this.app.onHover && this.app.onHover(null); };
     const commit = () => this.scheduleFrame();
     const record = () => { const t = performance.now(); samples.push([t, this.view.x, this.view.y]); while (samples.length && t - samples[0][0] > 160) samples.shift(); };
     const coast = () => {
@@ -729,7 +775,7 @@
       this.motion = requestAnimationFrame(step); return true;
     };
     cv.addEventListener('pointerdown', e => {
-      clearHover(); this.stopMotion(); cv.setPointerCapture(e.pointerId);
+      this.stopMotion(); cv.setPointerCapture(e.pointerId);
       if (!ptrs.size) { moved = false; multi = false; samples.length = 0; record(); downAt = [e.offsetX, e.offsetY]; }
       ptrs.set(e.pointerId, [e.offsetX, e.offsetY, e.offsetX, e.offsetY]); if (ptrs.size > 1) multi = true;
       cv.focus({ preventScroll: true });
@@ -737,15 +783,7 @@
     const gesture = () => { const p = [...ptrs.values()].slice(0, 2); if (p.length === 1) return [p[0][0], p[0][1], 0]; return [(p[0][0] + p[1][0]) / 2, (p[0][1] + p[1][1]) / 2, Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1])]; };
     cv.addEventListener('pointermove', e => {
       const p = ptrs.get(e.pointerId);
-      if (!p) {
-        hoverPoint = { offsetX: e.offsetX, offsetY: e.offsetY };
-        if (!hoverFrame) hoverFrame = requestAnimationFrame(() => {
-          hoverFrame = 0; const point = hoverPoint; hoverPoint = null; if (!point) return;
-          cv.style.cursor = !this.app.tool && this.cityAt(point.offsetX, point.offsetY) ? 'pointer' : '';
-          this.app.onHover && this.app.onHover(point);
-        });
-        return;
-      }
+      if (!p) { cv.style.cursor = !this.app.tool && this.cityAt(e.offsetX, e.offsetY) ? 'pointer' : ''; this.app.onHover && this.app.onHover(e); return; }
       const before = gesture(); p[0] = e.offsetX; p[1] = e.offsetY; const after = gesture();
       if (Math.hypot(e.offsetX - p[2], e.offsetY - p[3]) > 5) moved = true;
       if (!moved && !multi) return;
@@ -765,7 +803,7 @@
       samples.length = 0;
     };
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
-    cv.addEventListener('pointerleave', clearHover);
+    cv.addEventListener('pointerleave', () => this.app.onHover && this.app.onHover(null));
     cv.addEventListener('wheel', e => {
       e.preventDefault(); this.stopMotion();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? this.vh : 1;

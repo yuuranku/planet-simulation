@@ -134,7 +134,7 @@
   let worker = null, seq = 0;
   const pending = new Map(), strips = new Map();
   function startWorker() {
-    worker = new Worker('core/worker.js?build=20261106f');
+    worker = new Worker('core/worker.js?build=20261108a');
     worker.onmessage = e => onMsg(e.data);
     worker.onerror = e => {
       const error = new Error('推演线程失败：' + e.message);
@@ -177,19 +177,13 @@
     post({ type: 'render', id, req });
     const out = p.then(m => {
       const img = new ImageData(new Uint8ClampedArray(m.buf.buffer || m.buf), req.w, req.h);
-      // 渐进瓦片的预览必须同步落到画布，避免异步位图晚于细节条带完成而覆盖它们。
-      if (!onStrip && window.createImageBitmap) return createImageBitmap(img);
+      if (window.createImageBitmap) return createImageBitmap(img);
       const c = document.createElement('canvas'); c.width = req.w; c.height = req.h; c.getContext('2d').putImageData(img, 0, 0); return c;
     });
     out.renderId = id;
     return out;
   };
-  app.cancelRender = function (id) {
-    strips.delete(id);
-    const request = pending.get(id);
-    if (request) { pending.delete(id); request.reject(new Error('渲染已取消')); }
-    post({ type: 'cancelRender', id });
-  };
+  app.cancelRender = function (id) { strips.delete(id); post({ type: 'cancelRender', id }); };
 
   // ---------- 推演 ----------
   const STAGES = ['板块漂移', '大陆核心', '板块边界', '地壳均衡', '山脉细节', '水力侵蚀', '四季气候', '气候分类', '水系汇流', '河流流量', '流域划分', '河道描绘', '文明', '等高线与气象场'];
@@ -316,7 +310,7 @@
     $('progress').hidden = true;
     const s = m.stats;
     { const sv = loadSaved().find(w => w.key === G.Config.encode(app.state) && currentRecord(w)); if (sv && sv.name && !app.names.world && sv.name !== s.worldName + '星') app.names.world = sv.name; $('worldName').textContent = app.names.world || s.worldName + '星'; }
-    $('worldStats').textContent = `${s.countries} 个国家 · ${s.provinces} 个省份 · ${s.settlements} 处聚落`;
+    $('worldStats').textContent = `${s.countries} 个国家${s.looseCountries ? `（含 ${s.looseCountries} 个游牧与部落政体）` : ''} · ${s.provinces} 个省份 · ${s.settlements} 处聚落`;
     document.title = s.worldName + '星 · 星球推演';
     applyNames();
     applyPrefix();
@@ -428,7 +422,7 @@
     if (e.target.closest('[data-pre]')) { app.setNoPrefix(!app.noPrefix); return; }
     if (e.target.closest('#auxHead')) { auxOpen = !auxOpen; renderPanel(); }
   });
-  function onTopicChange() { app.syncAux(); if (!$('layerPanel').hidden) renderPanel(); map.refreshRaster(); map.draw(); renderLegend(); syncRollBtn(); }
+  function onTopicChange() { renderTipPanel(); refreshTip(); app.syncAux(); if (!$('layerPanel').hidden) renderPanel(); map.refreshRaster(); map.draw(); renderLegend(); syncRollBtn(); }
   function syncRollBtn() { const b = $('rollBtn'); if (!b) return; const t = app.topic(), g = app.data && app.rollGroupOf(t); b.hidden = !g; if (g) { $('rollVer').textContent = app.rollVersion(t) > 1 ? '第 ' + app.rollVersion(t) + ' 版' : ''; b.title = `单独重摇「${TOPIC_NAME[t] || ''}」：${ROLL_INFO[g][1]}`; } }
   app.syncRollBtn = syncRollBtn;
   $('rollBtn').onclick = () => rollDialog(app.topic());
@@ -465,11 +459,12 @@
       <span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#be5532" stroke-width="2"/></svg>干道</span>
       <span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#b9734b" stroke-width="1.2"/></svg>区域与地方道路</span>
       <span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#4678a5" stroke-dasharray="3 3"/></svg>海运航线</span>
+      <span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#4b8fc6" stroke-width="1.6"/><path d="M1 7h26" stroke="#103e70" stroke-width="1.7" stroke-dasharray="5 3.2"/></svg>内河航道</span>
       ${app.data && app.data.travel.era === 'industrial' ? '<span><svg viewBox="0 0 28 14"><path d="M1 7h26" stroke="#3a3f46" stroke-width="2.5"/><path d="M1 7h26" stroke="#fff" stroke-dasharray="3 3"/></svg>铁路</span>' : ''}
       <span>${G.MapIcons.svgCity('capital')}首都</span>
       <span>${G.MapIcons.svgCity('metro')}大都会</span>
       <span>${G.MapIcons.svgCity('city')}城市</span><span>${G.MapIcons.svgCity('town')}城镇</span><span>${G.MapIcons.svgHoly()}圣城</span>
-      <span>${G.MapIcons.svgCity('site')}小聚落</span></div>
+      <span>${G.MapIcons.svgCity('site')}小聚落</span><span>${G.MapIcons.svgPort()}港口城市（海港、岛港、湖港）</span></div>
       <p style="margin-top:8px">世界级显示首都、大都会与干道；区域级加入城市与区域道路；地方级加入城镇、地方道路与桥梁；细节级显示全部聚落。</p>`;
   }
   function renderLegend() {
@@ -536,7 +531,7 @@
   function renderInfo() {
     const d = app.data; if (!d) return;
     const c = d.cfg, s = d.stats, st = app.state;
-    const q = id => { const qq = G.Config.Q.find(x => x.id === id); const o = qq.o.find(x => x[0] === st.a[id]); return o[1] + (o[2] ? ' · ' + o[2] : ''); };
+    const q = id => { const qq = G.Config.Q.find(x => x.id === id); const o = G.Config.optOf(qq, st.a[id]) || qq.o[0]; return o[1] + (o[2] ? ' · ' + o[2] : ''); };
     const polarName = { land: '有大陆', ocean: '以海洋为主', separate: '单独大陆', imported:'按导入图纸' };
     const kv = (a) => `<dl class="kv">${a.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
     const pal = d.pal;
@@ -550,7 +545,7 @@
       ${d.info.terrain ? kv([['原始图纸',esc((st.terrainInput.source?.asset || st.terrainInput.asset).name)],['算法介入',d.info.terrain.intervention+' / 100'],['高程依据',st.terrainInput.processing ? '根据上传图片自动估算' : '原始灰度高度图']]) : ''}
       ${kv([['板块', d.info.geologyStatus==='not-generated'?'图纸未提供构造信息':d.info.geologyStatus==='hypothetical'?`${d.info.plates} 块 · 假想构造`:`${d.info.plates} 块 · ${q('plates').split(' · ')[1]}`], ['陆地占比', c.terrainInput?'依导入图纸及介入设置':Math.round(c.land * 100) + '%'], ['北极', polarName[d.info.polar.N]], ['南极', polarName[d.info.polar.S]], ['新大陆', d.info.newWorld ? '有' : '无'], ['最高峰', Math.round(d.info.maxE) + ' m'], ['最深海沟', Math.round(-d.info.minE) + ' m']])}
       <h3>文明</h3>
-      ${kv([['时代', s.endYear ? `文明纪元第 ${s.endYear} 年 · ${G.Config.ageLabel(s.endYear)}` : q('era')], ['人口规模', q('era')], ['总人口', fmtPop(s.population)], ['环境承载区间', fmtPop(s.supportRange[0]) + ' – ' + fmtPop(s.supportRange[1])], ['道路 / 海运航线 / 桥梁', `${s.roads} / ${s.seaRoutes} / ${s.bridges}`], ['边疆部族', s.tribes], ['国家', s.countries], ['省份', s.provinces], ['聚落', s.settlements], ['文化圈 / 语言 / 宗教', `${s.cultures} / ${s.languages} / ${s.religions}`], ['无国家管辖陆地（含无人区）', Math.round(s.tribalShare * 100) + '%'], ['有人陆地中的无国家管辖区', (s.independentInhabitedShare * 100).toFixed(1) + '%']])}
+      ${kv([['时代', s.endYear ? `文明纪元第 ${s.endYear} 年 · ${G.Config.ageLabel(s.endYear)}` : q('era')], ['人口规模', q('era')], ['总人口', fmtPop(s.population)], ['环境承载区间', fmtPop(s.supportRange[0]) + ' – ' + fmtPop(s.supportRange[1])], ['道路 / 海运航线 / 桥梁', `${s.roads} / ${s.seaRoutes} / ${s.bridges}`], ['边疆部族', s.tribes], ['国家', s.countries], ...(s.looseCountries !== undefined ? [['其中游牧、部落等松散政体', s.looseCountries]] : []), ['省份', s.provinces], ['聚落', s.settlements], ['文化圈 / 语言 / 宗教', `${s.cultures} / ${s.languages} / ${s.religions}`], ['无国家管辖陆地（含无人区）', Math.round(s.tribalShare * 100) + '%'], ['有人陆地中的无国家管辖区', (s.independentInhabitedShare * 100).toFixed(1) + '%']])}
       <h3>人口最多的国家</h3>
       <div class="list">${topK.map(([k, i]) => `<button data-fly="country:${i}" data-name-id="country:${i}"><i style="background:${palColor(pal.country, i)}"></i><em>${k.name}</em><small>${k.formLabel} · ${fmtPop(k.pop)}</small></button>`).join('')}</div>
       <h3>文明</h3>
@@ -642,7 +637,7 @@
     if (t !== 'menu' && !$('home').hidden) G.Home.hide(); // 首页上点工具：回到地图再用
     if (t === 'menu') { $('menu').hidden = !$('menu').hidden; return; }
     if (t === 'style') { const p = $('stylePanel'); p.hidden = !p.hidden; renderStyles(); document.querySelector('[data-tool=style]').classList.toggle('on', !p.hidden); return; }
-    if (t === 'hover') return setTool(null, 'hover');
+    if (t === 'hover') { openTipPanel($('tipPanel').hidden); return; }
     if (t === 'globe') { showGlobe($('globeWrap').hidden); return; }
     if (t === 'history') { G.Timeline && G.Timeline.toggle(); return; }
     if (t === 'info') { $('infoPanel').hidden = !$('infoPanel').hidden; b.classList.toggle('on', !$('infoPanel').hidden); return; }
@@ -861,29 +856,132 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (app.tool) setTool(app.tool); } });
 
   // ---------- 悬浮信息 ----------
-  let hoverBusy = false, hoverNext = null, hoverVersion = 0;
-  app.onHover = (e) => {
-    const version = ++hoverVersion;
-    if (!e || (!app.hover && !e.force) || !app.data || app.tool) { hoverNext = null; $('tip').hidden = true; return; }
-    hoverNext = { offsetX: e.offsetX, offsetY: e.offsetY, force: e.force, version };
-    if (!hoverBusy) doHover();
+  // 悬浮信息显示哪些内容：默认跟随当前专题图，只显示该专题相关的几项；可在「悬浮信息」面板里按专题自定义（本机记住）
+  const TIP_FIELDS = [
+    ['coord', '经纬度', '位置'], ['elev', '海拔 / 水深', '地理'], ['flow', '河流流量', '地理'], ['frost', '冻土潜势', '地理'], ['plate', '板块构造', '地理'],
+    ['koppen', '气候类型', '气候'], ['tann', '年均气温', '气候'], ['pann', '年降水', '气候'], ['sst', '海表气温', '气候'], ['seaice', '海冰', '气候'],
+    ['season', '季节气温与降水', '季节'], ['wind', '气压与风', '季节'],
+    ['biome', '生物群系', '生态'], ['veg', '植被覆盖', '生态'], ['agri', '农业潜力', '生态'], ['hab', '宜居度', '生态'],
+    ['pop', '人口密度', '人口'], ['food', '粮食供需', '人口'], ['speciesMix', '种族构成', '人口'], ['fortGuard', '要塞驻守', '人口'],
+    ['culture', '文明', '文化'], ['cultureMix', '文化构成', '文化'], ['language', '语言', '文化'], ['religion', '宗教', '文化'], ['religionMix', '信仰构成', '文化'],
+    ['province', '省份 / 部众 / 羁縻', '政治'], ['nominal', '名义宣称', '政治'], ['polity', '政体与盟约', '政治'], ['admin', '行政制度与政府', '政治'], ['ideas', '思潮与国力', '政治'], ['ruler', '在位君主', '政治'], ['govern', '实际治理', '政治']
+  ];
+  const TIP_LABEL = Object.fromEntries(TIP_FIELDS.map(([k, n]) => [k, n]));
+  const TIP_DEFAULT = {
+    terrain: ['coord', 'elev', 'flow', 'frost', 'seaice'], koppen: ['coord', 'koppen', 'tann', 'pann', 'sst', 'seaice'], biome: ['coord', 'biome', 'veg', 'koppen'],
+    basin: ['coord', 'flow', 'elev'], agri: ['coord', 'agri', 'koppen', 'pann'], habit: ['coord', 'hab', 'tann', 'pann'], veg: ['coord', 'veg', 'biome', 'pann'],
+    pop: ['coord', 'pop', 'food'], species: ['coord', 'speciesMix', 'pop'], culture: ['coord', 'culture', 'cultureMix'], language: ['coord', 'language', 'culture'],
+    religion: ['coord', 'religion', 'religionMix'], country: ['coord', 'province', 'polity', 'ruler'], govern: ['coord', 'govern', 'polity'], system: ['coord', 'admin', 'polity'],
+    province: ['coord', 'province', 'govern'], heritage: ['coord', 'province', 'religion', 'culture'], season: ['coord', 'season', 'wind', 'seaice'], plates: ['coord', 'plate', 'elev']
   };
+  const TIP_KEY = 'planet-tip-fields';
+  let tipCustom = (() => { try { const o = JSON.parse(localStorage.getItem(TIP_KEY) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (er) { return {}; } })();
+  const tipTopic = () => app.tab === 'plates' ? 'plates' : app.tab === 'season' ? 'season' : app.topic();
+  const tipTopicName = t => t === 'season' ? '季节' : TOPIC_NAME[t] || t;
+  function tipFields() { const t = tipTopic(), c = tipCustom[t]; return new Set(Array.isArray(c) ? c.filter(k => TIP_LABEL[k]) : TIP_DEFAULT[t] || ['coord', 'elev']); }
+  function saveTipCustom() { try { localStorage.setItem(TIP_KEY, JSON.stringify(tipCustom)); } catch (er) { /* */ } }
+  // 每一项只在该处有意义时给出行；没有的就不显示
+  function tipRows(p, d) {
+    const F = {}, put = (k, ...r) => { if (r.length) (F[k] || (F[k] = [])).push(...r); };
+    const nm = (kind, i, o) => app.nameOf ? app.nameOf(kind + ':' + i, o.name) : o.name;
+    put('elev', [p.land ? '海拔' : '水深', Math.abs(p.elev) + ' m']);
+    const plate = d.plates[p.plate];
+    if (plate) put('plate', ...(app.tab === 'plates' ? [] : [['所属板块', plate.name]]), ['板块类型', plate.continental ? '大陆板块' : '大洋板块'], ['运动速度', plate.speed.toFixed(1) + ' cm/年']);
+    else put('plate', ['板块构造', '导入图纸只定义了地形']);
+    if (d.info.geologyStatus === 'hypothetical') put('plate', ['构造来源', '依据导入地形生成的假想板块']);
+    put('season', ['季节', SEASONS[app.season]], [p.land ? '气温' : '海表气温', p.ts.toFixed(1) + ' °C'], ['降水', Math.round(p.ps) + ' mm/季']);
+    put('wind', ['气压', p.pres.toFixed(0) + ' hPa'], ['风', windStr(p.wind)]);
+    if (!p.land) {
+      put('sst', ['海表气温', p.ts.toFixed(1) + ' °C']);
+      if (p.snow >= 3) put('seaice', ['海冰', p.snow === 4 ? '常年海冰' : '季节性海冰']);
+      return F;
+    }
+    put('koppen', ['气候', p.koppen < 255 ? KOPPEN[p.koppen][0] + ' ' + KOPPEN[p.koppen][1] : '—']);
+    put('biome', ['群系', p.biome < 255 ? BIOMES[p.biome][0] : '—']);
+    if (p.veg >= 0) put('veg', ['植被覆盖', Math.round(p.veg * 100) + '%']);
+    put('tann', ['年均气温', p.tann.toFixed(1) + ' °C']);
+    put('pann', ['年降水', Math.round(p.pann) + ' mm']);
+    put('agri', ['农业潜力', Math.round(p.agri * 100) + '%']);
+    put('hab', ['宜居度', Math.round(p.hab * 100) + '%']);
+    if (p.flow > d.qth * 0.5) put('flow', ['河流流量', Math.round(p.flow).toLocaleString() + ' m³/s']);
+    if (p.frost) put('frost', ['冻土潜势', p.frost === 2 ? '连续' : '不连续']);
+    if (p.province >= 0) put('province', ['省份', d.provinces[p.province].name]);
+    else if (p.country >= 0 && p.tribe >= 0 && d.tribes[p.tribe] && d.tribes[p.tribe].unit) put('province', ['所属部众', nm('tribe', p.tribe, d.tribes[p.tribe]) + '（松散政体，不设省份）']);
+    if (p.jimi >= 0 && d.jimis && d.jimis[p.jimi]) put('province', ['羁縻', nm('jimi', p.jimi, d.jimis[p.jimi])]);
+    if (p.nominal >= 0 && p.country < 0 && d.countries[p.nominal]) put('nominal', ['名义宣称', d.countries[p.nominal].name]);
+    if (p.culture >= 0 && d.cultures[p.culture]) put('culture', ['文明', d.cultures[p.culture].name]);
+    if (p.language >= 0 && d.languages[p.language]) put('language', ['语言', d.languages[p.language].name]);
+    if (p.religion >= 0 && d.religions[p.religion]) { const RG = d.religions[p.religion], TY = { monotheist: '一神天启', dualist: '光暗二元', polytheist: '多神信仰', dharmic: '轮回觉悟', ancestral: '祖灵礼教', shamanic: '萨满万灵', philosophy: '哲学教化' }; put('religion', ['宗教', RG.name + (TY[RG.type] ? ' · ' + TY[RG.type] : '') + (RG.parent >= 0 && d.religions[RG.parent] ? '（' + d.religions[RG.parent].name + '的一派）' : '')]); }
+    put('pop', ['人口密度', p.pop < 1 ? '< 1 人/km²' : Math.round(p.pop) + ' 人/km²']);
+    if (p.human && p.human.groups.length) {
+      const total = p.human.groups.reduce((s, g) => s + g.population, 0);
+      for (const [key, field, label, defs] of [['speciesMix', 'species', '区域种族', d.species], ['cultureMix', 'culture', '区域文化', d.cultures], ['religionMix', 'religion', '区域信仰', d.religions]]) {
+        const counts = new Map(); for (const g of p.human.groups) counts.set(g[field], (counts.get(g[field]) || 0) + g.population);
+        const nameOf = id => (field === 'culture' && id <= -2 ? p.human.groups.find(g => g.culture === id)?.cultureName : null) || defs[id]?.name || defs[id]?.label || (field === 'religion' ? '未归属宗教' : '早期文化');
+        if (total > 0) put(key, [label, [...counts].sort((a, b) => b[1] - a[1]).map(([id, n]) => `${nameOf(id)} ${(100 * n / total).toFixed(1)}%`).join('、')]);
+      }
+      const food = p.human.economy, number = n => Math.round(n).toLocaleString('zh-CN');
+      if (food) {
+        put('food', ['区域年度粮食', `可用 ${number(food.available)} / 需求 ${number(food.demand)} 人年粮`], ['粮食来源', `本地产出 ${number(food.production)} + 输入 ${number(food.imported)} − 输出 ${number(food.exported)}`]);
+        if (Number.isFinite(food.hoursPerFoodYear)) put('food', ['单位供粮劳动', `${food.hoursPerFoodYear.toFixed(1)} 工时/人年粮`]);
+        if (food.guards > 0) put('fortGuard', ['要塞驻守', `${number(food.guards)} 人 · 供养后余粮 ${number(food.afterFort - food.demand)} 人年粮`]);
+      }
+    }
+    const k = p.country >= 0 ? d.countries[p.country] : null;
+    if (k) {
+      put('polity', ['政体', k.formLabel + (k.liege !== undefined && d.countries[k.liege] ? ' · 宗主 ' + d.countries[k.liege].name : '')]);
+      if (k.allies && k.allies.length) put('polity', ['盟约', '与 ' + k.allies.map(i => d.countries[i]?.name).filter(Boolean).join('、') + ' 结盟']);
+      if (G.AdminSys) put('admin', ['行政制度', G.AdminSys.NAME[k.sys || G.AdminSys.classOfCountry(k)]]);
+      if (k.gov) put('admin', ['政府组织', k.gov]);
+      if (k.ideas && k.ideas.length) put('ideas', ['思潮', `已接纳 ${k.ideas.length} 条 · 最新：${k.ideas[k.ideas.length - 1]}${k.ideas.includes('远洋航海') ? ' · 可远洋殖民' : ''}`], ['军事 / 治理', `${'●'.repeat(Math.round(k.mil * 2))}${'○'.repeat(Math.max(0, 7 - Math.round(k.mil * 2)))} / ${'●'.repeat(Math.round(k.adm * 2))}${'○'.repeat(Math.max(0, 6 - Math.round(k.adm * 2)))}`]);
+      if (k.ruler) put('ruler', ['在位君主', k.ruler[2] + ' ' + k.ruler[1] + (k.house ? ' · ' + k.house : '') + ' · 第 ' + k.ruler[0] + ' 年即位']);
+      put('govern', ['实际治理', Math.round(p.gov * 100) + '%' + (isFinite(p.govDays) ? ` · 距首都 ${p.govDays < 1 ? '<1' : Math.round(p.govDays)} 日` : '')]);
+    } else if (p.tribe >= 0 && d.tribes[p.tribe]) put('polity', ['生计', { pastoral: '游牧', highland: '山地', forest: '林地狩猎', maritime: '海岸', foraging: '采集渔猎' }[d.tribes[p.tribe].livelihood] || '—']);
+    return F;
+  }
+  // 「悬浮信息」面板：总开关 + 当前专题要显示的项目
+  function renderTipPanel() {
+    const box = $('tipPanel'); if (!box || box.hidden) return;
+    const t = tipTopic(), on = tipFields(), custom = Array.isArray(tipCustom[t]);
+    const groups = []; for (const [k, n, g] of TIP_FIELDS) { let gr = groups.find(x => x[0] === g); if (!gr) groups.push(gr = [g, []]); gr[1].push([k, n]); }
+    box.innerHTML = `<div class="tp-head"><h4>悬浮信息</h4>${toggle('on', app.hover ? '开' : '关', app.hover, 'tp')}</div>
+      <div class="tp-topic"><span>当前专题 <b>${esc(tipTopicName(t))}</b> · ${custom ? '已自定义' : '跟随专题默认'}</span>${custom ? '<button class="tp-reset" data-tp="reset">恢复默认</button>' : ''}</div>
+      <div class="tp-groups${app.hover ? '' : ' off'}">${groups.map(([g, list]) => `<div class="tp-group"><span class="tp-cap">${g}</span><div class="tp-chips">${list.map(([k, n]) => `<button class="tp-chip${on.has(k) ? ' on' : ''}${(TIP_DEFAULT[t] || []).includes(k) ? ' def' : ''}" data-tf="${k}">${n}</button>`).join('')}</div></div>`).join('')}</div>
+      <p class="note">每张专题图分别记住自己的选择；带圆点的是该专题默认显示的项目。城市、要塞与遗迹仍显示各自的详情。</p>`;
+  }
+  function openTipPanel(show) {
+    const box = $('tipPanel'); box.hidden = !show;
+    document.querySelector('[data-tool=hover]').classList.toggle('open', show);
+    if (show) renderTipPanel();
+  }
+  $('tipPanel').addEventListener('click', e => {
+    const t = tipTopic();
+    if (e.target.closest('[data-tp=on]')) { app.hover = !app.hover; document.querySelector('[data-tool=hover]').classList.toggle('on', app.hover); if (!app.hover) $('tip').hidden = true; renderTipPanel(); return; }
+    if (e.target.closest('[data-tp=reset]')) { delete tipCustom[t]; saveTipCustom(); renderTipPanel(); refreshTip(); return; }
+    const c = e.target.closest('[data-tf]'); if (!c) return;
+    const set = tipFields(), k = c.dataset.tf; set.has(k) ? set.delete(k) : set.add(k);
+    const def = TIP_DEFAULT[t] || [];
+    if (set.size === def.length && def.every(x => set.has(x))) delete tipCustom[t]; else tipCustom[t] = TIP_FIELDS.map(f => f[0]).filter(x => set.has(x));
+    saveTipCustom(); if (!app.hover) { app.hover = true; document.querySelector('[data-tool=hover]').classList.add('on'); } renderTipPanel(); refreshTip();
+  });
+  document.addEventListener('pointerdown', e => { const box = $('tipPanel'); if (box && !box.hidden && !e.target.closest('#tipPanel') && !e.target.closest('[data-tool=hover]') && !e.target.closest('#map')) openTipPanel(false); });
+  app.renderTipPanel = renderTipPanel;
+  let hoverBusy = false, hoverNext = null;
+  app.onHover = (e) => {
+    if (!e || (!app.hover && !e.force) || !app.data || app.tool) { $('tip').hidden = true; return; }
+    hoverNext = app._lastHover = e; if (!hoverBusy) doHover();
+  };
+  // 换专题或改了显示项目时，就地刷新正在显示的悬浮信息
+  function refreshTip() { const h = app._lastHover; if (h && !$('tip').hidden) app.onHover({ offsetX: h.offsetX, offsetY: h.offsetY, force: h.force }); }
   async function doHover() {
     const e = hoverNext; hoverNext = null; if (!e) return;
     hoverBusy = true;
     const [gx, gy] = map.toGrid(e.offsetX, e.offsetY);
-    try {
-      const m = await call('probe', { gx, gy, season: app.season });
-      if (e.version === hoverVersion) {
-        const p = m.data;
-        if (!p || (!app.hover && !e.force)) $('tip').hidden = true; else showTip(p, e);
-      }
-    } catch (_) {
-      // 错误已由 Worker 消息处理器报告，悬浮查询不应留下未处理的 Promise。
-    } finally {
-      hoverBusy = false;
-      if (hoverNext) doHover();
-    }
+    const m = await call('probe', { gx, gy, season: app.season });
+    hoverBusy = false;
+    const p = m.data;
+    if (!p || (!app.hover && !e.force)) { $('tip').hidden = true; } else showTip(p, e);
+    if (hoverNext) doHover();
   }
   const TOUCH = matchMedia('(hover: none)').matches || matchMedia('(pointer: coarse)').matches;
   function showTip(p, e) {
@@ -894,61 +992,23 @@
       tip.innerHTML = `<h4>${esc(app.nameOf ? app.nameOf('heritage:' + hi, o.name) : o.name)}</h4><div class="sub">${esc(rows2[0][1])}</div><dl>${rows2.slice(1).map(([a, b]) => `<dt>${a}</dt><dd>${esc(b)}</dd>`).join('')}</dl><p style="margin:6px 0 0;max-width:280px;line-height:1.55;font-size:12px;color:#5a5048">${esc(o.text)}</p>`;
       placeTip(tip, e); return; } }
     const ll = `${Math.abs(p.lat).toFixed(1)}°${p.lat >= 0 ? 'N' : 'S'} · ${Math.abs(p.lon).toFixed(1)}°${p.lon >= 0 ? 'E' : 'W'}`;
-    let title, rows = [];
-    if (app.tab === 'plates') {
-      const plate = d.plates[p.plate];
-      title = plate ? plate.name : '未设定板块构造'; rows = plate ? [['板块类型', plate.continental ? '大陆板块' : '大洋板块'], ['运动速度', plate.speed.toFixed(1) + ' cm/年'], [p.land ? '海拔' : '水深', Math.abs(p.elev) + ' m']] : [['依据','导入图纸只定义了地形'],[p.land ? '海拔' : '水深', Math.abs(p.elev) + ' m']];
-      if (d.info.geologyStatus==='hypothetical') rows.unshift(['构造来源','依据导入地形生成的假想板块']);
-    } else if (!p.land) {
-      title = p.lake ? '湖泊' : '海洋'; rows = [['水深', Math.abs(p.elev) + ' m'], ['海表气温', p.ts.toFixed(1) + ' °C']];
-      if (p.snow >= 3) rows.push(['海冰', p.snow === 4 ? '常年海冰' : '季节性海冰']);
-      if (app.tab === 'season') rows.push(['气压', p.pres.toFixed(0) + ' hPa'], ['风', windStr(p.wind)]);
-    } else {
-      const k = p.country >= 0 ? d.countries[p.country] : null;
-      title = k ? k.name : p.pop > 0 ? (p.tribe >= 0 && d.tribes[p.tribe] ? d.tribes[p.tribe].name : '未归国家的居民区') : '无人荒野';
-      if (p.lake) title = '湖泊';
-      if (app.tab === 'season') rows = [['季节', SEASONS[app.season]], ['气温', p.ts.toFixed(1) + ' °C'], ['降水', Math.round(p.ps) + ' mm/季'], ['气压', p.pres.toFixed(0) + ' hPa'], ['风', windStr(p.wind)]];
-      else rows = [['海拔', p.elev + ' m'], ['气候', p.koppen < 255 ? KOPPEN[p.koppen][0] + ' ' + KOPPEN[p.koppen][1] : '—'], ['群系', p.biome < 255 ? BIOMES[p.biome][0] : '—'], ['年均气温', p.tann.toFixed(1) + ' °C'], ['年降水', Math.round(p.pann) + ' mm']];
-      if (app.tab === 'human' || app.aux.borders) {
-        if (p.province >= 0) rows.push(['省份', d.provinces[p.province].name]);
-        if (p.jimi >= 0 && d.jimis && d.jimis[p.jimi]) rows.push(['羁縻', app.nameOf ? app.nameOf('jimi:' + p.jimi, d.jimis[p.jimi].name) : d.jimis[p.jimi].name]);
-        if (p.nominal >= 0 && p.country < 0) rows.push(['名义宣称', d.countries[p.nominal].name]);
-        if (p.culture >= 0) rows.push(['文明', d.cultures[p.culture].name]);
-        if (p.language >= 0) rows.push(['语言', d.languages[p.language].name]);
-        if (p.religion >= 0) { const RG = d.religions[p.religion], TY = { monotheist: '一神天启', dualist: '光暗二元', polytheist: '多神信仰', dharmic: '轮回觉悟', ancestral: '祖灵礼教', shamanic: '萨满万灵', philosophy: '哲学教化' }; rows.push(['宗教', RG.name + (TY[RG.type] ? ' · ' + TY[RG.type] : '') + (RG.parent >= 0 && d.religions[RG.parent] ? '（' + d.religions[RG.parent].name + '的一派）' : '')]); }
-        rows.push(['人口密度', p.pop < 1 ? '< 1 人/km²' : Math.round(p.pop) + ' 人/km²']);
-        if (p.human && p.human.groups.length) {
-          const total = p.human.groups.reduce((s,g)=>s+g.population,0);
-          for (const [field,label,defs] of [['species','区域种族',d.species],['culture','区域文化',d.cultures],['religion','区域信仰',d.religions]]) {
-            const counts=new Map(); for(const g of p.human.groups)counts.set(g[field],(counts.get(g[field])||0)+g.population);
-            const nameOf=id=>(field==='culture'&&id<=-2?p.human.groups.find(g=>g.culture===id)?.cultureName:null)||defs[id]?.name||defs[id]?.label||(field==='religion'?'未归属宗教':'早期文化');
-            rows.push([label,[...counts].sort((a,b)=>b[1]-a[1]).map(([id,n])=>`${nameOf(id)} ${(100*n/total).toFixed(1)}%`).join('、')]);
-          }
-          const food=p.human.economy;
-          if(food && (app.topic()==='pop'||app.topic()==='species')) {
-            const number=n=>Math.round(n).toLocaleString('zh-CN');
-            rows.push(['区域年度粮食',`可用 ${number(food.available)} / 需求 ${number(food.demand)} 人年粮`],['粮食来源',`本地产出 ${number(food.production)} + 输入 ${number(food.imported)} − 输出 ${number(food.exported)}`]);
-            if(Number.isFinite(food.hoursPerFoodYear))rows.push(['单位供粮劳动',`${food.hoursPerFoodYear.toFixed(1)} 工时/人年粮`]);
-          }
-          if(food?.guards>0)rows.push(['要塞驻守',`${Math.round(food.guards).toLocaleString('zh-CN')} 人 · 供养后余粮 ${Math.round(food.afterFort-food.demand).toLocaleString('zh-CN')} 人年粮`]);
-        }
-        if (p.country >= 0) rows.push(['政体', k.formLabel + (k.liege !== undefined && d.countries[k.liege] ? ' · 宗主 ' + d.countries[k.liege].name : '')], ...(k.allies && k.allies.length ? [['盟约', '与 ' + k.allies.map(i => d.countries[i]?.name).filter(Boolean).join('、') + ' 结盟']] : []), ...(G.AdminSys ? [['行政制度', G.AdminSys.NAME[k.sys || G.AdminSys.classOfCountry(k)]]] : []), ...(k.gov ? [['政府组织', k.gov]] : []), ...(k.ideas && k.ideas.length ? [['思潮', `已接纳 ${k.ideas.length} 条 · 最新：${k.ideas[k.ideas.length - 1]}${k.ideas.includes('远洋航海') ? ' · 可远洋殖民' : ''}`], ['军事 / 治理', `${'●'.repeat(Math.round(k.mil * 2))}${'○'.repeat(7 - Math.round(k.mil * 2))} / ${'●'.repeat(Math.round(k.adm * 2))}${'○'.repeat(6 - Math.round(k.adm * 2))}`]] : []), ...(k.ruler ? [['在位君主', k.ruler[2] + ' ' + k.ruler[1] + (k.house ? ' · ' + k.house : '') + ' · 第 ' + k.ruler[0] + ' 年即位']] : []), ['实际治理', Math.round(p.gov * 100) + '%' + (isFinite(p.govDays) ? ` · 距首都 ${p.govDays < 1 ? '<1' : Math.round(p.govDays)} 日` : '')]);
-        else if (p.tribe >= 0 && d.tribes[p.tribe]) rows.push(['生计', { pastoral: '游牧', highland: '山地', forest: '林地狩猎', maritime: '海岸', foraging: '采集渔猎' }[d.tribes[p.tribe].livelihood]]);
-      } else if (app.topic() === 'agri') rows.push(['农业潜力', Math.round(p.agri * 100) + '%']);
-      else if (app.topic() === 'habit') rows.push(['宜居度', Math.round(p.hab * 100) + '%']);
-      if (p.flow > d.qth * 0.5) rows.push(['河流流量', Math.round(p.flow).toLocaleString() + ' m³/s']);
-      if (p.frost) rows.push(['冻土潜势', p.frost === 2 ? '连续' : '不连续']);
-    }
-    if (G.Timeline && G.Timeline.on && p.land && !p.lake) { const ht = G.Timeline.tip(map.toGrid(e.offsetX, e.offsetY)); if (ht) { title = ht.title; rows = ht.rows.concat(rows.filter(r => r[0] === '海拔' || r[0] === '气候')); } } // 时间线：显示当年的情况
+    const on = tipFields(), F = tipRows(p, d), rows = [];
+    for (const key of new Set([...(TIP_DEFAULT[tipTopic()] || []), ...TIP_FIELDS.map(f => f[0])])) if (on.has(key) && F[key]) rows.push(...F[key]); // 本专题的主项排在前面
+    let title;
+    if (app.tab === 'plates') title = d.plates[p.plate] ? d.plates[p.plate].name : '未设定板块构造';
+    else if (!p.land) title = p.lake ? '湖泊' : '海洋';
+    else { const k = p.country >= 0 ? d.countries[p.country] : null; title = p.lake ? '湖泊' : k ? k.name : p.pop > 0 ? (p.tribe >= 0 && d.tribes[p.tribe] ? d.tribes[p.tribe].name : '未归国家的居民区') : '无人荒野'; }
+    const sub = on.has('coord') ? ll : '';
+    if (G.Timeline && G.Timeline.on && p.land && !p.lake) { const ht = G.Timeline.tip(map.toGrid(e.offsetX, e.offsetY)); if (ht) { title = ht.title; rows.splice(0, rows.length, ...ht.rows, ...rows.filter(r => r[0] === '海拔' || r[0] === '气候')); } } // 时间线：显示当年的情况
     const historical=G.Timeline&&G.Timeline.on, fort=historical?G.Timeline.fortAt(e.offsetX,e.offsetY):map.fortAt(e.offsetX,e.offsetY);
-    if(fort){const info=app.fortInfo(fort,historical?G.Timeline.year:Infinity);title=info.title;rows=info.rows;}
+    if(fort){const info=app.fortInfo(fort,historical?G.Timeline.year:Infinity);title=info.title;rows.splice(0,rows.length,...info.rows);}
     else {
       const cityHit = historical ? G.Timeline.dots().find(dot => Math.hypot(dot.x-e.offsetX,dot.y-e.offsetY) < dot.r+4)?.i : (() => {const id=map.cityAt(e.offsetX,e.offsetY);return id ? +id.split(':')[1] : undefined;})();
       if(cityHit !== undefined) { const when=historical?G.Timeline.year:Infinity, source=historical?G.Timeline.data:app.data;
         for(const [old,st] of G.FortLifecycle.linked(source.forts||[],cityHit,when,!!historical)) rows.push(['旧关沿革',`${app.nameOf('fort:'+old.id,old.name)} · ${G.HistoryDate.label(old.year)}建造，${G.HistoryDate.label(st.since)}并入已有聚落`]);
       }
     }
-    tip.innerHTML = `<h4>${esc(title)}</h4><div class="sub">${ll}</div><dl>${rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>`;
+    tip.innerHTML = `<h4>${esc(title)}</h4>${sub ? `<div class="sub">${sub}</div>` : ''}${rows.length ? `<dl>${rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join('')}</dl>` : ''}`;
     placeTip(tip, e);
   }
   function placeTip(tip, e) {

@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <title>星球推演 · 世界生成器</title>
-  <link rel="stylesheet" href="style.css?build=20261106f">
-  <link rel="stylesheet" href="app/timeline.css?build=20261106f">
-  <link rel="stylesheet" href="app/military-map.css?build=20261106f">
-  <link rel="stylesheet" href="app/person.css?build=20261106f">
-  <link rel="stylesheet" href="app/mobile.css?build=20261106f">
-  <link rel="stylesheet" href="app/theme.css?build=20261106f">
-  <link rel="stylesheet" href="app/sheet.css?build=20261106f">
-  <link rel="stylesheet" href="app/depth.css?build=20261106f">
-  <script src="app/mobile.js?build=20261106f"></script>
-  <script src="app/sheet.js?build=20261106f"></script>
+  <link rel="stylesheet" href="style.css?build=20261108a">
+  <link rel="stylesheet" href="app/timeline.css?build=20261108a">
+  <link rel="stylesheet" href="app/military-map.css?build=20261108a">
+  <link rel="stylesheet" href="app/person.css?build=20261108a">
+  <link rel="stylesheet" href="app/mobile.css?build=20261108a">
+  <link rel="stylesheet" href="app/theme.css?build=20261108a">
+  <link rel="stylesheet" href="app/sheet.css?build=20261108a">
+  <link rel="stylesheet" href="app/depth.css?build=20261108a">
+  <script src="app/mobile.js?build=20261108a"></script>
+  <script src="app/sheet.js?build=20261108a"></script>
 </head>
 <body>
   <!-- 顶栏：标志 · 标题 · 远山线描 · 罗盘 -->
@@ -44,7 +44,7 @@
     <i class="rail-sep"></i>
     <div class="rail-cap">显示</div>
     <button class="rail-btn" data-tool="style" title="地图风格：古典、水墨、航海图……"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.6-.9 1.2-1.8-.5-1-.1-2.2 1.2-2.2H17a4 4 0 0 0 4-4c0-5.5-4-10-9-10z"/><circle cx="7.5" cy="11" r="1.3"/><circle cx="10.5" cy="7" r="1.3"/><circle cx="15" cy="7.5" r="1.3"/></svg><span>风格</span></button>
-    <button class="rail-btn on" data-tool="hover" title="悬浮信息：鼠标停在地图上显示该处信息（再点一次关闭）"><svg viewBox="0 0 24 24"><path d="M5 3l13 7-6 1.5L9 18z"/></svg><span>悬浮信息</span></button>
+    <button class="rail-btn on" data-tool="hover" title="悬浮信息：鼠标停在地图上显示该处信息；点开可开关，并选择显示哪些内容"><svg viewBox="0 0 24 24"><path d="M5 3l13 7-6 1.5L9 18z"/></svg><span>悬浮信息</span></button>
     <div class="rail-sp"></div>
     <button class="rail-btn" data-tool="info" title="星球档案：这颗星球的各项数据"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg><span>信息</span></button>
   </nav>
@@ -167,7 +167,7 @@
       <div class="home-sep"></div></div>
       <h2 class="home-title">已保存的世界<span class="home-flourish" data-ui-icon="flourish" aria-hidden="true"></span></h2><div class="home-sub"><span>打开地图，继续探索。双击世界名称可改名。</span><span><button class="link" id="homeImport">导入世界文件</button> · <span id="homeCount"></span></span></div>
       <div class="wgrid" id="homeSaved"></div>
-      <footer class="home-foot"><span>世界生成器 1.4.4 · 古籍星图界面 <a href="#" id="homeNotes" class="home-notes">更新说明</a></span><span>你的世界保存在本机浏览器中，可导出为文件。世界文件包含设定、原图、人物与标记，打开时重新推演；旧版本文件请用原版本打开。</span></footer>
+      <footer class="home-foot"><span>世界生成器 1.4.5 · 古籍星图界面 <a href="#" id="homeNotes" class="home-notes">更新说明</a></span><span>你的世界保存在本机浏览器中，可导出为文件。世界文件包含设定、原图、人物与标记，打开时重新推演；旧版本文件请用原版本打开。</span></footer>
     </div>
   </section>
 
@@ -240,45 +240,47 @@
     <h4>地图风格</h4>
     <div class="style-grid" id="styleGrid"></div>
   </div>
+  <div class="card style-panel tip-panel" id="tipPanel" hidden></div>
   <div class="card city-card" id="cityCard" hidden></div>
   <div class="toast" id="toast" hidden></div>
 
-  <script src="app/ui-icons.js?build=20261106f"></script>
-  <script src="core/admin.js?build=20261106f"></script>
-  <script src="core/noise.js?build=20261106f"></script>
-  <script src="core/culture-ext.js?build=20261106f"></script>
-  <script src="core/human-rules.js?build=20261106f"></script>
-  <script src="core/history/date.js?build=20261106f"></script>
-  <script src="core/military.js?build=20261106f"></script>
-  <script src="core/terrain-coast.js?build=20261106f"></script>
-  <script src="core/terrain-import.js?build=20261106f"></script>
-  <script src="app/world-assets.js?build=20261106f"></script>
-  <script src="app/world-package.js?build=20261106f"></script>
-  <script src="app/png-decoder.js?build=20261106f"></script>
-  <script src="app/map-import.js?build=20261106f"></script>
-  <script src="app/military-settings.js?build=20261106f"></script>
-  <script src="app/trait-editor.js?build=20261106f"></script>
-  <script src="app/config.js?build=20261106f"></script>
-  <script src="app/wizard.js?build=20261106f"></script>
-  <script src="app/icons.js?build=20261106f"></script>
-  <script src="app/fort-lifecycle.js?build=20261106f"></script>
-  <script src="app/map.js?build=20261106f"></script>
-  <script src="app/home.js?build=20261106f"></script>
-  <script src="app/religion-lib.js?build=20261106f"></script>
-  <script src="app/species-lib.js?build=20261106f"></script>
-  <script src="app/city.js?build=20261106f"></script>
-  <script src="core/history/query.js?build=20261106f"></script>
-  <script src="core/navigation-overland.js?build=20261106f"></script>
-  <script src="core/navigation.js?build=20261106f"></script>
-  <script src="core/life-paths.js?build=20261106f"></script>
-  <script src="core/life-story.js?build=20261106f"></script>
-  <script src="core/life.js?build=20261106f"></script>
-  <script src="core/life-text.js?build=20261106f"></script>
-  <script src="app/person.js?build=20261106f"></script>
-  <script src="app/military-panel.js?build=20261106f"></script>
-  <script src="app/military-map.js?build=20261106f"></script>
-  <script src="app/timeline.js?build=20261106f"></script>
-  <script src="app/world-store.js?build=20261106f"></script>
-  <script src="app/main.js?build=20261106f"></script>
+  <script src="app/ui-icons.js?build=20261108a"></script>
+  <script src="core/admin.js?build=20261108a"></script>
+  <script src="core/noise.js?build=20261108a"></script>
+  <script src="core/culture-ext.js?build=20261108a"></script>
+  <script src="core/human-rules.js?build=20261108a"></script>
+  <script src="core/history/date.js?build=20261108a"></script>
+  <script src="core/military.js?build=20261108a"></script>
+  <script src="core/terrain-coast.js?build=20261108a"></script>
+  <script src="core/terrain-import.js?build=20261108a"></script>
+  <script src="app/world-assets.js?build=20261108a"></script>
+  <script src="app/world-package.js?build=20261108a"></script>
+  <script src="app/png-decoder.js?build=20261108a"></script>
+  <script src="app/map-import.js?build=20261108a"></script>
+  <script src="app/military-settings.js?build=20261108a"></script>
+  <script src="app/trait-editor.js?build=20261108a"></script>
+  <script src="app/config.js?build=20261108a"></script>
+  <script src="app/wizard.js?build=20261108a"></script>
+  <script src="app/icons.js?build=20261108a"></script>
+  <script src="app/fort-lifecycle.js?build=20261108a"></script>
+  <script src="app/map.js?build=20261108a"></script>
+  <script src="app/home.js?build=20261108a"></script>
+  <script src="app/religion-lib.js?build=20261108a"></script>
+  <script src="app/species-lib.js?build=20261108a"></script>
+  <script src="app/city.js?build=20261108a"></script>
+  <script src="core/history/query.js?build=20261108a"></script>
+  <script src="core/navigation-overland.js?build=20261108a"></script>
+  <script src="core/navigation.js?build=20261108a"></script>
+  <script src="core/life-paths.js?build=20261108a"></script>
+  <script src="core/life-story.js?build=20261108a"></script>
+  <script src="core/life.js?build=20261108a"></script>
+  <script src="core/life-text.js?build=20261108a"></script>
+  <script src="app/person.js?build=20261108a"></script>
+  <script src="app/military-panel.js?build=20261108a"></script>
+  <script src="app/military-map.js?build=20261108a"></script>
+  <script src="app/ruler-life.js?build=20261108a"></script>
+  <script src="app/timeline.js?build=20261108a"></script>
+  <script src="app/world-store.js?build=20261108a"></script>
+  <script src="app/main.js?build=20261108a"></script>
 </body>
 </html>

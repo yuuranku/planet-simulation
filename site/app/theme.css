@@ -63,6 +63,7 @@ body { background: var(--navy); color: var(--ink); }
 .rail-sep { background: linear-gradient(90deg, transparent, rgba(199, 161, 90, .45), transparent); }
 .rail-btn[data-tool=hover]::after { box-shadow: 0 0 0 2px var(--navy); background: #6d7b72; }
 .rail-btn[data-tool=hover].on::after { background: #7fd39a; }
+.rail-btn[data-tool=hover].open { background: linear-gradient(180deg, rgba(199, 161, 90, .26), rgba(199, 161, 90, .14)); box-shadow: inset 0 0 0 1px rgba(199, 161, 90, .55); }
 
 /* ---------- 搜索与世界卡 ---------- */
 .search { background: linear-gradient(180deg, #fdf9ef, var(--paper)); border-radius: 12px; box-shadow: var(--frame), inset 0 0 0 3px rgba(253, 249, 239, .9), inset 0 0 0 4px rgba(199, 161, 90, .25), var(--shadow); height: 46px; }

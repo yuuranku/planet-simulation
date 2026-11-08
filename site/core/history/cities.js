@@ -157,6 +157,19 @@
       return roadRecord(rd, k, G.HistoryDate.ceil(Math.min(y, E - 5)));
     }).filter(r => r.lines.length || r.ferries.length).sort((a, b) => a.year - b.year);
 
+    // ---------- 5b. 航路年代：沿岸航线在两端港口都已建城、步入城邦时代后开通；跨越远洋的长航线要等到远洋航海兴起；内河航运随沿河第一座河港兴起 ----------
+    const portReady = si => { const c = si >= 0 ? cities[si] : null; return c && c.r ? Math.max(c.founded, stageYear(3, c.r)) : INF; };
+    const navAt = si => { const c = si >= 0 ? cities[si] : null; return c && c.r && D.NAV >= 0 ? D.ideaA[D.NAV * NN + c.r] : INF; };
+    const lanes = [];
+    (h.seaLanes || []).forEach((ln, k) => { const q = hash(k * 4099 + 7 + (h.seed | 0)); let y = Math.max(portReady(ln.sa), portReady(ln.sb));
+      if (ln.km > 900) y = Math.max(y, Math.min(navAt(ln.sa), navAt(ln.sb)));
+      if (!(y < INF)) y = E - 40; y = Math.min(E - 5, y + 20 + 120 * q);
+      lanes.push({ id: 'sea' + k, kind: 'sea', imp: ln.imp, year: G.HistoryDate.ceil(y), lines: ln.lines, sa: ln.sa, sb: ln.sb }); });
+    (h.riverLanes || []).forEach((ln, k) => { const q = hash(k * 6151 + 11 + (h.seed | 0)); let y = INF; for (const si of ln.sas) y = Math.min(y, portReady(si));
+      if (!(y < INF)) y = E - 40; y = Math.min(E - 5, y + 30 + 150 * q);
+      lanes.push({ id: 'river' + k, kind: 'river', imp: ln.imp, year: G.HistoryDate.ceil(y), lines: ln.lines, sas: ln.sas }); });
+    lanes.sort((a, b) => a.year - b.year);
+
     // ---------- 6. 编年史 ----------
     const real = cities.map((c, i) => [c, i]).filter(([c]) => !c.fort);
     // 最古老的城市
@@ -171,7 +184,7 @@
     const tierMin = t => { let m = Infinity; S.forEach(s => { if (s.tier === t && s.pop < m) m = s.pop; }); return m < Infinity ? m : null; };
     return {
       cities: cities.map(c => ({ name: c.name, x: c.x, y: c.y, r: c.r, founded: c.founded, ruined: c.ruined, cause: c.cause ? CAUSE[c.cause] : null, type: c.type, tier: c.tier, fort: c.fort, lost: c.lost, ancient: c.lost ? c.ancient : -1, idx: c.k, peakPop: c.peakPop, peakYear: c.peakYear, final: c.final })),
-      pop, popStep: STEP, popN: nT, E, roads, regionPop, popF, popStepF: FSTEP, popNF: nTf, regionPopF, plagues: plagues.map(p => ({ year: p.year, x: R.cx[p.r], y: R.cy[p.r], cont: p.cont })), events,
+      pop, popStep: STEP, popN: nT, E, roads, lanes, regionPop, popF, popStepF: FSTEP, popNF: nTf, regionPopF, plagues: plagues.map(p => ({ year: p.year, x: R.cx[p.r], y: R.cy[p.r], cont: p.cont })), events,
       tiers: { metropolis: tierMin('metropolis'), city: tierMin('city') }
     };
   }

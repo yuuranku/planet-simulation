@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const inWorker = typeof document === 'undefined' && typeof importScripts === 'function';
-  const RESOURCE_BUILD = '20261106f';
+  const RESOURCE_BUILD = '20261108a';
   if (inWorker) importScripts(...['noise.js', 'edges.js', 'libraries.js', 'culture-ext.js', 'admin.js', 'religions.js', 'human-rules.js', 'human-anchors.js', 'human-population.js', 'human-economy.js', 'human-fortifications.js', 'holy-war.js', 'history/date.js', 'military.js', 'terrain-coast.js', 'terrain-import.js', 'planet.js', 'climate.js', 'hydro.js', 'navigation-overland.js', 'navigation.js', 'history/query.js', 'life-paths.js', 'life-story.js', 'life.js', 'life-text.js', 'society.js', 'borders.js', 'citysite.js', 'urban.js', 'render.js', 'history/regions.js', 'history/dawn.js', 'history/cities.js', 'history/domestic-roads.js', 'history/administration.js', 'history/territory.js', 'history/polity.js', 'history/outline.js', 'history/heritage.js', 'history/apply.js', 'history/index.js'].map(src => src + '?build=' + RESOURCE_BUILD));
   const G = self;
   let world = null, R = null;
@@ -60,11 +60,11 @@
   }
   // 等高线按海岸地表裁剪：陆上等高线只留在陆上、海深线只留在海里。
   // 设色海岸用 coastSurface（带格下小岬、小湾），等高线取自格网高程，二者在近岸会错开——不裁剪时低等高线会伸出海岸、漂在海面上。
-  function clipCoast(list, A, W, H, STEP, border = false) {
+  function clipCoast(list, A, W, H, STEP) {
     const out = [], cs = (x, y) => G.Noise.coastSurface(A, W, H, x, y, true);
     for (const c of list) {
       // 陆上等高线还要落在近岸收口后的地表上（与设色、晕渲的岸坡一致），不再一头扒到海岸线上
-      const a = c.pts, want = border || c.level > 0, L = c.level, ok = border ? v => v > 0 : want ? (v, x, y) => G.Noise.coastKeeps(L, v, A, W, H, x, y) : v => v <= 0;
+      const a = c.pts, want = c.level > 0, L = c.level, ok = want ? (v, x, y) => G.Noise.coastKeeps(L, v, A, W, H, x, y) : v => v <= 0;
       let run = null;
       const flush = () => { if (run && run.length >= 4) out.push(Object.assign({}, c, { pts: Float32Array.from(run) })); run = null; };
       let px = a[0], py = a[1], pv = cs(px, py);
@@ -162,7 +162,8 @@
     const smoothDensity = Cv.populationDensitySmoothed = new Float32Array(N), weights = new Float32Array(N);
     const tmpDensity = new Float32Array(N), tmpWeights = new Float32Array(N);
     const occupied = i => Cv.land[i] && !Cv.ice[i] && Cv.popDensity[i] > 0;
-    for (let i = 0; i < N; i++) if (occupied(i)) { smoothDensity[i] = Cv.popDensity[i]; weights[i] = 1; }
+    // 在对数域平滑（几何平均）：稠密核心与稀疏四野之间是等比的渐变，不会被几个极值格拉成一圈深色硬边
+    for (let i = 0; i < N; i++) if (occupied(i)) { smoothDensity[i] = Math.log(Cv.popDensity[i]); weights[i] = 1; }
     // 滑动窗口一次处理人口和覆盖面积，复用四张网格，避免逐格重复求和与分配多组临时数组。
     for (let it = 0; it < 2; it++) {
       for (let y = 0; y < H; y++) {
@@ -187,17 +188,11 @@
     }
     let minDensity = Infinity, maxDensity = 0, inhabitedArea = 0, inhabitants = 0;
     for (let i = 0; i < smoothDensity.length; i++) if (occupied(i)) {
-      smoothDensity[i] /= weights[i];
+      smoothDensity[i] = Math.exp(smoothDensity[i] / weights[i]);
       const v = smoothDensity[i], area = Cv.hist.area[(i / Cv.W) | 0];
       minDensity = Math.min(minDensity, v); maxDensity = Math.max(maxDensity, v); inhabitedArea += area; inhabitants += Cv.popDensity[i] * area;
     }
-    // 非居住格也保留覆盖率渐变；仅在海洋和冰盖上裁掉显示。
-    // 用连续覆盖率衰减密度，避免无人区边缘出现半分辨率方块。
-    for (let i = 0; i < smoothDensity.length; i++) {
-      if (!occupied(i)) smoothDensity[i] = weights[i] > 1e-6 ? smoothDensity[i] / weights[i] : 0;
-      const coverage = Math.min(1, Math.max(0, weights[i]));
-      smoothDensity[i] *= coverage * coverage * (3 - 2 * coverage);
-    }
+    for (let i = 0; i < smoothDensity.length; i++) if (!occupied(i)) smoothDensity[i] = 0;
     Cv.stats.populationDensityMean = inhabitedArea > 0 ? inhabitants / inhabitedArea : 0;
     Cv.stats.populationDensityUniform = maxDensity > 0 && maxDensity - minDensity <= maxDensity * 1e-6;
     Cv.stats.populationDensityBreaks = [];
@@ -209,14 +204,18 @@
         const k = Math.min(bins - 1, Math.floor((Math.log(smoothDensity[i]) - lo) / span * bins));
         hist[k] += Cv.hist.area[(i / Cv.W) | 0];
       }
-      const percentiles = [0.1, 0.35, 0.65, 0.9, 0.95], values = []; let sum = 0, next = 0;
+      // 最高一档的色带延伸到 99.5% 分位：最稠密的核心仍有由浅入深的层次，不会整片涂成同一种最深色
+      const percentiles = [0.1, 0.35, 0.65, 0.9, 0.995], values = []; let sum = 0, next = 0;
       for (let k = 0; k < bins && next < percentiles.length; k++) {
         sum += hist[k]; while (next < percentiles.length && sum >= inhabitedArea * percentiles[next]) {
           values.push(k === 0 ? minDensity : Math.exp(lo + span * k / bins)); next++;
         }
       }
-      Cv.stats.populationDensityBreaks = values.slice(0, 4);
-      Cv.stats.populationDensityHigh = values[4];
+      // 上面几档至少相差一半（最深一档再翻近一倍）：人口在承载上限附近往往很平，4.3 与 5.0 只差一成多，
+      // 纯按面积分位会把这点差别拉成“中等 → 最深”的突变；有了最小倍差，深色只留给真正稠密得多的核心
+      const breaks = values.slice(0, 4); for (let k = 2; k < breaks.length; k++) breaks[k] = Math.max(breaks[k], breaks[k - 1] * 1.5);
+      Cv.stats.populationDensityBreaks = breaks;
+      Cv.stats.populationDensityHigh = Math.max(values[4] || maxDensity, (breaks[3] || maxDensity) * 1.8);
     }
   }
   function topicZones(P, Cl, Hy, Cv, riverNames, Z, push) {
@@ -371,15 +370,13 @@
         D.borders.frontier = boundaryLines(cF, P.W, P.H, (a, b, i, j) => a !== b && (a >= 0) !== (b >= 0) && a > -2 && b > -2 && !iceAt(i) && !iceAt(j), 1, true);
         D.borders.province = boundaryLines(pF, P.W, P.H, (a, b, i, j) => a !== b && a >= 0 && b >= 0 && cF[i] === cF[j], 1, true); return; }
       const C = POL.C, cOf = m => m >= 0 ? POL.topicOf(m) : -1, country = [], frontier = [], province = [];
+      const soft = k => k >= 0 && Cv.countries[k] && Cv.countries[k].gradKm > 0; // 疆界松散的国家：与历史时间线一样，彼此之间、与部族之地之间不画硬线
       for (let k = 0; k < C.A.length; k++) { const a = C.A[k], b = C.B[k], ca = cOf(a), cb = cOf(b), o0 = C.off[k], o1 = C.off[k + 1];
-        if (ca >= 0 && cb >= 0) { if (ca !== cb) country.push(C.pts.slice(o0, o1)); else if (a < 2000000 && b < 2000000) province.push(C.pts.slice(o0, o1)); continue; }
-        if ((ca >= 0) === (cb >= 0) || a === -4 || b === -4) continue;
+        if (ca >= 0 && cb >= 0) { if (ca !== cb) { if (!(soft(ca) && soft(cb))) country.push(C.pts.slice(o0, o1)); } else if (a < 2000000 && b < 2000000) province.push(C.pts.slice(o0, o1)); continue; }
+        if ((ca >= 0) === (cb >= 0) || a === -4 || b === -4 || soft(ca) || soft(cb)) continue;
         const m = o0 + (((o1 - o0) >> 2) << 1), x = Math.floor(C.pts[m]), y = Math.min(P.H - 1, Math.max(0, Math.floor(C.pts[m + 1])));
         if (!iceAt(y * FW2 + ((x % FW2) + FW2) % FW2)) frontier.push(C.pts.slice(o0, o1)); }
-      // 边界来自栅格标签，而显示海岸是连续地表；沿同一海岸场裁剪，
-      // 防止界线末端漂到水面。保留原曲线，陆上填色与界线仍同源。
-      const clipped = lines => clipCoast(lines.map(pts => ({ pts })), P.elev, P.W, P.H, 0.25, true).map(c => c.pts);
-      Object.assign(D.borders, { country: clipped(country), frontier: clipped(frontier), province: clipped(province) }); });
+      Object.assign(D.borders, { country, frontier, province }); });
     OVERLAY_TASKS.push(() => { D.borders.claim = boundaryLines(nm, cw, chh, (a, b, i, j) => a !== b && Cv.land[i] && Cv.land[j] && (st[i] < 0 || st[j] < 0) && (a >= 0 || b >= 0), 2); });
     // 专题注记（逐类）
     const Z = D.zones = {};
@@ -479,7 +476,7 @@
       wind: [K.U[season][ci], K.V[season][ci]],
       plate: P.plate[ci], basin: Hy.basinId[fi], flow: land ? Hy.q[fi] : 0,
       country: k, province: pr, culture: Cv.culture[vi], language: Cv.language[vi], religion: Cv.religion[vi], nominal: Cv.nominal[vi],
-      gov: Cv.gov[vi] / 255, govDays: Cv.govDays[vi], tribe: Cv.tribe[vi], jimi: Cv.jimi ? Cv.jimi[vi] : -1, pop: Cv.popDensity[vi], agri: Cv.agri[vi], hab: Cv.hab[vi], snow: Cl.snow[fi], frost: Cl.frost[fi]
+      gov: Cv.gov[vi] / 255, govDays: Cv.govDays[vi], tribe: Cv.tribe[vi], jimi: Cv.jimi ? Cv.jimi[vi] : -1, pop: Cv.popDensity[vi], agri: Cv.agri[vi], hab: Cv.hab[vi], snow: Cl.snow[fi], frost: Cl.frost[fi], veg: land && Cl.veg ? Cl.veg[fi] / 255 : -1
     };
   }
 
@@ -643,5 +640,5 @@
   }
 
   if (inWorker) self.onmessage = e => handle(e.data, (m, t) => self.postMessage(m, t || []));
-  else self.TerrainWorkerShim = { handle, _world: () => world };
+  else self.TerrainWorkerShim = { handle, _world: () => world, _populationDensityScale: populationDensityScale };
 })();

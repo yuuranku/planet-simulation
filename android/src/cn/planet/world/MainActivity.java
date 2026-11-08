@@ -134,13 +134,14 @@ public final class MainActivity extends Activity {
         dismiss.setOnClickListener(view -> banner.setVisibility(View.GONE));
         banner.addView(dismiss, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         landscapeHint = banner;
-        content.addView(banner);
+        content.addView(banner, 0);
         getPreferences(MODE_PRIVATE).edit().putBoolean("landscape_hint_seen", true).apply();
     }
 
     @Override public void onConfigurationChanged(Configuration config) {
         super.onConfigurationChanged(config);
         if (landscapeHint != null && config.orientation == Configuration.ORIENTATION_LANDSCAPE) landscapeHint.setVisibility(View.GONE);
+        if (config.orientation == Configuration.ORIENTATION_PORTRAIT) addLandscapeHint();
         content.requestApplyInsets();
         webView.invalidate();
     }

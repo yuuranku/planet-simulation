@@ -8,6 +8,7 @@
   const clamp = (x,a,b) => Math.max(a,Math.min(b,x));
   const DEFAULTS = Object.freeze({ mobilizationRate:.04, campaignDays:120, training:.45, equipment:.5 });
   const totalLosses = d => d.combat+d.disease+d.starvation;
+  const MIN_WAR = 1000; // 两军合计不足千人不算战争
   // 兵种：t 训练、e 装备（未计科技阶段上限）；arm 步 / 骑；standing 常备（领饷在营）或应召（平时务农）
   const UNITS = Object.freeze({
     warband:{name:'部族战士',arm:'inf',t:.25,e:.15}, levy:{name:'农兵',arm:'inf',t:.12,e:.18}, conscript:{name:'征召兵',arm:'inf',t:.38,e:.4},
@@ -72,7 +73,7 @@
     const campaigns=[], effects=[], effectByCampaign=new Map(), used=new Map(), garrisons=new Map(), routes=new Map();
     const overland=fullTerrain?G.NavigationOverland.create(fullTerrain):null;
     const summary={campaigns:0,mobilized:0,deaths:0,combat:0,disease:0,starvation:0,extraFood:0,lostProduction:0,garrisonFood:0};
-    let tick = null, attempt = null;
+    let tick = null;
     // Regional cells choose the corridor; the unchanged physical grid decides
     // whether its coast and lake crossings are actually walkable. Only rejected
     // corridors need a finer search, limited to the same two adjacent regions.
@@ -107,7 +108,7 @@
           const j=cell(x+dx,y+dy);if(!inside(j)||dx&&dy&&(!inside(cell(x+dx,y))||!inside(cell(x,y+dy))))continue;
           const hj=half(j),friction=1+2*(terrain.eN[hi]+terrain.eN[hj])+8*(terrain.slopeN[hi]+terrain.slopeN[hj]);
           const candidate=cost+(dx&&dy?Math.SQRT2:1)*friction;
-          if(candidate>=(dist.get(j)??Infinity)||!clear(p,center(j)))continue;
+          if(candidate>=(dist.get(j)??Infinity)||!overland.clearStep(i,dx,dy,j))continue;
           dist.set(j,candidate);prev.set(j,i);origins.set(j,origins.get(i));heap.push(j,candidate);
         }
       }
@@ -153,31 +154,23 @@
       if(!route)return null;
       return source===route.regions[0]?route:{...route,regions:[...route.regions].reverse(),points:[...route.points].reverse()};
     }
+    // 渡海航线：从出发地经海峡到对岸登陆地（海上部分按区块间的海路距离计）
+    function seaRouteFor(edge,source) {
+      const a=source,b=edge.a===source?edge.b:edge.a,FW=terrain?terrain.W*2:0;
+      const pt=r=>R.cx&&R.cy?[R.cx[r],R.cy[r]]:(()=>{const i=R.center[r],W=terrain.W,y=Math.floor(i/W);return [(i-y*W+.5)*2,(y+.5)*2];})();
+      const p0=pt(a),p1=pt(b);if(FW&&Math.abs(p1[0]-p0[0])>FW/2)p1[0]+=p1[0]<p0[0]?FW:-FW;
+      return {regions:[a,b],points:[p0,[(p0[0]*.5+p1[0]*.5),(p0[1]*.5+p1[1]*.5)],p1],km:Math.max(.001,edge.km),kind:'sea-crossing'};
+    }
     const key = (r,g) => `${r},${g.species},${g.culture},${g.religion}`;
     const remaining = r => Math.max(0,tick.food.foodAvailable[r]-tick.food.foodDemand[r]);
     const kmBetween = (a,b) => terrain&&R.center?terrain.gdist(R.center[a],R.center[b])*terrain.cellKm:0;
     const pressure = new Float64Array(R.nR+1), armies = new Map();
     function spend(r, extraFood, lostProduction) {
       if (extraFood<0 || lostProduction<0 || extraFood+lostProduction>remaining(r)+1e-7) throw Error('军事供给超出当期剩余预算');
-      if(attempt) attempt.spending.push([r,extraFood,lostProduction]);
       tick.food.foodAvailable[r]-=extraFood+lostProduction;
       tick.food.foodProduction[r]-=lostProduction;
       tick.food.militaryExtra[r]+=extraFood; tick.food.militaryLaborLoss[r]+=lostProduction;
       if(tick.account){summary.extraFood+=extraFood; summary.lostProduction+=lostProduction;}
-    }
-    function usePeople(k,n) {
-      if(attempt && !attempt.used.has(k)) attempt.used.set(k,used.has(k)?used.get(k):null);
-      used.set(k,n);
-    }
-    function cancelAttempt() {
-      for(const [r,extra,labor] of attempt.spending) {
-        tick.food.foodAvailable[r]+=extra+labor; tick.food.foodProduction[r]+=labor;
-        tick.food.militaryExtra[r]-=extra; tick.food.militaryLaborLoss[r]-=labor;
-        if(tick.account){summary.extraFood-=extra;summary.lostProduction-=labor;}
-      }
-      for(const [k,n] of attempt.used) { if(n===null) used.delete(k); else used.set(k,n); }
-      for(const [station,n] of attempt.stations) station.free=n;
-      attempt=null;
     }
     // 兵种素质：受科技阶段上限约束；世界设定的训练 / 装备投入整体放大或压低
     const tf=rules.training/DEFAULTS.training, ef=rules.equipment/DEFAULTS.equipment;
@@ -278,7 +271,7 @@
       const out=[];
       for(const unit of army.units)for(const st of unit.stations){
         const far=!near.has(st.r);if(far&&!(capitalReach>0&&st.r===tick.sys.get(p).cap&&kmBetween(st.r,r)/22<capitalReach))continue;
-        const n=Math.floor(st.free*(far?share*.6:share));if(n<1)continue;if(attempt&&!attempt.stations.has(st))attempt.stations.set(st,st.free);st.free-=n;
+        const n=Math.floor(st.free*(far?share*.6:share));if(n<1)continue;st.free-=n;
         out.push({unit,station:st,n,far,km:far?kmBetween(st.r,r):0});
       }
       return out;
@@ -288,15 +281,16 @@
         for(const g of j.unit.groups){const n=Math.floor(g.mobilized*ratio);if(n<1)continue;
           const u={...g,mobilized:n,remaining:n,role,station:j.station.r,far:j.far,deaths:{combat:0,disease:0,starvation:0}};force.groups.push(u);force.mobilized+=n;force.requested+=n;force.standing+=n;}}
     }
-    function recruit(r,side,x,edge) {
+    function recruit(r,side,x,edge,ring) {
       const attacking=side==='attacker', stage=attacking?x.stage:x.defenderStage, cohesion=attacking?x.cohesion:x.defenderCohesion,p=x[side];
       const info=p>=0?sysOf(p):null, sysKey=info?.key||(stage>=3?'levy':'warband'), sys=SYSTEMS[sysKey];
       const days=Math.min(rules.campaignDays,yearDays), fraction=days/yearDays, reserveSum=sys.reserve.reduce((s,c)=>s+c[1],0);
       const force={groups:[],mobilized:0,eligible:0,requested:0,standing:0,sys:sysKey,horse:!!info?.horse,mission:attacking?x.objective:'defend-home',training:0,equipment:0,morale:clamp(.45+.35*(cohesion||0),.2,1),
         supply:{extraFood:0,lostProduction:0,garrisonExtraFood:0,garrisonLaborLoss:0,requested:0,ratio:0},traits:{attack:1,defense:1},travelDays:0,deaths:{combat:0,disease:0,starvation:0}};
       // Local mobilization and immediately connected friendly districts; no teleportation from the capital.
-      const origins=[[r,null]];
-      if (p>=0) for(let k=R.off[r];k<R.off[r+1];k++) {
+      // ring：本地兵力不足以成战时，从境内二、三程以内的州县续征（只征应召兵，不重复调常备军与城防）
+      const origins=ring||[[r,null]];
+      if (!ring && p>=0) for(let k=R.off[r];k<R.off[r+1];k++) {
         const s=R.nbr[k], link=R.edges[R.eid[k]];
         if(!link.sea && tick.owner[s]===p) origins.push([s,link]);
       }
@@ -307,7 +301,8 @@
           const occupied=used.get(key(origin,g))||0;
           const wanted=Math.max(0,Math.floor(g.population*rules.mobilizationRate*reserveSum*(attacking?1:1.25))-occupied);
           force.eligible+=wanted;
-          const travel=(attacking?G.HumanAnchors.travelDays(edge,species[g.species],cultureAt(origin,g.culture)):0)+(march?G.HumanAnchors.travelDays(march,species[g.species],cultureAt(origin,g.culture)):0);
+          const legs=Array.isArray(march)?march:march?[march]:[];let travel=attacking?G.HumanAnchors.travelDays(edge,species[g.species],cultureAt(origin,g.culture)):0;
+          for(const leg of legs)travel+=G.HumanAnchors.travelDays(leg,species[g.species],cultureAt(origin,g.culture));
           if(!Number.isFinite(travel)||travel*2>=days) continue;
           // 一个人口组按军制的应召兵种比例拆成几支（农兵 / 骑士 / 府兵……）
           for(const [unitKey,mult] of sys.reserve){
@@ -317,21 +312,21 @@
             force.requested+=share; force.supply.requested+=share*(extraEach+laborEach);
             const n=Math.min(share,Math.floor(remaining(origin)/Math.max(.0001,extraEach+laborEach)));
             if(!n)continue;
-            unit.mobilized=unit.remaining=n;force.groups.push(unit); usePeople(key(origin,g),(used.get(key(origin,g))||0)+n);
+            unit.mobilized=unit.remaining=n;force.groups.push(unit); used.set(key(origin,g),(used.get(key(origin,g))||0)+n);
             const extra=n*extraEach, labor=n*laborEach;spend(origin,extra,labor);
             force.supply.extraFood+=extra; force.supply.lostProduction+=labor; force.travelDays+=travel*n; force.mobilized+=n;
           }
         }
       }
       // 常备兵：驻在出发地 / 目标地及邻区的部队；守方还可从都城调主力来援
-      if(p>=0){
+      if(p>=0&&!ring){
         const joined=attacking?standingNear(p,r,.7):standingNear(p,r,.85,{capitalReach:days*.55});
         for(const j of joined){const travel=j.far?j.km/22:attacking?G.HumanAnchors.travelDays(edge,null,null):0;j.travel=travel;
           const extra=Math.min(remaining(j.station.r),j.n*.6*fraction*(.25+travel/120));if(extra>0)spend(j.station.r,extra,0);force.supply.extraFood+=extra;force.supply.requested+=extra;}
         const before=force.groups.length;joinStanding(force,joined);
         for(let i=before;i<force.groups.length;i++){const g=force.groups[i],j=joined.find(q=>q.station.r===g.station&&q.unit.unit===g.unit);g.march=j?.travel||0;force.travelDays+=g.march*g.mobilized;}
       }
-      const guard=garrisons.get(r);
+      const guard=ring?null:garrisons.get(r);
       if(!attacking && guard && guard.fort.site.edges.includes(typeof x.edge==='number'?x.edge:-1)) {
         force.supply.garrisonExtraFood=guard.extraFood;force.supply.garrisonLaborLoss=guard.lostProduction;
         for(const resident of guard.groups) if(resident.remaining>0) {
@@ -340,11 +335,11 @@
         }
       }
       // 城防兵：有城墙的城市常驻守城兵（不出城野战，只守城）
-      if(!attacking&&x.city&&x.city.walls){
+      if(!ring&&!attacking&&x.city&&x.city.walls){
         const want=cityGarrison(x.city.pop,sysKey,x.city.capital),pop=human.total(r),productionPerPerson=tick.food.foodProduction[r]/Math.max(1,pop);
         for(const g of human.view(r)){const occupied=used.get(key(r,g))||0,share=Math.min(Math.floor(want*g.population/Math.max(1,pop)),Math.floor(g.population*.06)-occupied);if(share<1)continue;
           const unit=group(r,g,0,'garrison','watch',stage),each=.25*unit.foodNeed+productionPerPerson*.5,n=Math.min(share,Math.floor(remaining(r)/Math.max(1e-4,each)));if(n<1)continue;
-          unit.mobilized=unit.remaining=n;unit.march=0;force.groups.push(unit);force.mobilized+=n;force.requested+=n;usePeople(key(r,g),occupied+n);spend(r,n*.25*unit.foodNeed,n*productionPerPerson*.5);force.supply.extraFood+=n*.25*unit.foodNeed;}
+          unit.mobilized=unit.remaining=n;unit.march=0;force.groups.push(unit);force.mobilized+=n;force.requested+=n;used.set(key(r,g),occupied+n);spend(r,n*.25*unit.foodNeed,n*productionPerPerson*.5);force.supply.extraFood+=n*.25*unit.foodNeed;}
       }
       if(force.mobilized) {
         force.travelDays/=force.mobilized;
@@ -428,8 +423,20 @@
       const AL=record.allies||{},sumN=L=>(L||[]).reduce((a,b)=>a+b.mobilized,0);
       if(AL.attacker?.length)event(plan.muster,'allies','盟军会师',`${AL.attacker.length} 国盟军共 ${sumN(AL.attacker).toLocaleString('zh-CN')} 人自各自边境出兵，与主力联合进军。`,'attacker');
       if(AL.defender?.length)event(plan.muster+.5,'allies','盟军来援',`${AL.defender.length} 国盟军共 ${sumN(AL.defender).toLocaleString('zh-CN')} 人赶来助守。`,'defender');
-      node(plan.muster,'march',0,1);event(plan.muster,'march','部队开拔',`沿陆地通道进军，部队加权行程 ${A.travelDays.toFixed(1)} 日。`,'attacker');
-      if(S){
+      const NV=record.naval,fmt=n=>n.toLocaleString('zh-CN');
+      if(NV){
+        node(plan.muster,'march',0,1);event(plan.muster,'march','舰队出港',`${fmt(NV.ships.attacker)} 艘船${NV.transports>NV.ships.attacker*.6?'（多为运兵船）':''}载兵 ${fmt(A.mobilized)} 人渡海，海上航程约 ${Math.round(NV.km)} 公里（约 ${Math.max(1,Math.round(NV.sailDays))} 日）。`,'attacker');
+        const nd=plan.naval;
+        if(NV.fought){node(nd,'naval',.5,1,record.reason==='naval'?1:.15);
+          event(nd,'naval','海战',`守方 ${fmt(NV.ships.defender)} 艘战船出港拦截。${NV.won?`攻方舰队击溃守军水师，击沉、俘获 ${fmt(NV.sunk.defender)} 艘，自损 ${fmt(NV.sunk.attacker)} 艘。`:`攻方舰队不敌，损失 ${fmt(NV.sunk.attacker)} 艘，守方损失 ${fmt(NV.sunk.defender)} 艘。`}`,'both',{naval:true});}
+        else event(nd,'naval','渡海',NV.ships.defender?`守方只有 ${fmt(NV.ships.defender)} 艘小船，无力出海拦截，船队顺利渡海。`:'守方没有可以出海拦截的舰队，船队顺利渡海。','attacker',{naval:true});
+        if(record.reason!=='naval')event(nd+.4,'landing','登陆',`攻方部队在对岸登陆，抢占滩头。`,'attacker');
+      } else {node(plan.muster,'march',0,1);event(plan.muster,'march','部队开拔',`沿陆地通道进军，部队加权行程 ${A.travelDays.toFixed(1)} 日。`,'attacker');}
+      if(record.reason==='naval'){
+        node(plan.result,'retreat',.5,1,1,true);
+        event(plan.result,'result','海战失利',`舰队败退，登陆未能实现。进攻方战死、溺亡 ${fmt(A.deaths.combat)} 人，守方伤亡 ${fmt(D.deaths.combat)} 人。`,'both',{losses:{attacker:{...record.timeline.at(-1).attacker.deaths},defender:{...record.timeline.at(-1).defender.deaths}}});
+        event(plan.result,'retreat','残部撤回','残余船只载着幸存的部队驶回出发港。','attacker');
+      } else if(S){
         node(plan.contact,'siege',1,1);
         const g=S.garrison;
         event(plan.contact,'siege','兵临城下',`${S.fort&&!S.walls?'进攻军抵达关堡':'进攻军包围城池'}。城中守军 ${g.total.toLocaleString('zh-CN')} 人${[g.watch?`城防兵 ${g.watch.toLocaleString('zh-CN')}`:'',g.standing?`驻防常备军 ${g.standing.toLocaleString('zh-CN')}`:'',g.fort?`关堡戍卒 ${g.fort.toLocaleString('zh-CN')}`:'',g.local?`入城乡勇 ${g.local.toLocaleString('zh-CN')}`:''].filter(Boolean).join('、').replace(/^(.)/,'（$1')}${g.watch||g.standing||g.fort||g.local?'）':''}。`);
@@ -480,6 +487,15 @@
       force.supply.ratio=force.requested?Math.min(1,force.mobilized/force.requested):0;force.comp=compOf(force.groups);
       return n1;
     }
+    // 境内二至三程的州县：[区块, 从该区块走向集结地的各段通道]
+    function ringOf(src,p,maxD){
+      const out=[],seen=new Map([[src,[]]]);let frontier=[src];
+      for(let d=1;d<=maxD&&frontier.length;d++){const next=[];
+        for(const a of frontier)for(let k=R.off[a];k<R.off[a+1];k++){const b=R.nbr[k],e=R.edges[R.eid[k]];if(e.sea||seen.has(b)||tick.owner[b]!==p)continue;
+          const path=[e,...seen.get(a)];seen.set(b,path);next.push(b);if(d>=2)out.push([b,path]);}
+        frontier=next;}
+      return out;
+    }
     function resolve(x) {
       if(!tick||tick.year!==x.year)throw Error('战役年份未建立供给预算');
       let edge=typeof x.edge==='number'?R.edges[x.edge]:x.edge;
@@ -488,13 +504,12 @@
         source:x.source,target:x.target,attacker:x.attacker,defender:x.defender,objective:x.objective||'border',religion:x.religion,
         status:'failed',reason:'unreachable',forces:null,battle:null,tactics:[],control:{region:x.target,from:x.defender,to:x.defender}};
       campaigns.push(record);summary.campaigns++;
-      if(!edge||edge.sea||!((edge.a===x.source&&edge.b===x.target)||(edge.b===x.source&&edge.a===x.target))){chronicle(record,false);return record;}
+      const naval=!!(edge&&edge.sea&&x.naval);
+      if(!edge||(edge.sea&&!naval)||!((edge.a===x.source&&edge.b===x.target)||(edge.b===x.source&&edge.a===x.target))){chronicle(record,false);return record;}
       if(tick.owner[x.source]!==x.attacker||tick.owner[x.target]!==x.defender){record.reason='changed-control';chronicle(record,false);return record;}
-      record.route=routeFor(edge,x.source);
+      record.route=naval?seaRouteFor(edge,x.source):routeFor(edge,x.source);
       if(!record.route){chronicle(record,false);return record;}
       edge={...edge,km:record.route.km};
-      // 不足以构成战争的尝试不消耗粮食、兵员或驻军，也不生成战役记录。
-      attempt={spending:[],used:new Map(),stations:new Map()};
       const attacker=recruit(x.source,'attacker',x,edge);
       const defender=recruit(x.target,'defender',x,edge);record.forces={attacker,defender};
       // 盟军：盟国从自己与目标接壤的地区出兵，沿各自的通道赶到战场，与主力合为一军
@@ -505,18 +520,50 @@
           const f=recruit(al.source,'attacker',{...x,attacker:al.p,stage:al.stage,cohesion:al.cohesion,objective:'border',religion:undefined},{...e2,km:rt.km});
           const n=mergeForce(side==='attacker'?attacker:defender,f,al.p);if(n>0)record.allies[side].push({p:al.p,source:al.source,mobilized:n,route:rt});}
         if(!record.allies.attacker.length&&!record.allies.defender.length)delete record.allies;}
-      if(attacker.mobilized<1000 || defender.mobilized<1000) {
-        cancelAttempt(); campaigns.pop(); summary.campaigns--;
-        return {...record,id:null,forces:null,reason:'mobilization'};
+      // 战争门槛：两军合计不足千人不成战事。先从境内更远的州县续征；仍不足千人，只算边境摩擦或部族归附，不记入战史
+      const total=()=>attacker.mobilized+defender.mobilized;
+      if(total()<MIN_WAR&&attacker.requested){
+        for(const [side,force,src] of [['attacker',attacker,x.source],['defender',defender,x.target]]){
+          if(total()>=MIN_WAR)break; const p=x[side]; if(p<0)continue;
+          const ring=ringOf(src,p,3); if(ring.length)mergeForce(force,recruit(src,side,x,edge,ring));
+        }
       }
-      attempt=null;
+      if(total()<MIN_WAR){
+        campaigns.pop();summary.campaigns--;
+        const minor={id:null,year:x.year,source:x.source,target:x.target,attacker:x.attacker,defender:x.defender,objective:record.objective,status:'failed',reason:'skirmish',minor:true,forces:null,control:{region:x.target,from:x.defender,to:x.defender}};
+        if(x.defender<0&&attacker.mobilized>0&&attacker.mobilized>=1.5*defender.mobilized){minor.status='won';minor.reason='annex';minor.control.to=x.attacker;} // 地广人稀的部族之地：兵临即归附，不成战事
+        else if(x.defender>=0&&x.cede&&attacker.mobilized>0&&attacker.mobilized>=2*defender.mobilized){minor.status='won';minor.reason='cede';minor.control.to=x.attacker;} // 弱邻不敢一战，割地求和
+        return minor;
+      }
+      // 海战：渡海之前，守方的舰队出港拦截；攻方要有足够的船只载兵。舰队败退则登陆落空，取胜才能登陆作战
+      if(naval&&attacker.mobilized>0){
+        const N=x.naval,st=x.stage||3,stD=x.defenderStage||3,lift=st>=7?240:st>=6?160:st>=5?120:st>=3?80:40;
+        const transports=Math.ceil(attacker.mobilized/lift),warA=Math.round(N.attacker.ships||0),aShips=Math.max(transports,warA),dShips=x.defender>=0?Math.round(N.defender.ships||0):0;
+        const qual=(m,s0)=>(.45+.55*clamp(m||0,0,1))*(.55+.07*s0);
+        const aw=Math.max(warA,transports*.35)*qual(N.attacker.mar,st)*(.8+.4*(x.cohesion??.6)),dw=dShips*qual(N.defender.mar,stD)*1.15*(.8+.4*(x.defenderCohesion??.6));
+        const nv={ships:{attacker:aShips,defender:dShips},transports,km:edge.km,sailDays:edge.km/80,fought:false,won:true,sunk:{attacker:0,defender:0},power:{attacker:aw,defender:dw},ratio:dw>0?aw/dw:null};
+        if(dShips>=3){nv.fought=true;const u=.75+.5*random();nv.uncertainty=u;nv.won=aw*u>dw;
+          const la=nv.won?.04+.1*random():.22+.3*random(),ld=nv.won?.28+.35*random():.04+.1*random();
+          nv.sunk.attacker=Math.min(aShips,Math.round(aShips*la));nv.sunk.defender=Math.min(dShips,Math.round(dShips*ld));}
+        record.naval=nv;
+      }
       let won=false, engaged=false;
       if(!attacker.requested) record.reason=attacker.eligible?'unreachable':'mobilization';
       else if(attacker.mobilized<1||attacker.supply.ratio<.25)record.reason='supply';
+      else if(naval&&attacker.mobilized<Math.max(300,.06*defender.mobilized))record.reason='mobilization'; // 渡海兵力太少：船队不出港
+      else if(record.naval&&!record.naval.won){
+        engaged=true;const nv=record.naval,muster=Math.min(12,Math.max(0,days-2*attacker.travelDays)*.25),contact=muster+Math.max(1,attacker.travelDays*.6),back=Math.max(1,attacker.travelDays*.5);
+        record.plan={muster,contact,naval:contact,battle:contact,result:contact+1,back};record.status='failed';record.reason='naval';
+        const m0={attack:1,defense:1,attackerCombat:0,defenderCombat:0,attackerShortage:0,defenderShortage:0};
+        record.battle={region:x.target,kind:'naval',baseAttack:nv.power.attacker,baseDefense:nv.power.defender,attack:nv.power.attacker*(nv.uncertainty||1),defense:nv.power.defender,uncertainty:nv.uncertainty||1,ratio:nv.ratio,winner:x.defender,modifiers:m0};
+        casualties(attacker,clamp(.05+.3*nv.sunk.attacker/Math.max(1,nv.ships.attacker),0,.6),clamp(1-attacker.supply.ratio,0,1));
+        casualties(defender,0,clamp(1-defender.supply.ratio,0,1),g=>g.role==='standing',0);
+        pressure[x.source]+=attacker.mobilized;
+      }
       else {
         engaged=true;
         const strength=(force,side)=>force.mobilized*(.55+.45*force.training)*(.55+.45*force.equipment)*force.morale*force.traits[side];
-        const baseAttack=strength(attacker,'attack')/(1+attacker.travelDays/80);
+        const baseAttack=strength(attacker,'attack')/(1+attacker.travelDays/80)*(record.naval?.85:1); // 渡海登陆：滩头立足不稳
         const fortGuards=defender.groups.filter(g=>g.unit==='fort').reduce((s,g)=>s+g.mobilized,0);
         const walls=!!(x.city&&x.city.walls);
         // 守方就近的野战兵力足以一战，就先在城外列阵迎敌；不足则退守城池、关堡，等待主力
@@ -587,6 +634,7 @@
           casualties(attacker,clamp((won?.035:.13)+m.attackerCombat,0,.8),clamp(1-attacker.supply.ratio+m.attackerShortage,0,1));casualties(defender,clamp((won?.16:.045)+m.defenderCombat,0,.8),clamp(1-defender.supply.ratio+m.defenderShortage,0,1));
         }
         if(won)record.control.to=x.attacker;
+        if(record.naval&&record.plan)record.plan.naval=record.plan.muster+Math.max(.5,(record.plan.contact-record.plan.muster)*.55);
         pressure[x.source]+=attacker.mobilized;pressure[x.target]+=attacker.mobilized+defender.mobilized;
       }
       if(!engaged){casualties(attacker,0,1-attacker.supply.ratio);casualties(defender,0,1-defender.supply.ratio);}
@@ -618,9 +666,10 @@
       for(const e of effects){const c=campaigns[Number(e.campaignId.slice(9))];e.startYear=c.startTime;e.endYear=c.endTime;}
       for(const a of armies.values()){let last=-Infinity;for(const row of a.log){row[0]=Math.max(last,refine(a.p,row[0]));last=row[0];}for(const m of a.moves)m[0]=refine(a.p,m[0]);}
     }
+    const campaignById=id=>campaigns.find(c=>c.id===id);
     const output=()=>({version:3,rules,yearDays,campaigns,effects,summary,armies:[...armies.values()].filter(a=>a.log.some(r=>r[2]>0)).map(a=>({p:a.p,log:a.log,moves:a.moves})),
       model:'军制由一国都城接纳的军事思潮决定：常备兵领饷在营、驻守都城与边地并随战事调防，应召兵只在战时集结。有城墙的城市与关堡由守军据守，援军赶到之前守军坚守、投降或出城逆袭；城破、粮尽、解围或撤围各按兵力、城防与时限结算。年度供给先供居民，军需只计算额外消耗、运输与劳动力机会成本。'});
-    return {beginTick,deploy,resolve,setControl,endTick,refineYears,output,remaining};
+    return {beginTick,deploy,resolve,setControl,endTick,refineYears,output,remaining,campaignById,yearDays};
   }
-  G.Military={DEFAULTS,UNITS,SYSTEMS,SYSTEM_ORDER,systemFor,cityGarrison,validateRules,create,atTime};
+  G.Military={MIN_WAR,DEFAULTS,UNITS,SYSTEMS,SYSTEM_ORDER,systemFor,cityGarrison,validateRules,create,atTime};
 })(typeof self!=='undefined'?self:globalThis);

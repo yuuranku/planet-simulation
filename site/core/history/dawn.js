@@ -18,7 +18,7 @@
     'new-world': ['游群采集', '原住民村落', '部落联盟', '祭祀城邦', '原住民王国', '原住民帝国', '封建王国', '集权王国', '民族国家']
   };
   const GENERIC = ['游群采集', '农业村落', '酋邦', '城邦', '王国', '古典帝国', '封建', '集权', '当代'];
-  const ERA_NAME = ['史前', '新石器时代', '铜石并用时代', '城邦时代', '王国时代', '古典时代', '中世纪', '近代早期', '当代'];
+  const ERA_NAME = ['史前', '新石器时代', '铜石并用时代', '城邦时代', '王国时代', '古典时代', '封建时代', '前近代', '当代'];
   const TYPE_LABEL = { agrarian: '农耕', pastoral: '游牧', maritime: '海洋', highland: '山地', tribal: '部族联盟', 'new-world': '新大陆原住民' };
   // 文明类型的发展特性
   //  speed：自发进步的快慢；cradle：成为大河摇篮的倾向；resist[s]：接受第 s 阶段的阻力（>1 更慢）；sea：海路传播倍率（<1 更快）
@@ -144,7 +144,7 @@
       if (!habitable(r)) return INF;
       const T = TYPE[typeOf(r)];
       if (inCradle[r] >= 0) { const cr = cradles[inCradle[r]]; return S[s] * cr.tempo + cr.start + 70 * Math.max(0, hop[r]) + (s > 1 ? 40 * rnd() : 0); }
-      return OWN[s] * (1 + 1.6 * (1 - suit[r])) / T.speed + 200;
+      return OWN[s] * (1 + 1.6 * (1 - suit[r])) / T.speed * (R.newW[r] > 0.5 ? 1.35 : 1) + 200; // 新大陆：自发进步更慢
     };
     const delay = (s, a, b, ed) => { // 第 s 阶段从 a 传到 b 要多少年
       const Tb = TYPE[typeOf(b)], Ta = TYPE[typeOf(a)];
@@ -154,6 +154,7 @@
         d *= (s <= 2 ? 3 : s <= 4 ? 1.8 : s <= 6 ? 1.2 : 0.8) * Math.min(Ta.sea, Tb.sea);
       } else d *= (1 + 0.45 * Math.min(4, ed.rough)) * (ed.river > 0.3 ? 0.7 : 1);
       d *= Tb.resist[s];
+      if (R.newW[b] > 0.5 && s <= 6) d *= 1.6; // 新大陆地广人稀、没有大牲畜与车轮：农耕、酋邦与文字传得慢
       if (!habitable(b) && s >= 2) d *= 3;
       return d;
     };
@@ -220,7 +221,7 @@
         const nH = clamp(Math.round(nwW / allW * 10), 1, 3), top = cand.length ? cand[0][1] : 1;
         for (const [r, v] of cand) { if (nwHearths.length >= nH) break; if (nwHearths.every(o => centerDist(o.r, r) >= kmR * 0.07)) nwHearths.push({ r, q: v / top }); }
         nwHearths.forEach((hh, i) => {
-          const t3 = 2500 + 380 * i + 320 * (1 - hh.q) + 220 * rnd(), t4 = t3 + 700 + 350 * rnd(), t5 = i === 0 && hh.q > 0.55 ? Math.max(t4 + 500, 4250 + 150 * rnd()) : INF;
+          const t3 = 2750 + 420 * i + 360 * (1 - hh.q) + 240 * rnd(), t4 = t3 + 800 + 400 * rnd(), t5 = i === 0 && hh.q > 0.55 ? Math.max(t4 + 500, 4300 + 150 * rnd()) : INF; // 比旧大陆晚上千年
           const T = [0, 0, Math.min(1700, t3 - 700), t3, t4, t5], RAD = [0, 0, 0, 1, 1, 2]; /* 城邦、王国只在核心河谷一带 */ hh.start = t3;
           const hop = new Map([[hh.r, 0]]), q = [hh.r];
           for (let k = 0; k < q.length; k++) { const a = q[k], d = hop.get(a); if (d >= 6) continue; neighbors(a, (n, ed) => { if (ed.sea || hop.has(n) || R.newW[n] < 0.5 || !habitable(n) || R.landComp[n] !== R.landComp[hh.r]) return; hop.set(n, d + 1); q.push(n); }); }

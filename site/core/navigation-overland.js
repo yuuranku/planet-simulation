@@ -42,8 +42,10 @@
     }
     // Exact grid traversal, including both cells on a diagonal corner. Sampling
     // only endpoints would allow short road attachments to jump over narrow water.
+    // A cell centre's surface test is exactly what dry() already memoized for that cell.
+    const isCentre=q=>q.x===q.i%W+.5&&q.y===Math.floor(q.i/W)+.5;
     function dryLine(from,to){
-      const a=point(from),b=point(to);if(!a||!b||!dry(a.i)||!dry(b.i)||!surfaceDry(a)||!surfaceDry(b))return false;
+      const a=point(from),b=point(to);if(!a||!b||!dry(a.i)||!dry(b.i)||!(isCentre(a)||surfaceDry(a))||!(isCentre(b)||surfaceDry(b)))return false;
       let allInland=inland(a.i)&&inland(b.i);
       const visit=i=>{if(!dry(i))return false;if(!inland(i))allInland=false;return true;};
       const ex=a.x+delta(b.x-a.x),ey=b.y,dx=ex-a.x,dy=ey-a.y;
@@ -69,6 +71,20 @@
         if(clear){edgeDry[i]|=bit;edgeDry[j]|=back;}
       }
       return !!(edgeDry[i]&bit);
+    }
+    // Both-way clear test between the centres of two adjacent cells (k = DX/DY
+    // direction). Pure in the immutable fields, so memoizing it per cell edge
+    // returns exactly what the two dryLine calls would.
+    let pairKnown,pairDry;
+    const KOF=[5,6,7,4,-1,0,3,2,1];
+    function clearStep(i,dx,dy,j){
+      if(!pairKnown){pairKnown=new Uint8Array(N);pairDry=new Uint8Array(N);}
+      const k=KOF[(dy+1)*3+dx+1],bit=1<<k;
+      if(!(pairKnown[i]&bit)){
+        const a=center(i),b=center(j),ok=dryLine(a,b)&&dryLine(b,a),back=1<<((k+4)%8);
+        pairKnown[i]|=bit;pairKnown[j]|=back;if(ok){pairDry[i]|=bit;pairDry[j]|=back;}
+      }
+      return !!(pairDry[i]&bit);
     }
     let dist,pred,seen,closed,epoch=0,east,diagonal;
     const northSouth=radius*Math.PI/H;
@@ -141,7 +157,7 @@
       if(days>maxDays)return null;
       return {pts:Float32Array.from(pts),pointDays:Float64Array.from(pointDays),km,days,cost};
     }
-    return {route,dryLine};
+    return {route,dryLine,clearStep};
   }
   G.NavigationOverland={create};
 })(typeof self!=='undefined'?self:globalThis);

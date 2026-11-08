@@ -59,10 +59,10 @@
     const { P, Cl, K, Hy, Cv } = world;
     const popPosition = value => {
       if (!(value > 0)) return 0;
-      if (Cv.stats.populationDensityUniform) return 2.5 * Math.min(1, value / Cv.stats.populationDensityHigh);
+      if (Cv.stats.populationDensityUniform) return 2.5;
       const cuts = Cv.stats.populationDensityBreaks; let c = 0; while (c < cuts.length && (c === 0 ? value > cuts[c] : value >= cuts[c])) c++;
       const lo = c ? cuts[c - 1] : 0, hi = c < cuts.length ? cuts[c] : Cv.stats.populationDensityHigh;
-      return c + (hi > lo ? Math.max(0, Math.min(1, (value - lo) / (hi - lo))) : 0.5);
+      return c + (hi > lo ? (lo > 0 ? Math.max(0, Math.min(1, Math.log(value / lo) / Math.log(hi / lo))) : Math.max(0, Math.min(1, (value - lo) / (hi - lo)))) : 0.5); // 档内按对数插值：密度是等比变化的
     };
     const W = P.W, H = P.H, cW = P.cW, cH = P.cH, vW = Cv.W, vH = Cv.H;
     const elev = P.elev, elevD = Hy.dispElev || P.elev; // elevD：与水系对齐的显示地表（湖面齐平、洼地填平、湖口开谷），只用于设色、晕渲与等高线
@@ -132,17 +132,50 @@
     const VAS = (() => { const v = new Int16Array(Cv.countries.length).fill(-1); let any = false; Cv.countries.forEach((k, i) => { if (k.liege !== undefined && k.liege >= 0 && k.liege !== i) { v[i] = k.liege; any = true; } }); return any ? v : null; })();
     const fullCol = (topic, f, out) => {
       const y = (f / W) | 0, x = f - y * W, vi = Math.min(vH - 1, y >> 1) * vW + Math.min(vW - 1, x >> 1);
-      const k = Cv.countryF[f];
+      // 标签取政区标签场（与显示用湖岸一致）：显示为陆地的湖岸格也有国家，显示为湖面的格不画国界
+      const m = POL ? POL.MF[f] : null, k = m === null ? Cv.countryF[f] : m >= 2000000 ? m - 2000000 : m >= 1000000 ? provCountry[m - 1000000] : m < -1 ? -2 : m;
       if (k >= 0) {
         let arr = topic === 'atlas' ? pal.atlas : topic === 'system' ? pal.system : pal.country, id = k;
-        if (topic === 'province') { const p = Cv.provinceF[f]; if (p >= 0) { arr = pal.province; id = p; } }
+        if (topic === 'province') { const p = m === null ? Cv.provinceF[f] : m >= 1000000 && m < 2000000 ? m - 1000000 : -1; if (p >= 0) { arr = pal.province; id = p; } }
         out[0] = arr[id * 3]; out[1] = arr[id * 3 + 1]; out[2] = arr[id * 3 + 2];
         if (topic === 'govern') { const g = Cv.gov[vi] / 255; out[0] = 246 + (out[0] - 246) * g; out[1] = 241 + (out[1] - 241) * g; out[2] = 230 + (out[2] - 230) * g; }
         if (topic === 'heritage') { out[0] = 244 + (out[0] - 244) * 0.22; out[1] = 238 + (out[1] - 238) * 0.22; out[2] = 226 + (out[2] - 226) * 0.22; } // 遗迹地图：淡化的国家疆域作底
         return;
       }
-      const c = k !== -4 && Cv.nominal[vi] >= 0 ? TRIBAL : WILD; out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
+      const c = (m === null ? k !== -4 && Cv.nominal[vi] >= 0 : m === -1) ? TRIBAL : WILD; out[0] = c[0]; out[1] = c[1]; out[2] = c[2];
     };
+    // 疆界松散的国家（apply.js 标出 gradKm）：与历史时间线一样由都城向外渐淡、与相邻的部族之地相互晕开，不画硬边。
+    // 软层在半分辨率网格上：松散国家的格记“预乘透明度的颜色”，无主陆地记透明（参与平均、使边缘淡出），疆界清晰的国家与水面不参与；
+    // 两遍方框模糊后逐像素双线性取样，叠在部族底色上
+    const GRADK = Cv.countries.map(k => k.gradKm > 0 ? k.gradKm : 0), anyGrad = GRADK.some(v => v > 0);
+    let SOFT = null;
+    function softLayer() {
+      if (SOFT || !anyGrad) return SOFT;
+      const N0 = vW * vH, Rk = (Cv.hist && Cv.hist.R) || world.cfg.radius || 6371;
+      const L = [new Float32Array(N0), new Float32Array(N0), new Float32Array(N0), new Float32Array(N0), new Float32Array(N0)]; // R·a, G·a, B·a, a, 覆盖
+      const unit = i => { const y = (i / vW) | 0, x = i - y * vW, lon = (x + 0.5) / vW * 2 * Math.PI, lat = (0.5 - (y + 0.5) / vH) * Math.PI; return [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)]; };
+      const capU = Cv.countries.map((k, i) => GRADK[i] ? unit(k.gradCell >= 0 ? k.gradCell : 0) : null);
+      for (let i = 0; i < N0; i++) { if (!Cv.land[i] || Cv.ice[i]) continue; const k = Cv.country[i];
+        if (k >= 0 && !GRADK[k]) continue; // 疆界清晰的国家：不参与
+        L[4][i] = 1; if (k < 0) continue;
+        const u = unit(i), c = capU[k], dx = u[0] - c[0], dy = u[1] - c[1], dz = u[2] - c[2], km = Math.sqrt(dx * dx + dy * dy + dz * dz) * Rk;
+        const t = Math.max(0.3, Math.min(1, 1.25 - km / GRADK[k])); // 与时间线同式：都城一带最浓，远处淡到三成
+        L[0][i] = pal.country[k * 3] * t; L[1][i] = pal.country[k * 3 + 1] * t; L[2][i] = pal.country[k * 3 + 2] * t; L[3][i] = t; }
+      const T = new Float32Array(N0), Rb = 2;
+      const pass = A => { for (let y = 0; y < vH; y++) { const row = y * vW; let v = 0; for (let k = -Rb; k <= Rb; k++) v += A[row + ((k % vW) + vW) % vW];
+          for (let x = 0; x < vW; x++) { T[row + x] = v; v += A[row + (x + Rb + 1) % vW] - A[row + ((x - Rb) % vW + vW) % vW]; } }
+        for (let x = 0; x < vW; x++) { let v = 0; for (let k = 0; k <= Rb && k < vH; k++) v += T[k * vW + x];
+          for (let y = 0; y < vH; y++) { A[y * vW + x] = v; const a = y - Rb, b = y + Rb + 1; if (b < vH) v += T[b * vW + x]; if (a >= 0) v -= T[a * vW + x]; } } };
+      for (const A of L) for (let it = 0; it < 2; it++) pass(A);
+      SOFT = L; return SOFT;
+    }
+    // 软层取样：返回透明度（0 表示不覆盖），颜色写入 softC
+    const softC = [0, 0, 0];
+    function softAt(gx, rp) {
+      const L = SOFT, cov = bilinR(L[4], gx, rp, vW); if (!(cov > 1e-4)) return 0;
+      const a = bilinR(L[3], gx, rp, vW); if (!(a > 1e-4)) return 0;
+      softC[0] = bilinR(L[0], gx, rp, vW) / a; softC[1] = bilinR(L[1], gx, rp, vW) / a; softC[2] = bilinR(L[2], gx, rp, vW) / a; return Math.min(1, a / cov);
+    }
     // 文明 / 语言影响：核心浓、边缘淡，交界处两侧颜色相互渗透（与实际治理同样的渐变表达）
     function gradient(name, arr, gw, gh) {
       const id = name === 'culture' ? Cv.culture : Cv.language, N0 = gw * gh;
@@ -177,15 +210,15 @@
       let gw, gh, fn;
       if (name === 'koppen') { gw = W; gh = H; fn = kopAt; } else if (name === 'biome') { gw = W; gh = H; fn = bioAt; } else if (name === 'basin') { gw = W; gh = H; fn = basAt; }
       else if (name === 'plates') { gw = cW; gh = cH; fn = plateAt; }
-      else if (FULL[name] && Cv.countryF) { gw = W; gh = H; fn = (f, o) => fullCol(name, f, o); }
+      else if (FULL[name] && Cv.countryF) { gw = W; gh = H; political(); fn = (f, o) => fullCol(name, f, o); }
       else { gw = vW; gh = vH; fn = (i, o) => civCol(name, i, o); }
       const arr = new Uint8Array(gw * gh * 3);
       for (let i = 0; i < gw * gh; i++) { fn(i, tmpC); arr[i * 3] = tmpC[0]; arr[i * 3 + 1] = tmpC[1]; arr[i * 3 + 2] = tmpC[2]; }
 
       const t = { arr, gw, gh };
       if (FULL[name] && Cv.countryF && gw === W) { // 标签：省份图按省，其余按国；无国家的陆地区分名义宣称与荒野
-        const M = political().M, toLab = name === 'province' ? (m => m) : topicOf;
-        t.lab = name === 'province' ? M : Int32Array.from(M, topicOf); t.map = toLab; t.index = name === 'province' ? POL.I : POL.countryI; }
+        const M = political().MF, toLab = name === 'province' ? (m => m) : topicOf;
+        t.lab = name === 'province' ? M : Int32Array.from(M, topicOf); t.map = toLab; }
       tables.set(name, t); return t;
     }
     // 政区标签（全分辨率）：1000000+省 / 2000000+无省的国家 / -1 名义宣称的无主地 / -3 荒野 / -4 冰盖 / -2 水
@@ -194,17 +227,27 @@
     let POL = null;
     function political() {
       if (POL || !Cv.countryF) return POL;
-      const M = new Int32Array(W * H);
+      const M = new Int32Array(W * H), LV = Hy.lakeView || Hy.lakeSoft, NEED = -9;
+      // 湖岸以显示用湖面（闭运算、平滑后的形状）为准：显示为湖面的格不属任何国家（国界不会伸进湖里），
+      // 显示为陆地、而逐格湖泊掩膜算作湖面的格，取最近的陆上政区（湖湾尽头不会留下未填色的空白）
+      const dispLake = f => LV && Hy.lake[f] ? LV[f] > 0.5 : !!(LV && LV[f] > 0.5 && P.elev[f] > 0);
       for (let f = 0; f < W * H; f++) { const k = Cv.countryF[f];
+        if (k === -2) { M[f] = Hy.lake[f] && P.elev[f] > 0 && LV && !(LV[f] > 0.5) ? NEED : -2; continue; }
+        if (k !== -4 && dispLake(f)) { M[f] = -2; continue; }
         if (k >= 0) { const p = Cv.provinceF[f]; M[f] = p >= 0 ? 1000000 + p : 2000000 + k; }
-        else if (k === -2) M[f] = -2;
         else if (k === -4) M[f] = -4;
         else { const vi = Math.min(vH - 1, ((f / W) | 0) >> 1) * vW + Math.min(vW - 1, (f % W) >> 1); M[f] = Cv.nominal[vi] >= 0 ? -1 : -3; } }
+      { const qq = [], nb4 = (f, fn) => { const y = (f / W) | 0, x = f - y * W; if (y > 0) fn(f - W); if (y < H - 1) fn(f + W); fn(y * W + (x + 1) % W); fn(y * W + (x - 1 + W) % W); };
+        const ok = m => m !== -2 && m !== -4 && m !== NEED;
+        for (let f = 0; f < W * H; f++) if (M[f] === NEED) { let lab = NEED; nb4(f, j => { if (lab === NEED && ok(M[j])) lab = M[j]; }); if (lab !== NEED) qq.push(f, lab); }
+        for (let i = 0; i < qq.length; i += 2) { const f = qq[i]; if (M[f] !== NEED) continue; M[f] = qq[i + 1]; nb4(f, j => { if (M[j] === NEED) qq.push(j, M[f]); }); }
+        for (let f = 0; f < W * H; f++) if (M[f] === NEED) M[f] = -3; }
+      // 填色用的标签：湖面格也带上最近的陆上政区（低缩放时小湖隐去、显示为陆地，也不会露出空白）；界线仍用 M
+      const MF = Int32Array.from(M);
+      { const qq = []; for (let f = 0; f < W * H; f++) if (MF[f] === -2 && Hy.lake[f]) { const y = (f / W) | 0, x = f - y * W; for (const j of [y > 0 ? f - W : -1, y < H - 1 ? f + W : -1, y * W + (x + 1) % W, y * W + (x - 1 + W) % W]) if (j >= 0 && MF[j] !== -2 && MF[j] !== -4) { qq.push(f, MF[j]); break; } }
+        for (let i = 0; i < qq.length; i += 2) { const f = qq[i]; if (MF[f] !== -2) continue; MF[f] = qq[i + 1]; const y = (f / W) | 0, x = f - y * W; for (const j of [y > 0 ? f - W : -1, y < H - 1 ? f + W : -1, y * W + (x + 1) % W, y * W + (x - 1 + W) % W]) if (j >= 0 && MF[j] === -2 && Hy.lake[j]) qq.push(j, MF[f]); } }
       const C = G.Edges.chains(M, W, H, (a, b) => a !== -2 && b !== -2);
-      // 国家专题只索引国家间界线，不能让邻近的省界抢走最近界线，
-      // 否则国界附近填色可能跳到另一侧。
-      const countryC = G.Edges.chains(M, W, H, (a, b) => a !== -2 && b !== -2 && topicOf(a) !== topicOf(b));
-      POL = { M, C, I: G.Edges.index(C, W, H), countryI: G.Edges.index(countryC, W, H), topicOf };
+      POL = { M, MF, C, I: G.Edges.index(C, W, H), topicOf };
       return POL;
     }
     const wetF = Hy.wetSoft || null, deltaF = Hy.deltaSoft || null, plumeF = Hy.plume || null;
@@ -224,6 +267,7 @@
     // 查不到界线时（如只有海岸）退回 4×4 邻格按 B 样条权重取多数标签。同一标签内部（治理强度等）仍做平滑插值。
     const cIds = new Int32Array(16), cWt = new Float64Array(16), wx4 = new Float64Array(4), wy4 = new Float64Array(4);
     const bspW = (t, o4) => { const u = 1 - t; o4[0] = u * u * u / 6; o4[1] = (3 * t * t * t - 6 * t * t + 4) / 6; o4[2] = (-3 * t * t * t + 3 * t * t + 3 * t + 1) / 6; o4[3] = t * t * t / 6; };
+    let crispLab = -9; // 最近一次 crisp() 取到的标签（松散国家的软层要知道这一像素归谁）
     function crisp(t, gx, gy) {
       const fx = gx - 0.5, fy = Math.min(H - 1.001, Math.max(0, gy - 0.5)), x0 = Math.floor(fx), y0 = Math.floor(fy), L = t.lab, A = t.arr;
       bspW(fx - x0, wx4); bspW(fy - y0, wy4);
@@ -235,9 +279,10 @@
       if (uni) { best = l0; bw = 1; }
       else { best = -9; bw = -1;
         // 先看离这里最近的界线：点在线的哪一侧就取哪一侧的颜色（填色与界线是同一条曲线）
-        const m = t.map && POL ? G.Edges.side(t.index, gx, gy, 1) : undefined;
+        const m = t.map && POL ? G.Edges.side(POL.I, gx, gy, 1) : undefined;
         if (m !== undefined) { const lab = t.map(m); for (let n = 0; n < 16; n++) if (L[cIds[n]] === lab) { best = lab; bw = 1; break; } }
         if (best === -9) for (let n = 0; n < 16; n++) { const lab = L[cIds[n]]; if (lab === -2 || lab === best) continue; let sw = 0; for (let m = 0; m < 16; m++) if (L[cIds[m]] === lab) sw += cWt[m]; if (sw > bw) { bw = sw; best = lab; } } }
+      crispLab = best;
       if (best === -9) { acc[0] = WILD[0]; acc[1] = WILD[1]; acc[2] = WILD[2]; return acc; }
       let sr = 0, sg = 0, sb = 0, sw = 0;
       for (let n = 0; n < 16; n++) { const f = cIds[n]; if (L[f] !== best) continue; const o = f * 3; sr += A[o] * cWt[n]; sg += A[o + 1] * cWt[n]; sb += A[o + 2] * cWt[n]; sw += cWt[n]; }
@@ -256,6 +301,18 @@
       return acc;
     }
     // 双线性采样：行不变量（y0/ty/r0/r1）按行预计算一次，逐像素只算经向插值
+    // 人口专题：有人居住的格（陆地、非冰盖、密度 > 0）为 1；水面格沿用岸上邻格（湖岸、海岸由逐像素的水陆判断决定，不会在岸边留出一格一格的空白）
+    let POP_OCC = null, POP_DEN = null;
+    const popPrep = () => { if (POP_OCC) return;
+      const N = vW * vH, A = new Float32Array(N), D = new Float32Array(N), S = Cv.populationDensitySmoothed;
+      for (let i = 0; i < N; i++) if (Cv.land[i] && !Cv.ice[i] && Cv.popDensity[i] > 0) { A[i] = 1; D[i] = S[i]; }
+      for (let it = 0; it < 2; it++) { const A2 = Float32Array.from(A), D2 = Float32Array.from(D);
+        for (let i = 0; i < N; i++) { if (Cv.land[i] || A[i] > 0) continue; const y = (i / vW) | 0, x = i - y * vW; let n = 0, sa = 0, sd = 0;
+          for (let dy = -1; dy <= 1; dy++) { const yy = y + dy; if (yy < 0 || yy >= vH) continue; for (let dx = -1; dx <= 1; dx++) { const j = yy * vW + (x + dx + vW) % vW; if (A[j] > 0) { n++; sa += A[j]; sd += D[j]; } } }
+          if (n) { A2[i] = sa / n; D2[i] = sd / n; } }
+        A.set(A2); D.set(D2); }
+      for (let i = 0; i < N; i++) D[i] *= A[i]; POP_OCC = A; POP_DEN = D; };
+    const popOcc = () => { popPrep(); return POP_OCC; };
     const rowP = (gy, gw, gh) => { const fy = Math.min(gh - 1.001, Math.max(0, gy / H * gh - 0.5)), y0 = fy | 0, ty = fy - y0; return { y0, ty, r0: y0 * gw, r1: Math.min(gh - 1, y0 + 1) * gw }; };
     function bilinR(A, gx, rp, gw) {
       const fx = gx / W * gw - 0.5;
@@ -344,6 +401,7 @@
       // 原版地貌面状图式：8×8 短线纹（屏幕像素对齐，跨瓦片连续）
       // 霜冻点阵与宣称斜纹按屏幕绝对坐标取相位（+2·pad 与原整帧相位一致），条带、瓦片之间连续
       const dash = (X, Y, k) => { const u = ((X % 10) + 10) % 10, v = ((Y % 10) + 10) % 10; return k === 0 ? ((v === 2 && u >= 1 && u <= 3) || (v === 6 && u >= 5 && u <= 8) || (v === 3 && u >= 2 && u <= 3)) : ((v === 2 && u >= 1 && u <= 4) || (v === 6 && u >= 5 && u <= 8)); };
+      const softOn = (topic === 'country' || topic === 'province') && Cv.countryF && !!softLayer() && !!political();
       const jit = FULL[topic] && Cv.countryF ? 0 : 0.35, catTopic = isHuman || topic === 'koppen' || topic === 'biome' || topic === 'basin' || topic === 'plates', catT = catTopic ? table(topic) : null;
       for (let py = 0; py < h; py++) {
         const gy = gyA[py], inMap = gy >= 0 && gy < H;
@@ -370,12 +428,15 @@
               const c = bl3(catT, jx, jy); r = c[0]; g = c[1]; b = c[2];
             } else if (topic === 'plates') { const c = bl3(catT, jx, jy); r = c[0]; g = c[1]; b = c[2]; }
             else if (isHuman) { const c = FULL[topic] && Cv.countryF ? crisp(catT, gx, gy) : bl3(catT, jx, jy); r = c[0]; g = c[1]; b = c[2];
+              if (softOn) { const lab = crispLab, k = lab >= 0 ? POL.topicOf(lab) : -9; // 松散国家与无主陆地：叠软层（由都城向外渐淡，与邻近部族之地晕开）
+                if ((k >= 0 && GRADK[k] && (topic === 'country' || lab >= 2000000)) || lab === -1 || lab === -3) { const a = softAt(gx, rpV);
+                  if (a > 0 || k >= 0) { const base = k >= 0 || lab === -1 ? TRIBAL : WILD; r = base[0] + (softC[0] - base[0]) * a; g = base[1] + (softC[1] - base[1]) * a; b = base[2] + (softC[2] - base[2]) * a; } } }
               if (aux.nominal && (topic === 'country' || topic === 'govern' || topic === 'province')) { const vi = Math.min(vH - 1, (jy / H * vH) | 0) * vW + (((jx / W * vW) | 0) + vW) % vW; const nom = Cv.nominal[vi]; if (Cv.country[vi] < 0 && nom >= 0 && ((Math.floor(gxr / s) + Ys + 2 * pad) % 7 + 7) % 7 < 2) { r = r * 0.5 + pal.country[nom * 3] * 0.5; g = g * 0.5 + pal.country[nom * 3 + 1] * 0.5; b = b * 0.5 + pal.country[nom * 3 + 2] * 0.5; } } }
             else if (topic === 'agri' || topic === 'habit' || topic === 'pop' || topic === 'veg') {
               let v; const L = RAMPS[topic];
               if (topic === 'veg') v = bilinR(Cl.veg, gx, rpW, W) / 255;
-              else { v = bilinR(topic === 'agri' ? Cv.agri : topic === 'habit' ? Cv.hab : Cv.populationDensitySmoothed, gx, rpV, vW);
-                if (topic === 'pop') v = popPosition(v); }
+              else { v = bilinR(topic === 'agri' ? Cv.agri : topic === 'habit' ? Cv.hab : (popPrep(), POP_DEN), gx, rpV, vW);
+                if (topic === 'pop') { const o = bilinR(popOcc(), gx, rpV, vW); v = o >= 0.5 ? popPosition(v / o) : 0; } } // 有人区按双线性占据度 ≥ 0.5 划界，密度按占据格加权——边缘是平滑曲线，不是一格一格的马赛克
               const k = Math.max(0, Math.min(L.n - 1, ((v - L.lo) / (L.hi - L.lo) * (L.n - 1)) | 0)) * 3; r = L.out[k]; g = L.out[k + 1]; b = L.out[k + 2];
             } else if (topic === 'sprecip' || topic === 'stemp') {
               let v = bilinR(topic === 'sprecip' ? K.Ps[season] : K.T0[season], gx, rpC, cW); if (topic === 'stemp') v -= 0.0065 * e;

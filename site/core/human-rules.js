@@ -102,7 +102,8 @@
     const value=Object.freeze(result);effectCache.set(def,{traits:def.traits,value});return value;
   }
   function combine(...defs){const result={...ZERO};for(const d of defs){const e=effects(d);for(const k of EFFECT_KEYS)result[k]+=e[k];}return result;}
-  const multiplier=(value,min=.1,max=3)=>Math.max(min,Math.min(max,1+value));
+  // Hot path (called per population group every tick): same result as Math.max(min, Math.min(max, 1 + value)), NaN included.
+  function multiplier(value,min,max){if(min===undefined)min=.1;if(max===undefined)max=3;const v=1+value;return v>max?max:v<min?min:v;}
   const SPECIES = [
     {id:'human',label:'人类',description:'体格与食量均衡的种族，天赋由你选择；可形成不同文化与信仰。',color:[165,119,65],temperature:[-5,32],mountainMobility:1,foodNeed:1,traits:[]},
     {id:'elf',label:'精灵',description:'体态轻盈、长耳而感官敏锐的种族。食量较小，行动迅捷，精细劳作成本较低，繁衍较慢。',color:[96,160,132],temperature:[-2,30],mountainMobility:1,foodNeed:.85,traits:[{id:'long_lived',strength:1},{id:'keen_senses',strength:1},{id:'dexterous',strength:1},{id:'swift',strength:1},{id:'slow_breeding',strength:1}]},

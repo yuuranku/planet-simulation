@@ -1,4 +1,4 @@
-/* 21 道推演题与参数映射（军事 4 题见 military-settings.js） */
+/* 22 道推演题与参数映射（军事 4 题见 military-settings.js） */
 (function (G) {
   'use strict';
   const POLE = [['land', '有大陆', '极地被陆地覆盖'], ['ocean', '以海洋为主', '极点处为开阔海洋'], ['random', '随机', '由推演决定'], ['separate', '单独大陆', '与宜居大陆隔海']];
@@ -18,12 +18,17 @@
     { id: 'interior', t: '内陆地形倾向', o: [['A', '低地较广', '平原与缓丘'], ['B', '山系、高原与盆地多样', '起伏丰富'], ['C', '山地较多', '崎岖多山']], d: 'B' },
     { id: 'era', t: '人口承载基线', o: [['A', '较低基线', '参考 1 亿–1.6 亿'], ['B', '中等基线', '参考 2.5 亿–4 亿'], ['C', '较高基线', '参考 6.5 亿–9.5 亿']], d: 'B', extra: 'pop' }, // 文明时代由 age 设定，最终人口由历史推演决定
     { id: 'culture', t: '文化与宗教复杂度', o: [['A', '8 个文化圈', '12 种语言 · 6 个宗教'], ['B', '14 个文化圈', '24 种语言 · 10 个宗教'], ['C', '20 个文化圈', '36 种语言 · 16 个宗教']], d: 'B' },
-    { id: 'politics', t: '政治格局与部落空间', o: [['A', '约 45 国', '部落游牧空间 25%'], ['B', '约 80 国', '部落游牧空间 35%'], ['C', '约 120 国', '部落游牧空间 45%']], d: 'B' },
+    // 国家数量按类地星球估算：有国家治理的陆地约 1.4 亿 km²。旧下限 45 国时中位国家直径约 1600 km、最大帝国超过 4000 km，偏大；
+    // 取下限约 120 国（实测中位直径约 1000 km，最大帝国约 2700 km，明、奥斯曼量级），中、多两档沿用原先 45 : 80 : 120 的比例。旧档 A/B/C 只为还原既有存档保留，不在问卷中显示（legacy 排在前面，存档编码不变）。
+    { id: 'politics', t: '政治格局（国家数量）', o: [['S', '约 120 国', '少数大国 · 含游牧与部落政体'], ['M', '约 210 国', '列国并立 · 含游牧与部落政体'], ['L', '约 320 国', '列国林立 · 含游牧与部落政体']], d: 'M',
+      legacy: [['A', '约 45 国（旧版档位）', '少数大国 · 含游牧与部落政体'], ['B', '约 80 国（旧版档位）', '列国并立 · 含游牧与部落政体'], ['C', '约 120 国（旧版档位）', '列国林立 · 含游牧与部落政体']], migrate: { A: 'S', B: 'M', C: 'L' } },
     { id: 'towns', t: '城市、省份与交通', o: [['A', '疏朗', '480 城镇 · 行政粗分 · 基础交通'], ['B', '标准', '720 城镇 · 标准行政与交通'], ['C', '密集', '1080 城镇 · 行政细分 · 完善交通']], d: 'B', extra: 'towns' },
     { id: 'climate', t: '气候调节——冷热与水汽', o: [['A', '类地平均', '参考温偏 ±0 °C · 水汽 1.0×'], ['B', '偏热偏湿润', '+3 °C · 1.1×'], ['C', '更热更湿润', '+6 °C · 1.2×'], ['D', '偏冷偏干燥', '−3 °C · 0.9×'], ['E', '很冷很干燥', '−6 °C · 0.8×']], d: 'A', extra: 'climate' },
     { id: 'newWorld', t: '是否有新大陆', o: [['yes', '有新大陆', '远隔大洋、晚接触的陆块'], ['no', '没有新大陆', '所有大陆同属旧世界'], ['random', '随机', '由推演决定']], d: 'random' },
     { id: 'lakes', t: '湖泊与内陆水体', o: [['A', '湖泊稀少', '排水通畅 · 湖面约为类地的一半'], ['B', '类地', '湖面约占陆地 1.3–1.8%（地球实测 1.8%）'], ['C', '湖泊众多', '冰川湖区般 · 约为类地的两倍']], d: 'B' },
-    { id: 'age', t: '文明时代（现在是文明纪元第几年）', o: [['classical', '古典时代', '约第 2700–3500 年 · 相当于公元前 300 – 公元 500 年'], ['medieval', '中世纪', '约第 3500–4450 年 · 相当于公元 500 – 1450 年'], ['preind', '前工业时代', '约第 4450–4760 年 · 相当于公元 1450 – 1760 年']], d: 'preind' }
+    { id: 'age', t: '文明时代（现在是文明纪元第几年）', o: [['classical', '古典时代', '约第 2700–3500 年 · 相当于公元前 300 – 公元 500 年'], ['medieval', '中世纪', '约第 3500–4450 年 · 相当于公元 500 – 1450 年'], ['preind', '前工业时代', '约第 4450–4760 年 · 相当于公元 1450 – 1760 年']], d: 'preind' },
+    // 第 22 题：国家总数里有几成是游牧汗国、部落联盟与落后政体（地图上由都城向外渐淡、不画硬国界）。排在最后，旧存档与旧链接缺这一题时按中档补上
+    { id: 'nomad', t: '游牧与部落政体占比', o: [['A', '约 35%', '游牧广布 · 草原与边疆多汗国、部落联盟'], ['B', '约 25%', '定居与游牧并存'], ['C', '约 15%', '定居国家为主 · 游牧部落退居边缘']], d: 'B' }
   ];
   // 选项影响提示：每个选项右侧灰色小标记，悬浮可见。行格式 [类别, 方向, 说明]，方向 '+' 变多/变强、'-' 变少/变弱、'·' 说明或位置变化。
   // 每一条都对应推演中的实际机制（planet / climate / hydro / society / history），只写方向与大致幅度，具体分布由种子决定。
@@ -102,9 +107,17 @@
       C: [['文化', '+', '20 个文化圈、36 种语言、16 个宗教'], ['文化', '-', '每个文化圈覆盖范围更小，语言区更细碎']]
     },
     politics: {
-      A: [['政治', '-', '目标约 45 国；实际数量随历史演变'], ['边疆', '-', '部落与非国家空间约 25%']],
-      B: [['政治', '·', '目标约 80 国；实际数量随历史演变']],
-      C: [['政治', '+', '目标约 120 国；实际数量随历史演变'], ['边疆', '+', '部落与非国家空间约 45%']]
+      S: [['政治', '-', '约 120 个有明确疆界的国家，类地星球上中位国家直径约 1000 km，最大的帝国约 2700 km'], ['政治', '·', '游牧汗国、部落联盟与落后政体也各算一国，占几成见第 22 题'], ['边疆', '·', '草原、荒漠、密林、冻原上有多少松散政体，由地理决定']],
+      M: [['政治', '·', '约 210 个有明确疆界的国家，类地星球上中位国家直径约 700 km（近似前近代的欧亚格局）'], ['政治', '·', '游牧汗国、部落联盟与落后政体也各算一国，占几成见第 22 题'], ['边疆', '·', '草原、荒漠、密林、冻原上有多少松散政体，由地理决定']],
+      L: [['政治', '+', '约 320 个有明确疆界的国家，类地星球上中位国家直径约 600 km，最大的国家约 1900 km，小邦林立'], ['政治', '·', '游牧汗国、部落联盟与落后政体也各算一国，占几成见第 22 题'], ['边疆', '·', '草原、荒漠、密林、冻原上有多少松散政体，由地理决定']],
+      A: [['政治', '-', '约 45 个有明确疆界的国家，游牧汗国、部落联盟与落后政体也各算一国'], ['边疆', '·', '草原、荒漠、密林、冻原上有多少松散政体，由地理决定']],
+      B: [['政治', '·', '约 80 个有明确疆界的国家，游牧汗国、部落联盟与落后政体也各算一国'], ['边疆', '·', '草原、荒漠、密林、冻原上有多少松散政体，由地理决定']],
+      C: [['政治', '+', '约 120 个有明确疆界的国家，游牧汗国、部落联盟与落后政体也各算一国'], ['边疆', '·', '草原、荒漠、密林、冻原上有多少松散政体，由地理决定']]
+    },
+    nomad: {
+      A: [['政治', '+', '国家总数里约 35% 是游牧汗国、部落联盟与落后政体'], ['边疆', '+', '草原、荒漠、密林、冻原上多松散政体，地图上由都城向外渐淡'], ['政治', '-', '有明确疆界的定居国家相应变少']],
+      B: [['政治', '·', '国家总数里约 25% 是游牧汗国、部落联盟与落后政体'], ['边疆', '·', '定居国家与游牧部落并存']],
+      C: [['政治', '-', '国家总数里约 15% 是游牧汗国、部落联盟与落后政体'], ['政治', '+', '有明确疆界的定居国家更多'], ['边疆', '·', '松散政体多退居草原深处与冻原']]
     },
     towns: {
       A: [['城镇', '-', '约 480 座城镇'], ['行政', '-', '省份数量少，单省更大'], ['交通', '-', '道路网较稀']],
@@ -148,14 +161,15 @@
     land: [N_('landPercent', '陆地占比（%）', 35, 18, 55, 0.1)],
     structure: [N_('continentCount', '大陆核心数量', 7, 3, 12)],
     culture: [N_('civilizationCount', '文化圈数量', 14, 1, 40), N_('languageCount', '语言数量', 24, 1, 80), N_('religionCount', '宗教数量', 10, 1, 40)],
-    politics: [N_('stateCount', '现存国家数量目标', 80, 1, 240), N_('frontierPercent', '部落与非国家空间（%）', 35, 0, 90, 0.1)],
+    politics: [N_('stateCount', '现存国家数量目标（含游牧、部落等松散政体）', 210, 1, 480)],
+    nomad: [N_('nomadPercent', '游牧、部落等松散政体占国家总数的比例（%）', 25, 0, 60, 1)],
     age: [N_('year', '文明纪元年份（1800–4840；4780 年后进入早期工业，4840 年约相当于维多利亚前期的 1840 年）', 4700, 1800, 4840)]
   };
   const PAGES = [
     { t: '星球与恒星', q: [0, 1, 2, 3, 4] },
     { t: '运转与卫星', q: [5, 6, 7] },
     { t: '地质与大陆', q: [8, 9, 10, 11, 12] },
-    { t: '文明与军事', q: [20, 13, 14, 15, 16], military: true },
+    { t: '文明与军事', q: [20, 13, 14, 15, 16, 21], military: true },
     { t: '气候、水体与新大陆', q: [17, 19, 18] },
     { t: '世界总结', q: [], final: true }
   ];
@@ -175,13 +189,17 @@
     };
   }
   const VERSION = '1.4.3'; // 世界存档格式版本
-  const APP_VERSION = '1.4.4';
+  const APP_VERSION = '1.4.5';
   const verOf = f => f && f.engineVersion ? String(f.engineVersion) : '';
   const verCmp = (a, b) => { const pa = String(a).split('.').map(n => parseInt(n, 10) || 0), pb = String(b).split('.').map(n => parseInt(n, 10) || 0); for (let k = 0; k < 3; k++) { const d = (pa[k] || 0) - (pb[k] || 0); if (d) return d; } return 0; };
   // 世界文件必须包含可复现的完整设定；缺项或无效值明确报错，不重写用户的数据。
+  // 后来新增的题（排在问卷末尾）：旧存档、旧链接里没有这一题时按默认档补上，其余设置一律不动
+  const ADDED = ['nomad'];
+  function fillNew(st) { if (st && st.a && typeof st.a === 'object') for (const id of ADDED) if (st.a[id] === undefined) st.a[id] = Q.find(q => q.id === id).d; return st; }
   function validateState(st) {
     if (!st || typeof st !== 'object' || !st.a || typeof st.a !== 'object') throw new Error('世界设置缺失');
-    for (const q of Q) if (!q.o.some(x => x[0] === st.a[q.id])) throw new Error('无效或缺失的选项：' + q.t);
+    fillNew(st);
+    for (const q of Q) if (!allOpts(q).some(x => x[0] === st.a[q.id])) throw new Error('无效或缺失的选项：' + q.t);
     if (!Number.isInteger(st.seed) || st.seed < -2147483648 || st.seed > 2147483647) throw new Error('种子无效');
     if (st.res !== null && st.res !== undefined && ![1088, 1632, 2176, 2720].includes(st.res)) throw new Error('地图网格无效');
     if (!st.custom || typeof st.custom !== 'object' || Array.isArray(st.custom)) throw new Error('自定义设置无效');
@@ -226,7 +244,7 @@
     let W = 0, H = 0;
     const orbit = { A: [360, 12], B: [320, 18], C: [420, 28] }[a.orbit];
     const cult = { A: [8, 12, 6], B: [14, 24, 10], C: [20, 36, 16] }[a.culture];
-    const pol = { A: [45, 0.25], B: [80, 0.35], C: [120, 0.45] }[a.politics];
+    const pol = { A: 45, B: 80, C: 120, S: 120, M: 210, L: 320 }[a.politics];
     const range = ERA_RANGE[era];
     let popRange = null;
     if (st.popMode === 'range') {
@@ -247,7 +265,8 @@
       coast: idx('coast'), interior: idx('interior'), structIdx: idx('structure'),
       era, popIdx: era, popMode: st.popMode, popRange,
       cultures: cult[0], languages: cult[1], religions: cult[2],
-      countries: pol[0], tribal: pol[1],
+      countries: pol, // 国家总数（含游牧、部落等松散政体）
+      nomadShare: { A: 0.35, B: 0.25, C: 0.15 }[a.nomad], // 其中松散政体所占的比例（第 22 题）
       towns: st.townsCustom ? Math.max(100, Math.min(2000, +st.townsN || 720)) : [480, 720, 1080][tw],
       admin: st.townsCustom ? +st.admin : tw, transport: st.townsCustom ? +st.transport : tw,
       tempBias: st.climateCustom ? +st.tempBias : cl[0], moisture: st.climateCustom ? +st.moisture : cl[1],
@@ -272,7 +291,8 @@
     const lp = cu('land', 'landPercent'); if (lp) out.land = lp / 100;
     const cc = cu('structure', 'continentCount'); if (cc) out.cores = [Math.round(cc), Math.round(cc)];
     const cv = cu('culture', 'civilizationCount'), lv = cu('culture', 'languageCount'), rv = cu('culture', 'religionCount'); if (cv) out.cultures = Math.round(cv); if (lv) out.languages = Math.round(lv); if (rv) out.religions = Math.round(rv);
-    const sc = cu('politics', 'stateCount'), fp = cu('politics', 'frontierPercent'); if (sc) out.countries = Math.round(sc); if (fp !== undefined) out.tribal = fp / 100;
+    const sc = cu('politics', 'stateCount'); if (sc) out.countries = Math.round(sc);
+    const ns = cu('nomad', 'nomadPercent'); if (ns !== undefined) out.nomadShare = ns / 100;
     // 文明时代：自定义年份优先；否则在所选时代的范围内按种子随机（结束年份不取整）
     { let y = cu('age', 'year'); if (y === undefined) { const r2 = mulberry(st.seed ^ 0x2545f491), rg = AGE[a.age] || AGE.preind; y = rg[0] + r2() * (rg[1] - rg[0]); }
       out.endYear = Math.round(Math.max(AGE_MIN, Math.min(AGE_MAX, y))); out.era = out.endYear >= INDUSTRIAL_FROM ? 2 : 1; out.ageLabel = ageLabel(out.endYear); }
@@ -298,7 +318,7 @@
 
   // URL：#w=<答案串>&s=<种子>&r=<分辨率>&x=<附加>
   function encode(st) {
-    const ans = Q.map(q => q.o.findIndex(o => o[0] === st.a[q.id])).join('');
+    const ans = Q.map(q => allOpts(q).findIndex(o => o[0] === st.a[q.id])).join('');
     const cj = Object.entries(st.custom || {}).filter(([, o]) => o.on).map(([q, o]) => q + ':' + Object.entries(o.v || {}).map(([k, v]) => k + '=' + v).join(',')).join(';');
     const x = [cj ? 'u' + encodeURIComponent(cj) : '', st.popMode === 'range' ? `p${st.popLo}-${st.popHi}` : '', st.townsCustom ? `t${st.townsN}-${st.admin}-${st.transport}` : '', st.climateCustom ? `c${st.tempBias}_${st.moisture}` : '', (r => Object.keys(r).length ? 'g' + ROLL_KEYS.map(k => r[k] || 0).join('-') : '')(rollsOf(st))].filter(Boolean).join('~');
     const q = new URLSearchParams({ w: ans, s: st.seed }); if (st.res) q.set('r', st.res);
@@ -309,10 +329,10 @@
   function decode(hash) {
     const q = new URLSearchParams(hash.replace(/^#/, ''));
     const ans = q.get('w'), seedText = q.get('s'), digest = q.get('h');
-    if (!ans || ans.length !== Q.length || !/^[0-9]+$/.test(ans) || !/^-?\d+$/.test(seedText || '') || !/^[0-9a-f]{16}$/.test(digest || '')) return null;
+    if (!ans || ans.length > Q.length || ans.length < Q.length - ADDED.length || !/^[0-9]+$/.test(ans) || !/^-?\d+$/.test(seedText || '') || !/^[0-9a-f]{16}$/.test(digest || '')) return null;
     const seed = Number(seedText); if (!Number.isInteger(seed) || seed < -2147483648 || seed > 2147483647) return null;
     const st = defaults();
-    for (let i = 0; i < Q.length; i++) { const opt = Q[i].o[Number(ans[i])]; if (!opt) return null; st.a[Q[i].id] = opt[0]; }
+    for (let i = 0; i < ans.length; i++) { const opt = allOpts(Q[i])[Number(ans[i])]; if (!opt) return null; st.a[Q[i].id] = opt[0]; }
     st.seed = seed;
     if (q.has('r')) { const r = Number(q.get('r')); if (![1088, 1632, 2176, 2720].includes(r)) return null; st.res = r; }
     st.requiresLibraries = digest;
@@ -325,5 +345,10 @@
     }
     return st;
   }
-  G.Config = { ROLL_KEYS, rollsOf, Q, PAGES, CUSTOM, HINTS, hintOf, VERSION, APP_VERSION, verOf, verCmp, validateState, defaults, randomize, toCfg, encode, decode, ERA_RANGE, AGE, ageLabel, CLIMATE, gridFor, gridOf };
+  // 选项查找：含只为旧存档保留的档位（问卷只显示 q.o）
+  function allOpts(q) { return q.legacy ? q.legacy.concat(q.o) : q.o; }
+  function optOf(q, v) { return allOpts(q).find(x => x[0] === v) || null; }
+  // 用旧存档的设置重新打开问卷时，把旧档位换成新问卷里对应的档位（重新推演会生成新世界，原存档不变）
+  function migrateAnswers(st) { fillNew(st); for (const q of Q) if (q.migrate && q.migrate[st.a[q.id]]) st.a[q.id] = q.migrate[st.a[q.id]]; return st; }
+  G.Config = { allOpts, optOf, migrateAnswers, ROLL_KEYS, rollsOf, Q, PAGES, CUSTOM, HINTS, hintOf, VERSION, APP_VERSION, verOf, verCmp, validateState, defaults, randomize, toCfg, encode, decode, ERA_RANGE, AGE, ageLabel, CLIMATE, gridFor, gridOf };
 })(window);

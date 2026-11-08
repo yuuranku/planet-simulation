@@ -5,6 +5,14 @@
  */
 (function (G) {
   'use strict';
+  // Region edges never change after they are built, so the neutral (no species,
+  // no culture) route duration is computed once per edge list, not every tick.
+  const neutralDays=new WeakMap();
+  function edgeDays(edges) {
+    let d=neutralDays.get(edges);
+    if(!d||d.length!==edges.length){d=new Float64Array(edges.length);for(let k=0;k<edges.length;k++){const e=edges[k];d[k]=e.sea?NaN:G.HumanAnchors.travelDays(e,null,null);}neutralDays.set(edges,d);}
+    return d;
+  }
   function allocate({ R, human, species, popTotal, stage, cultureAt, religionAt }) {
     if(typeof cultureAt!=='function'||typeof religionAt!=='function')throw Error('缺少文化或宗教的人口组查询');
     const n=R.nR, demand=new Float64Array(n+1), production=new Float64Array(n+1);
@@ -50,9 +58,11 @@
     }
     // Candidate paths are built once per tick. Exporters never resell imports.
     const candidates=Array.from({length:n+1},()=>[]);
-    for(const e of R.edges) {
+    const neutral=edgeDays(R.edges);
+    for(let ek=0;ek<R.edges.length;ek++) {
+      const e=R.edges[ek];
       if(e.sea||!Number.isInteger(e.a)||!Number.isInteger(e.b)||e.a<1||e.b<1||e.a>n||e.b>n) continue;
-      const days=G.HumanAnchors.travelDays(e,null,null);
+      const days=neutral[ek];
       if(!Number.isFinite(days)||days<0)continue;
       const toll=e.tollLaborHours===undefined?0:e.tollLaborHours;
       if(!Number.isFinite(toll)||toll<0)throw Error('粮食通行费劳动时数无效');

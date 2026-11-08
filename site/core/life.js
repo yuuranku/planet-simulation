@@ -280,7 +280,7 @@
       if(!(L>0))return null;
       const pointDays=[0,...seg.map(v=>v/L*days)];pointDays[pointDays.length-1]=days;
       const dep=departure(depT);
-      return slim({pts,pointDays,segments:[{start:0,end:pointDays.length-1,cls:'path',startDay:0,endDay:days}],km:Math.max(1,Math.round(c.route.km||L*idx.kmPerUnit)),seaKm:0,railKm:0,days,mode:'行军',modeId:'march',travelSpeed:1,routeKind:'mixed',shipName:'',legs:[],passed:[],year:dTime(dep),roadIds:[],departure:dep,arrival:G.Navigation.dateAfter(dep,days,cal),calendar:{daysPerYear:cal.daysPerYear,hoursPerDay:cal.hoursPerDay},width:W});
+      return slim({pts,pointDays,segments:[{start:0,end:pointDays.length-1,cls:c.route.kind==='sea-crossing'?'sea':'path',startDay:0,endDay:days}],km:Math.max(1,Math.round(c.route.km||L*idx.kmPerUnit)),seaKm:c.route.kind==='sea-crossing'?Math.round(c.route.km):0,railKm:0,days,mode:c.route.kind==='sea-crossing'?'渡海':'行军',modeId:'march',travelSpeed:1,routeKind:'mixed',shipName:c.route.kind==='sea-crossing'?'战船':'',legs:[],passed:[],year:dTime(dep),roadIds:[],departure:dep,arrival:G.Navigation.dateAfter(dep,days,cal),calendar:{daysPerYear:cal.daysPerYear,hoursPerDay:cal.hoursPerDay},width:W});
     }
     const OBJ={border:'争夺边地',city:'攻打城池',homeland:'收复故土'};
     function joinCampaign(c,side,asWhat){
@@ -641,7 +641,7 @@
           const loc=Q().population(h,[region],at),base=loc.groups.filter(g=>g.species===group.species&&g.culture===currentCulture&&g.religion===currentReligion).reduce((n,g)=>n+g.population,0),age=ageAt(at);
           const exposure=(e.exposure||[]).find(x=>x.region===region),called=unit&&rank<2&&Number.isFinite(campaign.resultTime)&&Number.isFinite(campaign.endTime)&&age>=biology.maturity&&age<biology.oldAge&&rnd()<Math.min(.4,unit.mobilized/Math.max(1,base));
           if(called){note('service',at,'被征入伍',`${wtext.text}爆发，${place.name}征发壮丁，${TA}被编入军中。`,{worldEvent:e.id,campaignId:e.campaignId,world:wtext});const dead=rnd()<unit.deaths/Math.max(1,unit.mobilized)*.6;service={campaignId:e.campaignId};const ot={type:'outcome',at:dead?campaign.resultTime:campaign.endTime,campaignId:e.campaignId,world:wtext,dead};if(ot.at<stop)queue.push(ot);else pendingOutcomes.push(ot);}
-          else if(exposure?.combat){const contact=campaign?.timeline?.find(n=>['siege','encounter','battle'].includes(n.phase));const ct={type:'civilian',at:contact?contact.at:at,e,region};if(ct.at<stop)queue.push(ct);}
+          else if(exposure?.combat){const contact=campaign?.timeline?.find(n=>['naval','siege','encounter','battle'].includes(n.phase));const ct={type:'civilian',at:contact?contact.at:at,e,region};if(ct.at<stop)queue.push(ct);}
           else if(e.severity>.2&&chance(.3))note('war',at,'战事消息',`${wtext.text}，${place.name}征粮征夫，人心惶惶。`,{worldEvent:e.id,world:wtext});
         }else if(e.kind==='plague'){if(role==='physician'){fame+=1.5;note('deed',at,'抗疫',`${e.text||'当地疫病流行'}，${TA}就地设棚施药。`,{world:{text:e.text||'疫病',year:Math.floor(at),month:G.HistoryDate.month(at),kind:'plague'}});}else if(rnd()<.35){health-=18+rnd()*20;note('illness',at,'染疫',`${e.text||'当地疫病流行'}，${TA}也染上了疫病。`,{worldEvent:e.id,world:{text:e.text||'疫病',year:Math.floor(at),month:G.HistoryDate.month(at),kind:'plague'}});}}
         else if(e.kind==='disaster'){wealth=Math.max(0,wealth-12);note('hardship',at,'天灾',`${e.text||'当地遭灾'}，${TA}的生计受到重创。`,{worldEvent:e.id,world:{text:e.text||'天灾',year:Math.floor(at),month:G.HistoryDate.month(at),kind:'disaster'}});}

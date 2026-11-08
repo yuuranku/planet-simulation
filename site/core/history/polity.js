@@ -3,7 +3,10 @@
  *  - 国力 = 领土上各区块的人口 × 发展阶段，乘以凝聚力；投送到目标区块时随离首都的距离衰减（距离尺度随时代变大）；
  *  - 每个时代有规模上限（城邦 1–2 块、王国十来块、帝国几十块）；超出上限、统治异族、王朝老去都会消磨凝聚力；
  *  - 凝聚力耗尽：大国分裂（分出去的国家对母国故土持有法统宣称），小国改朝换代；
+ *  - 王朝周期：每个王朝自有“天命”长度（中位约 165 年），过半后凝聚力日衰；国祚过久的“换家族不换国号”之国终会改立国号；
  *  - 统治满 150 年的区块成为该国统（lineage）的核心；夺回已亡之国大部分核心且同文明 → 复国；
+ *  - 法统随土地：据有已绝国统的大半核心并定都其中者承继其法统（秦汉魏晋、法兰克诸朝、历代哈里发）；“新朝换国号”的文化改朝即换国号；
+ *  - 两军合计不足千人不成战事；起义二三十年内必见分晓；飞地、小岛小国、荒地残国会被邻国收编或自然消亡；
  *  - 游牧政权攻下农耕大国的都城 → 外族入主，整国易主；
  *  - 终局对账：按重叠找每个现存国家的前身（继承者），没有前身的在晚期独立或兴起；各区块按离继承者核心由近到远依次易手。
  * 事件先记下参与者，等全部推演完、沿世系起好名字后再生成文字。 */
@@ -46,8 +49,9 @@
     if (used.has(name)) return null;
     used.add(name); return { short: name, bare: parent.bare || parent.short };
   }
-  function inheritedStateName(q, polities, year, libKeyOf, cx, cy, width, used, restoration) {
-    const pa = restoration ? q.parents.find(x => x.kind === 'restore' && q.restoreYear !== undefined && year >= q.restoreYear) : q.parents.find(x => x.kind === 'dynasty') || q.parents.find(x => x.kind === 'restore' && q.restoreYear !== undefined && year >= q.restoreYear) || q.parents.find(x => x.kind === 'split' || x.kind === 'secede');
+  // keepDynasty：改朝换代是否沿用旧国号——只有“换家族不换国号”的文化（以及革命改制）沿用；“新朝换国号”的文化（秦 → 汉 → 魏 → 晋）另起国号，法统随土地延续
+  function inheritedStateName(q, polities, year, libKeyOf, cx, cy, width, used, restoration, keepDynasty) {
+    const pa = restoration ? q.parents.find(x => x.kind === 'restore' && q.restoreYear !== undefined && year >= q.restoreYear) : q.parents.find(x => x.kind === 'dynasty' && keepDynasty !== false) || q.parents.find(x => x.kind === 'restore' && q.restoreYear !== undefined && year >= q.restoreYear) || q.parents.find(x => x.kind === 'split' || x.kind === 'secede');
     if (!pa || !polities[pa.id]) return null;
     const A = polities[pa.id], prev = datedName(A.names, year), prior = rulingCultureAt(A, Math.min(year, A.died === null ? year : A.died)), civ = rulingCultureAt(q, year);
     if (!prev || libKeyOf(prior) !== libKeyOf(civ)) return null;
@@ -64,7 +68,9 @@
     const other = (old, pool) => { if (pool.length <= 1) return old && pool.includes(old) ? old : pool[0]; const i = pool.indexOf(old); return i < 0 ? pool[Math.floor(rnd() * pool.length)] : pool[(i + 1 + Math.floor(rnd() * (pool.length - 1))) % pool.length]; };
     let house = inherited ? prior[1] : S[Math.floor(rnd() * S.length)];
     const dynastyParent = dp && polities[dp.id], dynastyPrior = dynastyParent && datedName(dynastyParent.houses || [], q.born);
-    if (!rp && dynastyPrior && dynastyPrior[1] === house) house = other(house, S);
+    if (!rp && dynastyParent) { // 同一法统里近几朝用过的家族不再重复（不会出现第四个“阿契美尼德王朝”）
+      const recent = new Set(); let a = dynastyParent; for (let g = 0; a && g < 8; g++) { for (const hh of a.houses || []) recent.add(hh[1]); const up = a.parents.find(x => x.kind === 'dynasty'); a = up ? polities[up.id] : null; }
+      for (let t = 0; t < 12 && recent.has(house); t++) house = other(house, S); }
     if (culture === -1) house = '未详';
     const formatted = (name, x, c) => q.republic ? '' : c === -1 ? '家族未详' : x.house.replace('{s}', name);
     q.houses.push([q.born, house, inherited ? prior[2] : formatted(house, X, culture), 0, undefined, inherited ? prior[5] : culture, inherited]);
@@ -72,7 +78,7 @@
     q.house = house; q.houseName = q.houses[q.houses.length - 1][2];
   }
   function buildDynastyRulers(q, context) {
-    const { CE, libAt, rnd, accessionRnd, end, govKey, formAt, religions, regCount, firstOf } = context;
+    const { CE, libAt, rnd, end, govKey, formAt, religions, regCount, firstOf, polities } = context;
     q.rulers = []; q.gov = []; if (end < q.born) return;
     const HS = q.houses; let hk = 0, house = HS[0][1];
     const years = new Set(q.rulingCulture.map(x => x[0]).filter(y => y >= q.born && y <= end)); if (q.settled !== undefined && q.settled >= q.born && q.settled <= end) years.add(q.settled); for (let y = q.born; y <= end; y += 20) years.add(y);
@@ -93,23 +99,7 @@
       else if (X.regnal === 'temple') disp = (CE.TEMPLE[idx] || '') + ' ' + nm.surname + nm.given;
       else disp = (X.family === 'japanese' && nm.surname !== '未详' ? nm.surname : '') + nm.given;
       const fm = formAt(q, year), title = k === 'theo' ? ((q.theoRel >= 0 && religions[q.theoRel] && religions[q.theoRel].clergy && religions[q.theoRel].clergy.ruler) || (civ === -1 ? '统治者' : X.ruler.king)) : civ === -1 ? '统治者' : (k === 'central' || k === 'feudal' || k === 'king' || k === 'empire' || (k === 'nomad' && fm === 'empire') ? (fm === 'empire' ? (k === 'nomad' && X.ruler.nomadEmpire ? X.ruler.nomadEmpire : X.ruler.empire) : X.ruler.king) : X.ruler[RKEY[k]]) || X.ruler.king;
-      // 上位方式是模拟数据：家族更替使用真实事件，普通王位交接才可能发生弑君。
-      const previous = q.rulers[q.rulers.length - 1], newHouse = previous && previous[3] !== hk;
-      let accession;
-      if (!previous) {
-        const origin = q.parents[0]?.kind;
-        accession = k === 'rebel' ? 'revolt' : q.foundingHow === 'coup' ? 'coup' : q.foundingHow === 'revolution' ? 'revolution' : origin === 'dynasty' ? 'dynasty' : origin === 'split' || origin === 'secede' ? 'independence' : 'founder';
-      } else if (newHouse) accession = HS[hk][3] ? 'coup' : 'dynasty';
-      else if (k === 'republic') accession = 'office';
-      else if (k === 'rebel') accession = 'rebelSuccession';
-      else if (k === 'theo') accession = 'religiousSuccession';
-      else if (previous[0] < year) {
-        const roll = accessionRnd();
-        if (roll < .04) { accession = 'regicide'; previous[7] = 'murdered'; }
-        else if (roll < .08) { accession = 'usurp'; previous[7] = 'deposed'; }
-        else accession = 'inherit';
-      } else accession = 'inherit';
-      q.rulers.push([year, disp.trim(), title, hk, civ, civ === -1 ? '姓名未详' : nm.given, accession, null]); y += len; idx++; if (idx > 400) break;
+      q.rulers.push([year, disp.trim(), title, hk, civ, civ === -1 ? '姓名未详' : nm.given]); y += len; idx++; if (idx > 400) break;
     }
     if (q.died !== null && q.rulers.length > 1 && q.children.some(c => c.kind === 'conquer')) {
       const L = q.rulers[q.rulers.length - 1], civ = L[4], X = CE.ext(libAt(q, L[0])), kind = govKey(q, L[0]);
@@ -119,6 +109,53 @@
         L[1] = '末帝 ' + (temple ? L[1].slice(temple.length + 1) : L[1]);
       }
     }
+    rulerLives(q, polities || [], context.rnd, context.govKey, end);
+  }
+  // 君主怎样上位、怎样结束：[6] 上位方式 [7] 即位年龄 [8] 结局 [9] 退位或被废后又活了几年。
+  // 由世系推出：开国之君看建国方式；同一王朝里多半父死子继，偶有兄终弟及、叔侄相承、幼主即位；换王朝看是政变还是绝嗣入继；
+  // 结局由下一位怎样上位反推（被篡、被废、禅让），末代之君看国家怎样终结；其余寿终或病逝，偶有遇刺、战殁、意外。
+  function rulerLives(q, polities, rnd, govKey, end) {
+    const R = q.rulers; if (!R || !R.length) return;
+    const pk = kind => q.parents.find(x => x.kind === kind), HS = q.houses || [];
+    const nomad = y => govKey(q, y) === 'nomad' || govKey(q, y) === 'chief';
+    const between = (a, b) => a + rnd() * (b - a);
+    for (let i = 0; i < R.length; i++) { const r = R[i], y = r[0], prev = i ? R[i - 1] : null, k = govKey(q, y);
+      let acc, age;
+      if (i === 0) {
+        if (q.rtype) { acc = 'rebel'; age = between(24, 46); }
+        else if (q.restoreOf !== undefined && q.restoreOf >= 0 && q.restoreYear !== undefined && q.restoreYear <= q.born + 1) { acc = 'restore'; age = between(22, 45); }
+        else if (q.colonialFrom !== undefined) { acc = 'independence'; age = between(35, 58); }
+        else if (pk('holyWar')) { acc = 'holy'; age = between(40, 62); }
+        else if (pk('dynasty')) { const how = q.bornHow || 'dynasty'; acc = how === 'coup' ? 'coup' : how === 'revolution' ? 'revolution' : 'usurp'; age = between(30, 55); }
+        else if (pk('split') || pk('secede')) { acc = 'secede'; age = between(26, 52); }
+        else if (q.republic) { acc = 'elect'; age = between(40, 62); }
+        else { acc = nomad(y) ? 'unite' : 'found'; age = between(24, 48); }
+      } else if (k === 'republic') { acc = 'elect'; age = between(42, 66); }
+      else if (k === 'theo') { acc = 'theo'; age = between(45, 70); }
+      else if (k === 'rebel') { acc = 'rebel2'; age = between(25, 45); }
+      else if (r[3] !== prev[3]) { const coup = HS[r[3]] && HS[r[3]][3] === 1; acc = coup ? 'coup' : rnd() < 0.5 ? 'inherit' : 'adopt'; age = between(coup ? 28 : 16, coup ? 52 : 45); }
+      else { const pEnd = prev[7] + (y - prev[0]), u = rnd(); // 先按常理定即位年龄（多在十八至四十岁，幼主约一成），再由与前任的年龄差推出亲属关系
+        if (nomad(y) && u < 0.4) { acc = rnd() < 0.55 ? 'kurultai' : 'brother'; age = acc === 'brother' ? Math.max(18, pEnd - between(2, 12)) : between(25, 46); }
+        else if (pEnd < 34) { // 前任英年早逝：多半由兄弟或宗亲继位，只有少数由年幼的儿子继位
+          if (u < 0.5) { acc = 'brother'; age = Math.max(14, pEnd - between(-6, 8)); } else if (u < 0.75) { acc = 'cousin'; age = between(16, 40); } else { acc = 'regency'; age = Math.max(1, pEnd - between(18, 30)); if (age >= 15) acc = 'son'; } }
+        else if (u < 0.72) { age = pEnd - between(18, 32); acc = age < 15 ? 'regency' : rnd() < 0.82 ? 'son' : 'son2'; if (age < 1) age = between(1, 5); } // 父死子继最常见；前任早逝则幼主即位
+        else if (u < 0.86) { acc = 'brother'; age = Math.max(16, pEnd - between(-4, 12)); }
+        else if (u < 0.92) { acc = 'nephew'; age = pEnd - between(14, 30); if (age < 15) { acc = 'regency'; age = Math.max(2, age); } }
+        else if (u < 0.95) { acc = 'grandson'; age = pEnd - between(38, 56); if (age < 15) { acc = 'regency'; age = Math.max(2, age); } }
+        else { acc = 'cousin'; age = between(18, 45); } }
+      r[6] = acc; r[7] = Math.round(Math.max(1, Math.min(78, age))); r[8] = null; r[9] = 0; }
+    // 结局：由下一位反推
+    for (let i = 0; i < R.length; i++) { const r = R[i], nx = R[i + 1], len = (nx ? nx[0] : end) - r[0], ageEnd = r[7] + len;
+      let fate, after = 0;
+      if (!nx) {
+        if (q.died === null) fate = 'reigning';
+        else { const ch = q.children.map(x => x.kind); if (ch.includes('overthrow')) fate = rnd() < 0.5 ? 'suicide' : 'killed'; else if (ch.includes('dynasty')) { fate = rnd() < 0.55 ? 'abdicate' : 'deposed'; after = Math.round(between(1, 18)); } else if (ch.includes('conquer')) { fate = rnd() < 0.4 ? 'suicide' : 'captive'; after = fate === 'captive' ? Math.round(between(1, 15)) : 0; } else fate = ageEnd > 58 ? 'old' : 'ill'; } }
+      else if (nx[6] === 'coup') { fate = rnd() < 0.55 ? 'deposed' : 'murdered'; after = fate === 'deposed' ? Math.round(between(0, 16)) : 0; }
+      else if (nx[6] === 'elect') { fate = 'term'; after = Math.round(between(2, 24)); }
+      else if (nx[6] === 'theo' && ageEnd < 55) { fate = 'ill'; }
+      else { const u = rnd(); fate = ageEnd < 16 ? 'young' : u < 0.05 ? 'murdered' : u < 0.09 ? 'battle' : u < 0.12 ? 'accident' : u < 0.17 && ageEnd > 45 ? 'abdicate' : ageEnd > 62 ? 'old' : 'ill'; if (fate === 'abdicate') { after = Math.round(between(1, 12)); if (nx[6] === 'son' || nx[6] === 'son2') nx[6] = 'abdicated'; } }
+      if (after && (nx ? nx[0] : end) + after > end) after = Math.max(0, Math.floor(end - (nx ? nx[0] : end)));
+      r[8] = fate; r[9] = after; }
   }
   function alignCultureYear(original, refined, year, proposed) {
     let i = 0; for (let k = 1; k < original.length && original[k][0] <= year; k++) i = k;
@@ -150,57 +187,56 @@
   }
   const SFV = [0, 0.15, 0.35, 0.7, 1, 1.3, 1.45, 1.8, 2.4];          // 各阶段的区块价值（相对人口）
   const REACH = [0, 60, 120, 260, 600, 1300, 1000, 2100, 3400];     // 各阶段首都的投送距离尺度（km）
-  const CAP = [0, 0, 1, 2, 9, 34, 24, 46, 70];                      // 各阶段的规模上限（区块数，按世界大小缩放）
+  const CAP = [0, 0, 1, 2, 9, 34, 24, 46, 70];
+  const SEA_KM = [0, 80, 150, 200, 300, 400, 500, 650, 900];                // 各阶段海上力量的航程尺度（km）                      // 各阶段的规模上限（区块数，按世界大小缩放）
+  // 时代气质（按都城所处的发展阶段）：古典时代道路、驿传与常备军让大帝国得以维系，容易出现一统一方的大国；
+  // 中世纪地方豪强坐大、封建割据，大国难以长久，凝聚力损耗更快、一乱就裂成许多诸侯；近代早期火器、官僚与财政重新集权，小国被兼并。
+  // cap 规模上限、reach 投送距离、over 疆域过大之累、coh 每十年的凝聚力漂移、split 分裂与割据的倾向、frag 分裂时裂成几块、att 出兵的积极性
+  // wild 向蛮荒（部族之地、无主之地）拓展之力、kin 统一同族邻邦之力、imp 天下帝国（见 imperialStep）的名额是否开放（1 古典帝国、0.5 封建时代偶有再造一统者）
+  // 时代不按年份划定：每个政权看自己都城所处的阶段，同一年里城邦、王国、帝国、封建诸侯可以并存；各阶段的气质叠起来，就是“城邦兴起、拓殖蛮荒 →
+  // 王国统一诸城 → 三四个古典帝国并立 → 帝国从内部瓦解为封建诸侯 → 诸侯重新整合为近代国家”的循环，其间分久必合、合久必分
+  const ERA = [null, null, null,
+    { cap: 0.35, reach: 0.8, over: 1.4, coh: 0, split: 1, frag: 1, att: 0.9, wild: 1.7, kin: 1, imp: 0 },        // 城邦时代：一城一国，向蛮荒拓殖
+    { cap: 1, reach: 1, over: 1, coh: 0, split: 1, frag: 1, att: 1.05, wild: 1.35, kin: 1.35, imp: 0 },          // 王国时代：统一诸城，建立王国
+    { cap: 1.9, reach: 1.35, over: 0.5, coh: 0.004, split: 0.5, frag: 0.8, att: 1.25, wild: 1, kin: 1.2, imp: 1 },    // 古典时代：大一统帝国
+    { cap: 0.55, reach: 0.75, over: 1.7, coh: -0.007, split: 1.7, frag: 1.6, att: 0.85, wild: 1, kin: 1, imp: 0.5 }, // 封建时代：帝国瓦解、诸侯割据
+    { cap: 1.3, reach: 1.1, over: 0.75, coh: 0.004, split: 0.6, frag: 0.8, att: 1.1, wild: 1.1, kin: 1.45, imp: 0.8 },  // 前近代：诸侯整合，近代国家成形，几个大国称雄
+    { cap: 1.4, reach: 1.15, over: 0.7, coh: 0.004, split: 0.6, frag: 0.8, att: 1.1, wild: 1.1, kin: 1.45, imp: 0.8 }];
+  const eraOf = cs => ERA[cs <= 2 ? 4 : Math.min(8, cs)]; // 酋邦、部落联盟沿用王国时代的常数
+  const REBEL_HOLD = 20, REBEL_MAX = 40;                             // 起义军据地二十年可割据成国；四十年仍无结果必散
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
   function mulberry32(a) { return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-
-  // 以城邑、海岸和地形选择少数区域，形成连续的地方政治中心。
-  function regionalFragmentation(R, cityIn, eSea, kmBetween) {
-    const nR = R.nR, candidates = [];
-    for (let r = 1; r <= nR; r++) {
-      if (!(R.weight[r] > 0) || R.civ[r] < 0 || R.newW[r] > .5 || R.pasture[r] > .45 || R.arid[r] > .55) continue;
-      const local = [r], seen = new Set(local); let end = 1;
-      for (let depth = 0, begin = 0; depth < 2; depth++) {
-        const next = local.length;
-        for (let i = begin; i < end; i++) for (let k = R.off[local[i]]; k < R.off[local[i] + 1]; k++) {
-          const b = R.nbr[k]; if (!eSea[k] && !seen.has(b)) { seen.add(b); local.push(b); }
-        }
-        begin = next; end = local.length;
-      }
-      let cities = 0, coast = 0, rough = 0;
-      for (const b of local) { if (cityIn[b].length) cities++; coast += R.coast[b]; rough += Math.min(1, R.eN[b] * 2 + R.slope[b] * 8); }
-      if (cities < 3) continue;
-      const score = cities * (1 + .55 * coast / local.length + .45 * rough / local.length) * (.7 + .3 * R.hab[r]);
-      candidates.push({r, score});
-    }
-    candidates.sort((a,b) => b.score - a.score || a.r - b.r);
-    const anchors = [];
-    for (const c of candidates) {
-      if (anchors.every(a => R.landComp[a] !== R.landComp[c.r] || kmBetween(a, c.r) >= 2200)) anchors.push(c.r);
-      if (anchors.length >= 2) break;
-    }
-    const field = new Float32Array(nR + 1);
-    for (let r = 1; r <= nR; r++) for (const a of anchors) if (R.landComp[r] === R.landComp[a]) {
-      const d = kmBetween(a, r) / 850; field[r] = Math.max(field[r], Math.exp(-d * d));
-    }
-    return field;
-  }
 
   function run(h, R, D, C, opt) {
     const { NN, E, Y } = D, nR = R.nR, rnd = mulberry32((h.seed | 0) + 7777);
     const scale = clamp(nR / 1400, 0.6, 3);
     const targetCountries = opt.targetCountries;
     if (!Number.isInteger(targetCountries) || targetCountries < 1) throw new Error('国家数量目标无效');
-    const targetTribal = opt.targetTribal;
-    if (!Number.isFinite(targetTribal) || targetTribal < 0 || targetTribal > 1) throw new Error('非国家比例目标无效');
-    let inhabitableRegions = 0, inhabitedArea = 0;
-    for (let r=1; r<=nR; r++) if (R.weight[r]>0) inhabitableRegions++;
+    // 游牧、部落与落后政体占多少土地不再由问卷指定：草原、边疆（人烟稀少、交通不便、土地贫瘠）与到现在仍停在部落阶段的地方，由地理决定
+    let inhabitableRegions = 0, inhabitedArea = 0, looseRegions = 0;
+    for (let r=1; r<=nR; r++) if (R.weight[r]>0) { inhabitableRegions++; if (R.pasture[r] >= 0.45 || R.frontier[r] >= 0.5 || D.finalStage[r] <= 2 || R.civ[r] < 0 || D.civArr[r] > E) looseRegions++; }
+    const looseShare = inhabitableRegions ? looseRegions / inhabitableRegions : 0;
+    // 第 22 题：国家总数（targetCountries，含松散政体）里游牧、部落与落后政体所占的比例；它们的土地份额大致同此
+    const nomadShare = clamp(Number.isFinite(opt.nomadShare) ? opt.nomadShare : 0.25, 0, 0.6);
+    const targetTribal = clamp(Number.isFinite(opt.targetTribal) ? opt.targetTribal : nomadShare, 0.03, 0.6);
     for (let i=0; i<h.N; i++) if (R.regionOf[i]>0 && h.weight[i]>0) inhabitedArea += h.area[Math.floor(i/h.W)];
-    const regionsPerCountry = inhabitableRegions * (1-targetTribal) / targetCountries;
-    const geographicScale = clamp(Math.sqrt(inhabitedArea * (1-targetTribal) / targetCountries / 1200000), 0.8, 2.5);
+    const solidCountries = Math.max(1, targetCountries * (1 - nomadShare)); // 其中成形的定居国家
+    const regionsPerCountry = inhabitableRegions * (1-targetTribal) / solidCountries;
+    const geographicScale = clamp(Math.sqrt(inhabitedArea * (1-targetTribal) / solidCountries / 1200000), 0.8, 2.5);
     // 目标是近似数量；每个世界从较窄范围中确定稳定的规模，历史继续自然演化。
     const countryVariation = Math.min(8, Math.floor(targetCountries / 10));
-    const countryLimit = Math.max(1, targetCountries + Math.floor(mulberry32((h.seed | 0) + 48107)() * (countryVariation + 1)));
+    const totalLimit = Math.max(1, targetCountries + Math.floor(mulberry32((h.seed | 0) + 48107)() * (countryVariation + 1)));
+    // 历史推演本身不按国家数量设限：城邦林立、诸侯割据、部落联盟此起彼伏都顺其自然（FREE_CAP 只是运算上的安全上限，正常推演碰不到）。
+    // 只有最后的“收束期”（约末尾一成多的年代）才把国家数量沿一条平滑曲线引向目标（含松散政体），手段都是史书里有的事：
+    // 撤藩、联姻承袭、归并、渡海兼并、吞并部落；国家太少时大国分裂——见 convergeStep
+    const FREE_CAP = Math.max(Math.round(totalLimit * 2.5), totalLimit + 40);
+    let curY = 0, convStart = Infinity, convFrom = -1;
+    const convCurve = (from, goal, y) => { const t = clamp((y - convStart) / Math.max(TICK, E - convStart), 0, 1), u = t * t * (3 - 2 * t); return from + (goal - from) * u; };
+    // 国家总数（含松散政体）向所选数量收拢：两本账——成形的国家向“总数减去松散政体”收拢，松散政体向第 22 题的份额收拢。
+    // 地理上结不成那么多松散政体时（草原、边疆不够），差额由成形的国家补上，总数仍是所选的数量
+    let fadedFrom = -1, fadedLive = 0;
+    const fadedGoalAt = y => y < convStart || fadedFrom < 0 ? Infinity : convCurve(fadedFrom, fadedGoal, y);
+    const targetAt = y => y < convStart || convFrom < 0 ? FREE_CAP : convCurve(convFrom, totalLimit - Math.min(fadedGoal, fadedLive), y);
     const center = R.center;
     // 区块中心的三维单位向量：两点间距离用弦长近似（比格距函数快得多）
     const UX = new Float64Array(nR + 1), UY = new Float64Array(nR + 1), UZ = new Float64Array(nR + 1);
@@ -212,8 +248,15 @@
     // 定居后沿用的文明：优先所在地的农耕文明（原住民的称号与官制），都没有才沿用本族
     const settleCivOf = (r, own) => { const c = cult[r]; return c !== -1 && c !== undefined && typeOfCult(c) !== 'pastoral' ? c : own; };
     const rndN = mulberry32((h.seed | 0) + 9191); // 独立随机流：建国时的游牧倾向
+    // 王朝周期：每个王朝（新朝或新家族）自有一个“天命”长度，过半以后弊政丛生、凝聚力日衰。
+    // 中位约 165 年，十之八九在 80–300 年之间，极少超过四百年（秦 15 年、隋 37 年，唐 289 年、明 276 年；卡佩 341 年、瓦卢瓦 261 年）。
+    const rndMandate = mulberry32((h.seed | 0) + 60607), rndX = mulberry32((h.seed | 0) + 70717); // rndX：飞地与小岛
+    const drawMandate = () => { const u = Math.max(1e-9, rndMandate()), v = rndMandate(), g = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); return clamp(165 * Math.exp(0.42 * g), 45, 430); };
+    const dynWear = (q, age) => { const M = q.mandate || 165, x = (age - 0.5 * M) / (0.5 * M); return x > 0 ? 0.2 * x : 0; }; // 过了天命的一半，每十年的损耗线性增大；到天命之年约每十年 -0.2
     const pastureFit0 = r => clamp((R.pasture[r] - 0.3) / 0.5, 0, 1);
     const nomadAt = (q, y) => !!q.nomad && !(q.settled !== undefined && (y === undefined || y >= q.settled));
+    // 松散政体（部落联盟、游牧部族、落后诸部）：looseUntil 起出现城邑、诸部归一，成为有都城的国家（同一政权，国统延续）
+    const looseAt = (q, y) => q.loose && !(q.looseUntil !== undefined && q.looseUntil !== null && (y === undefined || y >= q.looseUntil)) ? q.loose : null;
     const pastureFit = r => clamp((R.pasture[r] - 0.12) / 0.43, 0.3, 1);
     // 草原：适合放牧的区块。前近代的农耕国家难以实控草原——深入草原补给难、牧民随畜迁徙不服编户，多以羁縻、册封为藩属；火器与常备军普及后才能直辖
     const isSteppe = r => R.pasture[r] >= 0.45;
@@ -239,7 +282,13 @@
     const regionPop = (r, y) => { let s = 0; for (const i of cityIn[r]) if (alive(C.cities[i], y)) s += popAt(i, y); return s; };
     const eSea = new Uint8Array(R.nbr.length), eRough = new Float32Array(R.nbr.length); for (let k = 0; k < R.nbr.length; k++) { const ed = R.edges[R.eid[k]]; eSea[k] = ed.sea ? 1 : 0; eRough[k] = Math.min(4, ed.rough || 0); }
     const neighbors = (r, fn) => { for (let k = R.off[r]; k < R.off[r + 1]; k++) fn(R.nbr[k], R.edges[R.eid[k]]); };
-    const fragmentation = regionalFragmentation(R, cityIn, eSea, kmBetween);
+    // 地形起伏度 rug（0 平原 … 1 崇山峻岭）：区块内的坡度与出入的陆路有多崎岖，按全世界可居区块排位。
+    // 平原上道路四通、无险可守，一国容易统一一方并向四周辐射；山地关隘林立、各据一谷，容易分裂、分封，小邦与附庸林立（神圣罗马帝国、山地诸邦）
+    const rug = new Float64Array(nR + 1);
+    { const raw = new Float64Array(nR + 1), ord = [];
+      for (let r = 1; r <= nR; r++) { let s0 = 0, n0 = 0; for (let k = R.off[r]; k < R.off[r + 1]; k++) if (!eSea[k]) { s0 += eRough[k]; n0++; } raw[r] = (R.slope[r] || 0) * 20 + (n0 ? s0 / n0 : 0); if (R.weight[r] > 0) ord.push(r); }
+      ord.sort((a, b) => raw[a] - raw[b] || a - b); ord.forEach((r, i) => rug[r] = ord.length > 1 ? i / (ord.length - 1) : 0.5);
+      for (let r = 1; r <= nR; r++) if (!(R.weight[r] > 0)) rug[r] = 0.5; }
 
     // ---------- 状态 ----------
     const P = [];                                   // 政权
@@ -250,7 +299,17 @@
       if (count < 0) throw new Error('国家与起义军计数不一致');
       if (count) activeCountryActors.set(id, count); else activeCountryActors.delete(id);
     }
-    const countrySlots = () => Math.max(0, countryLimit - activeCountryActors.size);
+    // 松散政体：游牧、部落、落后政体与都城仍在酋邦阶段的政权（地图上由都城向外渐淡、不画硬国界的那些），按第 22 题的份额（fadedGoal）单独记账。判定与 apply.js 的渐变规则一致（都城阶段 ≤ 2 或松散政体；城邦、王国都算成形的国家）
+    const faded = q => !q.rebel && (!!looseAt(q, curY) || (nomadAt(q, curY) && !q.republic && q.theo === undefined) || (sg[q.cap] || 0) <= 2);
+    const solidN = () => { let n = 0; for (const id of activeCountryActors.keys()) if (!faded(P[id]) && !isNW(P[id].cap)) n++; return n; }; // 新大陆的政权不占名额
+    const ALL_CAP = FREE_CAP + totalLimit; // 全部政权（含松散政体）的运算安全上限
+    // 名额：收束期以前几乎不设限；收束期里新立国家（城邦、教国、起义建国、分裂）只在低于当年的收束曲线时才有余额
+    const countrySlots = () => Math.max(0, Math.min(Math.floor(targetAt(curY)) - solidN(), ALL_CAP - activeCountryActors.size));
+    // 无主之地上新立城邦、结成部落联盟：收束期以前不受任何上限约束（土地成熟了就有政权，不会空着等到最后才“补”上）
+    const foundSlots = () => curY < convStart ? Infinity : countrySlots();
+    const splitSlots = () => Math.max(0, Math.min(Math.floor(targetAt(curY) * (curY < convStart ? 1 : 1.03)) - solidN(), ALL_CAP - activeCountryActors.size));
+    const overfull = () => solidN() > targetAt(curY);
+    const consolidate = () => curY < convStart || overfull(); // 收束期里国家已不多于目标：整合放缓，免得国家越并越少
     const owner = new Int32Array(nR + 1).fill(-1);
     const linOwnSince = new Float64Array(nR + 1), coreLin = new Int32Array(nR + 1).fill(-1);
     const log = [];                                 // [region, year, owner]
@@ -269,7 +328,34 @@
     const unrest = new Float32Array(nR + 1), cause = new Uint8Array(nR + 1), famine = new Float32Array(nR + 1), tradition = new Uint8Array(nR + 1), memLin = new Int32Array(nR + 1).fill(-1);
     const rndU = mulberry32((h.seed | 0) + 4242), unrestSamples = [], lastFam = new Float64Array(nR + 1).fill(-1e9), calmUntil = new Float64Array(nR + 1);
     // 大航海与殖民：新大陆（与旧大陆隔海、很晚才被卷入的大陆）
+    const landCompN = new Map(); for (let r = 1; r <= nR; r++) landCompN.set(R.landComp[r], (landCompN.get(R.landComp[r]) || 0) + 1);
+    // 海岛：所在陆块不超过 ISL_N 个区块（大陆、大岛之外的群岛与孤岛）
+    const ISL_N = Math.max(4, Math.round(nR * 0.01)), isle = r => (landCompN.get(R.landComp[r]) || 0) <= ISL_N;
+    const SEA_LINK = 250; // 群岛诸部隔海结盟的最远航程（km）
+    const looseSize = Math.max(3, Math.round(regionsPerCountry * 2.2)); // 部落联盟、游牧部族地广人稀，一部的地盘比定居国家大
+    // 收束时各类国家的大致份额：松散政体随边疆、草原的多少而定（与原先的预留同一尺度），海岛国家不超过海岛人烟应得的份额
+    let islandHab = 0, habN = 0; for (let r = 1; r <= nR; r++) if (R.weight[r] > 0) { habN++; if ((landCompN.get(R.landComp[r]) || 0) <= Math.max(4, Math.round(nR * 0.01))) islandHab++; }
+    // 松散政体（含都城仍在酋邦阶段的政权）在国家总数里的份额（第 22 题）：多出来的并入更大的部落联盟或被邻国收服，不足时余下的部族之地继续结盟
+    const fadedGoal = Math.round(totalLimit * nomadShare), islandGoal = Math.max(1, Math.round(totalLimit * (habN ? islandHab / habN : 0)));
+    const rndLoose = mulberry32((h.seed | 0) + 91031), rndSea = mulberry32((h.seed | 0) + 91043), rndConv = mulberry32((h.seed | 0) + 91057);
+    const unownedPocket = (r0, cap) => { const g = [r0], seen = new Set(g); for (let i = 0; i < g.length && g.length < cap; i++) for (let k = R.off[g[i]]; k < R.off[g[i] + 1]; k++) { if (eSea[k]) continue; const b = R.nbr[k]; if (owner[b] < 0 && !seen.has(b) && R.weight[b] > 0) { seen.add(b); g.push(b); } } return g.length; };
     const isNW = r => R.newW[r] > 0.5, nwCoast = []; for (let r = 1; r <= nR; r++) if (isNW(r) && R.coast[r] && R.weight[r] > 0) nwCoast.push(r);
+    // 新大陆：大片土地到现在仍是无主的部族之地（现在的地图上只注部族名），本土政权少而晚——到近代也不过十个上下，越近现在越多；
+    // 它们不占开局所选的国家名额（名额留给旧大陆），扩张也有限度；殖民者只能从殖民据点一步步向内陆推进
+    let nwHab = 0; for (let r = 1; r <= nR; r++) if (isNW(r) && R.weight[r] > 0) nwHab++;
+    const NW_MAX = nwHab ? clamp(Math.round(40 * nwHab / Math.max(1, habN)), 2, 10) : 0;
+    let nwT0 = Infinity; for (let r = 1; r <= nR; r++) if (isNW(r) && R.weight[r] > 0 && Y[2 * NN + r] < nwT0) nwT0 = Y[2 * NN + r];
+    const nwProg = y => isFinite(nwT0) ? clamp((y - nwT0) / Math.max(300, E - nwT0), 0, 1) : 0;
+    const nwCapAt = y => !NW_MAX || y < nwT0 ? 0 : Math.max(1, Math.round(NW_MAX * Math.pow(nwProg(y), 1.6))); // 当年新大陆本土政权（含部落联盟）的上限
+    const nwSizeAt = y => Math.max(3, Math.round(nwHab * 0.3 / Math.max(1, NW_MAX) * (0.3 + 0.7 * nwProg(y)))); // 一个本土政权最多领有的区块
+    const nwNatQ = q => isNW(q.cap) && !q.creole; // 新大陆本土政权（殖民地独立的移民国家另算）
+    const nwNativeN = () => { let n = 0; for (const id of activeCountryActors.keys()) if (nwNatQ(P[id])) n++; return n; };
+    const inQuota = q => !isNW(q.cap); // 计入国家名额的：都城在旧大陆的国家
+    const nwBlock = (p, b, y) => { // p 不能把无主的新大陆区块 b 收入版图
+      if (!isNW(b) || owner[b] >= 0) return false; const q = P[p];
+      if (nwNatQ(q)) return q.n >= nwSizeAt(y);
+      if (!isNW(q.cap)) { const lc = R.landComp[b], cb = q.colBase && q.colBase.get(lc); if (cb === undefined) return true; return kmBetween(cb, b) > 140 + (sg[q.cap] >= 8 ? 2.6 : 1.1) * (y - q.colSince.get(lc)); }
+      return kmBetween(q.cap, b) > 220 + 1.2 * (y - q.born); };
     const rndK = mulberry32((h.seed | 0) + 6161); let colonialAge = null;
     const vuln = new Float32Array(nR + 1); for (let r = 1; r <= nR; r++) vuln[r] = R.weight[r] > 0 ? 0.1 + 0.45 * R.arid[r] + 0.25 * R.semiArid[r] + (R.river[r] >= 3 ? 0.2 : 0) : 0;
     const TS = [0, 0, 0, 0, 4, 4, 4, 3, 1], MAXN = [0, 0, 0, 0, 8, 8, 7, 6, 5]; // 各阶段一省的目标与上限（区块数）
@@ -388,7 +474,7 @@
       if (best < 0 || bs < 1) return;
       const X = PV[best], civ = creole(X.seat, q, y);
       if (!civilized(civ)) { releaseTribes(p, Array.from({ length: nR }, (_, i) => i + 1).filter(r => prov[r] === best && owner[r] === p), y); q.coh = Math.max(0, q.coh - 0.04); return; }
-      if (!countrySlots()) return;
+      if (!splitSlots()) return;
       const c = newPolity(y, X.seat, [{ id: p, kind: 'secede' }], civ); P[c].org = y; P[c].claimLin = q.lin; P[c].claimUntil = y + 300; P[c].coh = 0.8;
       inheritRegions(Array.from({ length: nR }, (_, i) => i + 1).filter(r => prov[r] === best && owner[r] === p).map(r => [r, c]), y);
       q.coh = Math.max(0, q.coh - 0.04); ev(y, 'provSecede', { p: c, q: p, pv: best, r: X.seat });
@@ -430,7 +516,9 @@
       const lib = cultureDef(cult[r]) || cultureDef(P[owner[r]]?.civ);
       return G.NameGen.fort(lib, D.usedNames, rndFortName);
     } });
+    const localRegion = new Uint8Array(nR + 1); // 有地方吸收词条的区块；其余区块的有效文化就是文化库本身（免去逐次拼键查表）
     function effectiveCulture(r, c) {
+      if (!localRegion[r]) return cultureDef(c);
       const key = `${r},${c}`, base = cultureDef(c), extra = localTraits.get(key);
       if (!base || !extra) return base;
       if (localEffective.has(key)) return localEffective.get(key);
@@ -587,7 +675,7 @@
             if (strength <= G.HumanRules.strength(dst, id)) continue;
             const key = `${r},${target}`, marker = `${key},${id}`;
             if (exchanged.has(marker)) continue;
-            if (!localTraits.has(key)) localTraits.set(key, new Map()); localTraits.get(key).set(id, strength); localEffective.delete(key);
+            if (!localTraits.has(key)) localTraits.set(key, new Map()); localTraits.get(key).set(id, strength); localEffective.delete(key); localRegion[r] = 1;
             exchanged.add(marker); humanExchange.push({ year: y, region: r, sourceRegion: b, sourceCulture: source, targetCulture: target, trait: id, strength });
           }
         }
@@ -599,7 +687,7 @@
       if (!civilized(civ)) throw new Error('无文明居民不能建立国家');
       const id = P.length;
       P.push({ id, born: y, died: null, cap, caps: [{ year: y, city: bigCity(cap, y), r: cap }], parents: parents || [], children: [], civ, initialCiv: civ, _initialRegion: civ !== -1 && cult[cap] === civ ? cap : -1, lin: lin === undefined ? linSeq++ : lin,
-        dynStart: y, heldRegions: new Set(), coh: 0.8, n: 0, peakN: 0, peakYear: y, claimLin: -1, claimUntil: 0, restored: false, heirOf: -1, ext: [], liege: -1, vas: [] });
+        dynStart: y, mandate: drawMandate(), heldRegions: new Set(), coh: 0.8, n: 0, peakN: 0, peakYear: y, claimLin: -1, claimUntil: 0, restored: false, heirOf: -1, ext: [], liege: -1, vas: [] });
       // 文明类型只是倾向，不是定局：草原文明在草原上建立的国家多半是游牧汗国，但也会有定居的王国、城邦，日后也能走向封建、共和；
       // 其他文明在草原腹地也偶有游牧政权。称号一律取该文明文化库里对应政体的叫法（lib.t：monarchy / empire / republic / cityRepublic / nomadic……）。
       // 游牧与否主要看土地：草原腹地几乎都是游牧部族（绿洲城邦是少数），半农半牧之地两者参半，农耕之地即便是草原文明也是定居王朝
@@ -607,13 +695,17 @@
         if (past && pa < 0.3) { Q.settled = y; Q.settledCiv = settleCivOf(cap, civ); if (Q.settledCiv !== civ && Q.settledCiv === cult[cap]) Q._settledRegion = cap; Q.leftSteppe = true; } // 草原之外建立的国家：生来就是定居王朝（用当地文明的称号）
         else Q.nomad = pa >= 0.45 ? u < (past ? 0.88 : 0.3) : pa >= 0.3 && u < (past ? 0.5 : 0.04); }
       for (const pa of P[id].parents) if (P[pa.id]) P[pa.id].children.push({ id, kind: pa.kind });
+      P[id].creole = P[id].parents.some(pa => P[pa.id] && (P[pa.id].creole || P[pa.id].colonialFrom !== undefined));
       return id;
     }
     // ---------- 宗藩：附庸保有自己的疆土与朝廷，向宗主称臣纳贡；同一宗藩体系内互不攻伐 ----------
     function setLiege(v, l, y, kind, quiet) { const V = P[v]; if (V.liege === l) return; const old = V.liege; V.liege = l; V.vas.push(y, l); V.vasSince = y;
       if (l >= 0 && V.crown !== undefined) uncrown(v, y, 'vassal', l); // 向他国称臣：去帝号
       if (!quiet) { if (l >= 0) ev(y, 'vassal', { p: l, q: v, r: V.cap, how: kind || 'submit' }); else if (old >= 0) ev(y, kind === 'annexV' ? 'vassalAnnex' : 'vassalFree', { p: old, q: v, r: V.cap }); } }
-    const feudal = (st, y) => (st === 6 && y < 4350) || (st >= 4 && st <= 5 && y >= 3400 && y < 4350); // 第 4350 年（≈ 1350 年）以后不再新封附庸 // 封建宗藩：封建阶段，或中世纪年代的王国与帝国
+    // 世界所处的大时代（时间轴顶部的分期，按人口领先的那部分世界所处的阶段划分，随各地发展快慢而定，不是固定年份）
+    const worldEra = y => D.eraAt[Math.min(D.eraAt.length - 1, Math.max(0, Math.floor(y / D.eraStep)))] || 0;
+    // 封建宗藩：封建阶段的政权；世界进入封建时代后，尚在王国、帝国阶段的政权也行分封；世界进入前近代后不再新封附庸
+    const feudal = (st, y) => { const we = worldEra(y); return we < 7 && (st === 6 || (st >= 4 && st <= 5 && we === 6)); };
     const topLiege = p => { let x = p; for (let g = 0; g < 8 && P[x].liege >= 0; g++) x = P[x].liege; return x; };
     function setOwner(r, p, y, keep) { // keep：疆域整体易主（改朝换代、分裂、外族入主、割据），省份随之改隶；否则新占领的土地先进入军管
       const old = owner[r]; if (old === p) return;
@@ -669,11 +761,6 @@
       const Q = P[q]; if (Q.died !== null) return; Q.died = y;
       if (by >= 0 && P[by] && !P[by].rebel) redirectRebels(q, by, y, -1);
       Q.coreAtDeath = historicalCores(Q.heldRegions, coreLin, Q.lin);
-      // 继承的是稳定统治过的土地，而不是相同的国名或文化名称。
-      if (by >= 0 && P[by] && !P[by].rebel && Q.coreAtDeath.length >= 2 && owner[Q.cap] === by) {
-        const held = Q.coreAtDeath.filter(r => owner[r] === by).length;
-        if (held >= Math.ceil(Q.coreAtDeath.length * 0.6)) (P[by].territorialPredecessors ||= []).push(q);
-      }
       Q.heldRegions.clear();
       if (by >= 0) { Q.children.push({ id: by, kind: kind === 'integrate' || kind === 'nomadic' ? 'conquer' : kind || 'conquer' }); if (Q.peakN >= 3 && kind !== 'integrate') ev(y, 'annex', { p: by, q, r: Q.cap, n: Q.peakN }); }
       else if (kind !== 'quiet' && Q.peakN >= 3) ev(y, 'perish', { p: q, r: Q.cap }); // 失去最后的疆土而亡
@@ -746,7 +833,7 @@
         edgeDays:edge => G.HumanAnchors.travelDays(edge, null, null)
       });
       const grouped = new Map();
-      for (const pocket of candidates) {
+      for (const pocket of candidates) { if (pocket.regions.some(r => nwBlock(pocket.owner, r, y))) continue;
         let regions = grouped.get(pocket.owner); if (!regions) grouped.set(pocket.owner, regions = []);
         for (const r of pocket.regions) { setOwner(r, pocket.owner, y); regions.push(r); }
       }
@@ -758,7 +845,7 @@
         if (owner[r] >= 0 || y - linOwnSince[r] < TICK || !habitable(r) || !human.total(r)) continue;
         for (let k = R.off[r]; k < R.off[r + 1]; k++) {
           const a = R.nbr[k], p = owner[a], edge = R.edges[R.eid[k]];
-          if (edge.sea || p < 0 || P[p].died !== null || P[p].rebel || P[p].coh < .6 || !Number.isFinite(cap[p]) || P[p].n >= cap[p] * 1.5 || sg[P[p].cap] < 3 || y - linOwnSince[a] < 30) continue;
+          if (edge.sea || p < 0 || nwBlock(p, r, y) || P[p].died !== null || P[p].rebel || P[p].coh < .6 || !Number.isFinite(cap[p]) || P[p].n >= cap[p] * 1.5 || sg[P[p].cap] < 3 || y - linOwnSince[a] < 30) continue;
           const days = entryDays(p, a) + edgeDays(edge, R.eid[k]);
           if (days > administration.budget) continue;
           const chance = cult[r] === rulingCultureAt(P[p], y) ? .80 : cult[r] === -1 ? .32 : .06;
@@ -776,63 +863,99 @@
       }
     }
 
-    // 远离本土、被陆上边界切断的小块领地，由接壤国家接管；
-    // 海岛和跨大陆殖民地不参与此处理。所有变更都进入领土与行政日志。
-    function settleDetachedTerritory(y) {
-      const seen = new Uint8Array(nR + 1), groups = new Map();
-      for (let start = 1; start <= nR; start++) {
-        const p = owner[start]; if (p < 0 || seen[start] || P[p].rebel) continue;
-        const regs = [start]; seen[start] = 1;
-        for (let i = 0; i < regs.length; i++) for (let k = R.off[regs[i]]; k < R.off[regs[i]+1]; k++) {
-          const b = R.nbr[k]; if (!eSea[k] && !seen[b] && owner[b] === p) { seen[b] = 1; regs.push(b); }
-        }
-        if (!groups.has(p)) groups.set(p, []); groups.get(p).push(regs);
+    // ---------- 天下帝国：古典时代世上同时并立三四个大帝国（如罗马、安息、贵霜、汉）；帝国盛极而衰、或随封建时代到来从内部瓦解，
+    //            名额空出后另有新兴强国补上；封建时代偶有雄主重整诸侯、再造一统（加洛林、隋唐），终又分崩——分久必合、合久必分 ----------
+    const IMPK = habN >= 1300 ? 4 : 3;                                 // 同时并立的帝国数
+    const IMP_SEP = 1250 * geographicScale;                            // 帝国的都城彼此相距（太近的两强只能争霸，不能并立）
+    const imperial = new Map(), impLog = [];                           // p → { since, life, kind: 'classical' | 'reunify', n, peak }
+    const rndImp = mulberry32((h.seed | 0) + 60607);
+    const impB = p => { const I = imperial.get(p); return !I ? 0 : I.kind === 'reunify' ? 0.85 : 1; }; // 帝国之势
+    function imperialStep(y, alivePs, pw, cs, modP) {
+      // 1. 帝国的名分随国统传下（改朝换代、起义入主、外族整国入主）；称臣、疆土丧失过半、气数已尽则失去
+      for (const [p, I] of [...imperial]) { const q = P[p];
+        if (q.died !== null) { imperial.delete(p);
+          let succ = -1; for (const X of P) if (X.died === null && X.n >= 0.5 * I.n && !X.rebel && X.liege < 0 && (X.lin === q.lin || q.children.some(c => c.id === X.id && c.kind !== 'split' && c.kind !== 'secede' && c.kind !== 'revolt'))) { if (succ < 0 || X.n > P[succ].n) succ = X.id; }
+          if (succ >= 0 && !imperial.has(succ)) imperial.set(succ, Object.assign({}, I, { n: P[succ].n }));
+          continue; }
+        I.n = q.n; I.peak = Math.max(I.peak || 0, q.n);
+        if (!I.shown && q.n >= EMPN) { I.shown = true; ev(y, 'imperium', { p, r: q.cap, n: q.n, form: I.kind, sc: sphereCivs(q) }); } // 疆土成了气候才载入史册
+        const stage = cs[p] || sg[q.cap], age = y - I.since;
+        let end = null;
+        if (q.liege >= 0) end = 'vassal';
+        else if (q.n < 0.35 * I.peak && age > 60) end = 'shrink';
+        else if (I.kind === 'classical' && stage >= 6) end = 'era';          // 都城一带进入封建时代：古典帝国体制难以为继（eraCrisis 另记）
+        else if (I.kind === 'classical' && (y / TICK) % 3 === 0) { // 疆土里封建化的地方（豪强坐大、庄园自守）过了三成五：帝国从内部瓦解，不必等都城
+          let a = 0, b = 0; for (let r = 1; r <= nR; r++) if (owner[r] === p) { b += R.weight[r]; if (sg[r] >= 6) a += R.weight[r]; } if (b > 0 && a > 0.35 * b) end = 'era'; }
+        else if (I.kind === 'reunify' && stage >= 7) { I.kind = 'modern'; I.life = Infinity; } // 再造一统的帝国步入前近代：转为近代大国（奥斯曼、清式的延续）
+        else if (age > I.life) end = 'age';                                   // 盛极而衰（近代大国没有定数）
+        if (!end) continue;
+        imperial.delete(p);
+        if (end === 'age' || end === 'shrink') { q.coh = Math.min(q.coh, 0.14 + 0.08 * rndImp()); q.impFall = y; if (I.shown) ev(y, 'imperialFall', { p, r: q.cap, why: end, n: q.n, peak: I.peak, form: I.kind }); }
+        else if (end === 'era') { q.impFall = y;
+          if (I.kind === 'classical' && !q.antique && I.shown) { q.antique = y; q.coh = Math.min(q.coh, 0.12 + 0.12 * rndImp()); ev(y, 'eraCrisis', { p, r: q.cap, why: rndImp() < 0.35 ? 'barbarian' : rndImp() < 0.5 ? 'plague' : 'warlord', n: q.n }); } }
       }
-      for (const [p, parts] of groups) {
-        const q = P[p], home = parts.find(g => g.includes(q.cap)); if (!home || q.died !== null) continue;
-        for (const part of parts) {
-          if (part === home || part.length > Math.max(1, Math.floor(q.n * .3)) || R.landComp[part[0]] !== R.landComp[q.cap]) continue;
-          let distance = Infinity; for (const a of part) for (const b of home) distance = Math.min(distance, kmBetween(a, b));
-          if (distance < 250) continue;
-          const border = new Map();
-          for (const a of part) for (let k = R.off[a]; k < R.off[a+1]; k++) {
-            const other = owner[R.nbr[k]]; if (eSea[k] || other < 0 || other === p || P[other].rebel || P[other].died !== null) continue;
-            border.set(other, (border.get(other) || 0) + 1);
-          }
-          const to = [...border].sort((a,b) => b[1] - a[1] || a[0] - b[0])[0]?.[0];
-          if (to === undefined) continue;
-          inheritRegions(part.map(r => [r, to]), y);
-          ev(y, 'territoryCede', {p:to, q:p, r:part[0], n:part.length});
-        }
-      }
+      if ((y / TICK) % 5 === 0) impLog.push([y, [...imperial].map(([p, I]) => [p, P[p].n, I.kind[0]])]);
+      // 2. 名额空出：古典阶段（或封建时代雄踞本文化圈的大国）里最强的一国崛起为帝国，都城须与现有的帝国相距足够远；
+      //    世界进入前近代、或到了向现在收束的年代，不再有新的帝国兴起
+      //    近代大国（前近代整合诸侯、厉行集权而称雄一方者，如清、奥斯曼、俄罗斯）另有名额，可以延续到现在
+      let reunN = 0, oldN = 0, modN = 0; for (const I of imperial.values()) { if (I.kind === 'reunify') reunN++; if (I.kind === 'modern') modN++; else oldN++; }
+      const oldOpen = oldN < IMPK && worldEra(y) < 7 && y < convStart, modOpen = modN < IMPK + 2 && y < E - 100;
+      if (!oldOpen && !modOpen) return;
+      const cand = [];
+      for (const p of alivePs) { const q = P[p]; if (imperial.has(p) || q.died !== null || q.rebel || q.liege >= 0 || !q.n || looseAt(q, y) || nomadAt(q, y) || (isNW(q.cap) && (cs[p] < 7 || typeOfCult(q.civ) === 'new-world')) || (q.impFall !== undefined && y - q.impFall < 250)) continue;
+        const X = eraOf(cs[p]); if (!X.imp) continue; const modern = cs[p] >= 7; if (modern ? !modOpen : !oldOpen) continue;
+        let near = false; for (const o of imperial.keys()) if (kmBetween(P[o].cap, q.cap) < IMP_SEP * (modern ? 0.8 : 1)) { near = true; break; } if (near) continue;
+        if (modern) { if (q.n < Math.max(3 * KINGN, 2 * regionsPerCountry) || q.coh < 0.5) continue; cand.push([p, pw[p] * (1.8 - 1.4 * (q.rugNow || 0.5)), 'modern']); }
+        else if (X.imp >= 1) { if (q.n < 2 * KINGN || q.coh < 0.45) continue; cand.push([p, pw[p] * (1.8 - 1.4 * (q.rugNow || 0.5)), 'classical']); }
+        else { if (reunN >= Math.max(1, IMPK - 2) || q.n < 2 * KINGN || q.coh < 0.6 || rndImp() > 0.05) continue; cand.push([p, pw[p] * 0.8 * (1.5 - (q.rugNow || 0.5)), 'reunify']); } }
+      if (!cand.length) return;
+      cand.sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+      const [p, , kind] = cand[0], q = P[p];
+      imperial.set(p, { since: y, life: kind === 'classical' ? 380 + 320 * rndImp() : kind === 'modern' ? Infinity : 180 + 160 * rndImp(), kind, n: q.n, peak: q.n, shown: false });
+      q.coh = Math.max(q.coh, 0.85);
     }
-
-    // 相邻、文化相近的小邦可以自愿合邦；它们没有进行低于战争门槛的战斗。
-    // 双方必须规模相近、独立且不统辖附庸，避免把大片土地伪装为一次外交吞并。
-    const rndUnion = mulberry32((h.seed | 0) + 88117), rndSuccession = mulberry32((h.seed | 0) + 88121);
-    function peacefulUnions(y, alivePs) {
-      if ((y / TICK) % 2) return;
-      const maxSize = Math.min(14, Math.max(4, Math.round(regionsPerCountry * .4)));
-      for (const v of alivePs) {
-        const V = P[v]; if (V.died !== null || V.rebel || V.liege >= 0 || V.crown !== undefined || V.n < 1 || V.n > maxSize / 2 || y - V.born < 30 || rndUnion() >= .10) continue;
-        if (P.some(X => X.died === null && X.liege === v)) continue;
-        const border = new Map();
-        for (let r = 1; r <= nR; r++) if (owner[r] === v) for (let k = R.off[r]; k < R.off[r + 1]; k++) {
-          const p = owner[R.nbr[k]]; if (eSea[k] || p < 0 || p === v) continue;
-          border.set(p, (border.get(p) || 0) + 1);
-        }
-        const choices = [...border].filter(([p]) => {
-          const Q = P[p]; return Q.died === null && !Q.rebel && Q.liege < 0 && Q.crown === undefined && Q.n >= V.n && Q.n <= 3 * V.n && Q.n + V.n <= maxSize &&
-            y - Q.born >= 30 && libKeyOf(rulingCultureAt(Q, y)) === libKeyOf(rulingCultureAt(V, y)) && !P.some(X => X.died === null && X.liege === p);
-        }).sort((a,b) => b[1] - a[1] || P[a[0]].n - P[b[0]].n || a[0] - b[0]);
-        if (!choices.length) continue;
-        const p = choices[0][0]; inheritOwned(v, p, y); kill(v, y, p, 'integrate'); ev(y, 'peacefulUnion', {p, q:v, r:V.cap});
-      }
+    // 帝国兵威所及：接壤的弱小邻邦慑服归附（古典时代并入版图，封建时代多为附庸），不经大战
+    function imperialAbsorb(y, pw, cs) {
+      const slow = consolidate() ? 1 : 0.15; // 收束期：国家已不多于目标时并得慢些
+      for (const [p, I] of imperial) { const q = P[p]; if (q.died !== null || !q.n) continue; const b = impB(p);
+        const seen = new Set();
+        for (let a = 1; a <= nR; a++) { if (owner[a] !== p) continue;
+          for (let k = R.off[a]; k < R.off[a + 1]; k++) { if (eSea[k]) continue; const v = owner[R.nbr[k]]; if (v < 0 || v === p || seen.has(v)) continue; seen.add(v);
+            const V = P[v]; if (V.died !== null || V.rebel || imperial.has(v) || looseAt(V, y) || (V.liege >= 0 && V.liege !== p) || V.n > Math.max(4, (I.kind === 'modern' ? 0.25 : 0.15) * q.n) || pw[v] * (I.kind === 'modern' ? 3 : 4) > pw[p] || y - V.born < 30) continue;
+            if (P.some(X => X.died === null && X.liege === v)) continue;
+            const mV = rug[V.cap] - 0.5; if (rndImp() > 0.12 * b * slow * (1 - 1.2 * mV) * (I.kind === 'modern' ? (V.civ === q.civ ? 2.2 : 0.8) : 1)) continue; // 近代大国：同族诸邦归于一统（德意志、意大利式的统一）
+            if ((feudal(cs[p], y) || mV > 0.15) && V.liege < 0) { setLiege(v, p, y, 'submit'); continue; } // 封建时代、或据守山地的小邦：只称臣为附庸
+            if (mV > 0.15) continue;
+            if (V.liege >= 0) setLiege(v, -1, y, 'annexV', true);
+            const first = V.cap; inheritOwned(v, p, y); kill(v, y, p, 'integrate'); ev(y, 'subjugate', { p, q: v, r: first }); } } }
+    }
+    // 城邦向海外殖民：沿海的城邦把移民送过海，在蛮荒之地的海岸建立新的城邦（腓尼基、希腊式的殖民城邦）
+    function apoikiaStep(y, cs) {
+      const tried = new Set();
+      for (let a = 1; a <= nR; a++) { const p = owner[a]; if (p < 0 || tried.has(p) || !R.coast[a]) continue; const q = P[p];
+        if (q.died !== null || q.rebel || looseAt(q, y) || nomadAt(q, y) || cs[p] < 3 || cs[p] > 4 || isNW(q.cap)) continue;
+        tried.add(p);
+        const sea = typeOfCult(q.civ) === 'maritime' ? 2 : polStyle(q) === 'mercantile' ? 1.6 : 1;
+        if (rndFound() > 0.06 * sea * (cs[p] === 3 ? 1 : 0.6)) continue;
+        if (!foundSlots()) return;
+        const range = SEA_KM[cs[p]] * (0.9 + 0.5 * sea);
+        let best = -1, bs = 0;
+        for (let r = 1; r <= nR; r++) { if (owner[r] !== p || !R.coast[r]) continue;
+          for (let k = R.off[r]; k < R.off[r + 1]; k++) { if (!eSea[k]) continue; const b = R.nbr[k], ed = R.edges[R.eid[k]]; if (ed.km > range) continue;
+            const o = owner[b]; if (o >= 0 && !looseAt(P[o], y)) continue;
+            if (sg[b] < 3 || !habitable(b) || !human.total(b) || isNW(b) || !cityIn[b].some(i => alive(C.cities[i], y))) continue;
+            const sc = (R.weight[b] + 0.05) / (1 + ed.km / 300) * (1 + rndFound() * 0.5); if (sc > bs) { bs = sc; best = b; } } }
+        if (best < 0) continue;
+        const civ = civilized(q.civ) ? q.civ : civOfNew(best); if (!civilized(civ) || typeOfCult(civ) === 'pastoral') continue;
+        const c = newPolity(y, best, [{ id: p, kind: 'colony' }], civ); P[c].cityBorn = true; P[c].colonyOf = p; P[c].coh = 0.8; P[c].nomad = false;
+        setOwner(best, c, y); ev(y, 'apoikia', { p: c, q: p, r: best, city: bigCity(best, y) }); }
     }
 
     // ---------- 时间轴 ----------
     let ys = Infinity; for (const cr of D.cradles) ys = Math.min(ys, Y[3 * NN + cr.region]); for (let r = 1; r <= nR; r++) ys = Math.min(ys, Y[3 * NN + r]);
     ys = Math.min(E, Math.max(0, Math.floor((isFinite(ys) && ys < 1e8 ? ys : E * 0.3) / TICK) * TICK));
+    // 收束期：末尾约一成半的年代（至少三百年），国家数量从这时起才向目标收拢
+    convStart = Math.max(ys + TICK, Math.floor((E - Math.max(300, Math.round((E - ys) * 0.15))) / TICK) * TICK);
     // 历史一路自由推演到现在：不再向事先生成的地图收拢；现在的政治地图由历史的终局写回（见 apply.js）
     const T0 = E + TICK, TG = Infinity;
     const sg = new Int8Array(nR + 1), v = new Float64Array(nR + 1);
@@ -902,6 +1025,7 @@
       return out;
     }
     for (let y = ys; y <= E; y += TICK) {
+      curY = y; { let n = 0; for (const q of P) if (q.died === null && q.n > 0 && faded(q) && inQuota(q)) n++; fadedLive = n; if (y >= convStart && convFrom < 0) { convFrom = solidN(); fadedFrom = n; } } // 收束的起点：这一年实际有多少国家、多少松散政体
       enforceRuinsThrough(y);
       stepStage(y);
       stepHuman(y);
@@ -922,13 +1046,23 @@
       const groups=[...landCandidates.values()];
       for(const list of groups)for(let i=list.length-1;i>0;i--){const j=Math.floor(rndFoundOrder()*(i+1));[list[i],list[j]]=[list[j],list[i]];}
       for(let i=groups.length-1;i>0;i--){const j=Math.floor(rndFoundOrder()*(i+1));[groups[i],groups[j]]=[groups[j],groups[i]];}
-      for(let k=0,more=true;more && countrySlots();k++) { more=false;
-        for(const group of groups){if(k>=group.length)continue;more=true;if(!countrySlots())break;const r=group[k];if(owner[r]>=0)continue;
-          const roll=rndFound()/(isNW(r)?.3:1); if(roll>=.08)continue;
+      let nwN = nwNativeN(); const nwCap = nwCapAt(y);
+      for(let k=0,more=true;more && foundSlots();k++) { more=false;
+        for(const group of groups){if(k>=group.length)continue;more=true;if(!foundSlots())break;const r=group[k];if(owner[r]>=0)continue;
+          if(isNW(r)&&nwN>=nwCap)continue; // 新大陆：本土政权寥寥，名额有限
+          const roll=rndFound()/(isNW(r)?.3:1), cityAge=sg[r]===3; if(roll>=(cityAge?.14:.08))continue; // 城邦时代：城邦林立
           let near=false;for(let j=R.off[r];j<R.off[r+1];j++){const b=R.nbr[j];if(!R.edges[R.eid[j]].sea && owner[b]>=0 && P[owner[b]].n>3){near=true;break;}}
-          if(roll<(near?.03:.08)){const p=newPolity(y,r,[],civOfNew(r,y));P[p].cityBorn=sg[r]<=3;setOwner(r,p,y);}
+          // 大国身旁一两块无主的零碎之地、对岸大国近在咫尺的小岛：不另立小国，留给邻国收编（不会出现满地一城之国）
+          if((near || sg[r]>=5) && sg[r]>=4 && (landCompN.get(R.landComp[r])||0)>2 && unownedPocket(r,3)<3)continue;
+          if((landCompN.get(R.landComp[r])||0)<=2){let cross=false;for(let j=R.off[r];j<R.off[r+1];j++){const b=R.nbr[j];if(R.edges[R.eid[j]].sea && R.edges[R.eid[j]].km<=260 && owner[b]>=0 && P[owner[b]].n>=3){cross=true;break;}}if(cross && sg[r]>=4)continue;}
+          // 群岛：同一文明的岛国就在附近（一程航路以内）时，多半由它渡海拓殖，不在每座小岛上另立一国
+          if(isle(r)){let kin=false;for(let j=R.off[r];j<R.off[r+1];j++){if(!eSea[j]||R.edges[R.eid[j]].km>SEA_LINK)continue;const o=owner[R.nbr[j]];if(o>=0&&P[o].died===null&&!P[o].rebel&&P[o].civ===civOfNew(r)){kin=true;break;}}if(kin&&rndFound()<.8)continue;}
+          if(roll<(cityAge?(near?.05:.14):(near?.03:.08))){const p=newPolity(y,r,[],civOfNew(r,y));P[p].cityBorn=sg[r]<=3;setOwner(r,p,y);if(nwNatQ(P[p]))nwN++;}
         }
       }
+      // 1b. 无主之地上的诸部结成松散政体；已有的部落联盟出现城邑则归于一统
+      if ((y - ys) % 30 === 0) formLoose(y, false);
+      looseRise(y);
       // 2. 国力
       const alivePs = []; for (const q of P) if (q.died === null && q.n > 0) alivePs.push(q.id);
       const pw = new Float64Array(P.length), cs = new Int8Array(P.length), reach = new Float64Array(P.length), cap = new Float64Array(P.length), ptype = [];
@@ -936,8 +1070,8 @@
       for (const p of alivePs) { const q = P[p]; cs[p] = Math.max(2, sg[q.cap]); { const tc = typeOfCult(q.civ); ptype[p] = nomadAt(q) ? 'pastoral' : tc === 'pastoral' ? 'agrarian' : tc; } /* 只有仍在游牧的政权才算游牧；定居（含生来定居）的草原文明国家按农耕国家推演 */ pw[p] = Math.max(0.05, pw[p]) * (0.35 + q.coh);
         const nomadEdge = ptype[p] === 'pastoral' ? Math.max(0, Math.min(1, (7 - cs[p]) / 2)) : 0; // 骑射之利随时代消退，近代早期不再
         if (ptype[p] === 'pastoral') pw[p] *= 1 + 0.8 * nomadEdge; // 全民皆兵：牧民人口虽少，控弦之士多
-        reach[p] = REACH[cs[p]] * geographicScale * (1 + 0.6 * nomadEdge) * (0.8 + 0.3 * q.coh); const sizeFactor = 0.65 + ((p * 2654435761 >>> 0) % 1000) / 1000 * 1.1;
-        cap[p] = Math.max(2, Math.min(CAP[cs[p]] * scale * geographicScale * (1 + 0.4 * nomadEdge), regionsPerCountry * sizeFactor * 1.3) * (1 - .48 * fragmentation[q.cap]));
+        reach[p] = REACH[cs[p]] * geographicScale * (1 + 0.6 * nomadEdge) * (0.8 + 0.3 * q.coh); cap[p] = Math.max(1, regionsPerCountry * .85, CAP[cs[p]] * scale * geographicScale * geographicScale * (1 + 0.4 * nomadEdge));
+        { const X = eraOf(cs[p]); reach[p] *= X.reach; cap[p] *= X.cap; }
         if (q.horde !== undefined) { pw[p] *= 1.8; reach[p] *= 1.5; cap[p] = Math.max(cap[p] * 2.5, CAP[5] * scale); } } // 大汗在位：诸部合一，兵锋所向
       if (y - shareYear >= 50) { shareYear = y; ideaShare.fill(0); for (let r = 1; r <= nR; r++) { const w = R.weight[r]; if (!w) continue; for (let k = 0; k < ideaShare.length; k++) if (D.ideaA[k * NN + r] <= y) ideaShare[k] += w; } for (let k = 0; k < ideaShare.length; k++) ideaShare[k] /= Math.max(1e-9, totW); }
       const mil = new Float64Array(P.length), adm = new Float64Array(P.length), lag = new Float64Array(P.length);
@@ -946,7 +1080,13 @@
         reach[p] *= 1 + 0.08 * adm[p]; cap[p] *= 1 + 0.08 * adm[p]; }                   // 官僚与驿传：管得更远、更大
       for (const p of alivePs) { const L = P[p].liege; if (L >= 0 && P[L].died === null) pw[L] += 0.25 * pw[p]; } // 附庸纳贡
       const realm = new Int32Array(P.length).fill(-1); for (const p of alivePs) realm[p] = topLiege(p);
+      const sph = []; for (const p of alivePs) sph[p] = sphereOf(P[p]);
       const modP = new Uint8Array(P.length); for (const p of alivePs) modP[p] = cs[p] >= 7 || has('gunpowder', P[p].cap, y) ? 1 : 0; // 近代：火器与常备军，可以实控草原
+      // 地形：平原之国管得更远、更大，山地之国规模受限
+      { const sum = new Float64Array(P.length), cnt = new Float64Array(P.length); for (let r = 1; r <= nR; r++) { const o = owner[r]; if (o >= 0) { sum[o] += rug[r]; cnt[o]++; } }
+        for (const p of alivePs) { const q = P[p]; q.rugNow = (sum[p] + 2 * rug[q.cap]) / (cnt[p] + 2); if (looseAt(q, y)) continue; const m = q.rugNow - 0.5; cap[p] *= 1 - 1.2 * m; reach[p] *= 1 - 0.8 * m; } }
+      imperialStep(y, alivePs, pw, cs, modP);
+      for (const p of imperial.keys()) { if (P[p].died !== null) continue; const b = impB(p), m = (P[p].rugNow || 0.5) - 0.5; pw[p] *= 1 + 0.3 * b; reach[p] *= 1 + 0.6 * b * (1 - m); cap[p] *= 1 + 2 * b * (1 - 1.2 * m); } // 帝国：驿道、常备军与行省，管得更远、更大
       for (const p of alivePs) P[p].reachNow = reach[p];
       // 军制：都城接纳的军事思潮 + 政体；据此募集常备兵、部署驻地
       { const list = []; for (const p of alivePs) { const q = P[p], c = q.cap;
@@ -987,35 +1127,50 @@
       for (let r = 1; r <= nR; r++) { const factors = G.HolyWar.combatFactors(regionEffects(r)); attackFactor[r] = factors.attack; defenseFactor[r] = factors.defense; }
       for (const p of alivePs) pw7[p] = Math.pow(pw[p], 0.7);
       const capOf = new Int32Array(nP); for (const p of alivePs) capOf[p] = P[p].cap;
+      // 海上力量：海洋文明、商贸文化，以及疆土多在海岛与沿海的国家有舰队，航程随时代增长。渡海进攻先要渡过海峡（对方有舰队就先打一场海战），再登陆作战
+      const coastN = new Float64Array(nP), islN = new Float64Array(nP), coastPop = new Float64Array(nP);
+      for (let r = 1; r <= nR; r++) { const p = owner[r]; if (p < 0) continue; if (R.coast[r]) { coastN[p]++; coastPop[p] += human.total(r); } if (isle(r)) islN[p]++; }
+      const marOf = new Float64Array(nP), seaReach = new Float64Array(nP);
+      for (const p of alivePs) { const q = P[p], n = Math.max(1, q.n); let m = typeOfCult(q.civ) === 'maritime' ? 1 : polStyle(q) === 'mercantile' ? 0.8 : 0; m = Math.max(m, 0.7 * coastN[p] / n, islN[p] / n);
+        if (looseAt(q, y) === 'primitive') m *= 0.6; if (nomadAt(q, y)) m *= 0.2; marOf[p] = m;
+        seaReach[p] = q.rebel || !coastN[p] ? 0 : SEA_KM[clamp(cs[p], 1, 8)] * (0.5 + 0.7 * m) * (islN[p] >= n * 0.5 ? 1.25 : 1); }
+      const fleetOf = p => p < 0 || !coastN[p] ? 0 : Math.min(600, Math.round(coastPop[p] * (0.12 + marOf[p]) * 0.0005 * (0.6 + 0.08 * cs[p]))); // 可出海作战的船只
       for (let a = 1; a <= nR; a++) { const p = owner[a]; if (p < 0) continue;
         for (let kk = R.off[a]; kk < R.off[a + 1]; kk++) { const b = R.nbr[kk], sea = eSea[kk];
-          const q = owner[b]; if (sea || q === p || R.weight[b] <= 0 || sg[b] < 1) continue; // 首版只推演陆地战役；海军另行增加。
+          const q = owner[b]; if (q === p || R.weight[b] <= 0 || sg[b] < 1) continue;
+          if (sea && (q < 0 || P[q].rebel || P[p].rebel || marOf[p] < 0.25 || R.edges[R.eid[kk]].km > seaReach[p])) continue; // 渡海作战：须有舰队、在航程以内，只打有主之地（无主的海岛另由拓殖收入版图）
+          if (q < 0 && nwBlock(p, b, y)) continue; // 新大陆的无主之地：本土政权扩张有限，殖民者只能从据点逐步推进
           if (P[p].rebel ? q !== P[p].target : (q >= 0 && P[q].rebel && P[q].target !== p)) continue; // 起义军只与朝廷交战
           if (P[p].rebel && P[p].rebelGoal === 'independence' && q >= 0 && b === P[q].cap) continue; // 独立派争取地方自治，不攻击母国都城。
           if (q >= 0 && realm[p] === realm[q] && realm[p] >= 0) continue; // 宗主与附庸、同一宗主的附庸之间互不攻伐
           if (q >= 0 && allyOf.has(p) && allyOf.get(p) === allyOf.get(q)) continue; // 盟国互不攻伐
           const cb = P[p].colBase, lcB = R.landComp[b], dk = cb && cb.has(lcB) && R.landComp[capOf[p]] !== lcB ? Math.min(kmBetween(capOf[p], b), kmBetween(cb.get(lcB), b)) : kmBetween(capOf[p], b); // 海外殖民地：从殖民据点向内陆投送
-          let att = pw7[p] * Math.exp(-dk / reach[p]) * (sea ? (polStyle(P[p]) === 'mercantile' ? 0.8 : 0.5) : 1); // 商贸型文化善于跨海投送
+          let att = pw7[p] * Math.exp(-dk / reach[p]) * (sea ? 0.4 + 0.5 * Math.min(1, marOf[p]) : 1); // 渡海登陆：海上力量越强越善于跨海投送
           if (cs[p] >= 7 && isNW(b) && !isNW(capOf[p])) att *= 1 + 0.5 * Math.max(0, cs[p] - (q >= 0 ? cs[q] : sg[b])); // 殖民者的技术优势
           if (P[p].rebel) { att *= 0.95 + Math.max(0, 0.5 - P[q].coh) * 2; if (P[p].rtype === 'peasant') att *= 1 + 0.8 * Math.exp(-kmBetween(b, capOf[q]) / 700); } // 朝廷越虚弱越难挡；农民军向都城推进
           else if (q >= 0 && P[q].rebel) att *= 0.6 + P[p].coh;
           if (q >= 0 && allyOf.has(p)) { const AL = allianceOf(p); for (const al of AL.members) { if (al === p || !(pw7[al] > 0)) continue; let touch = false; for (let k2 = R.off[b]; k2 < R.off[b + 1]; k2++) if (!eSea[k2] && owner[R.nbr[k2]] === al) { touch = true; break; } if (touch) att += (q === AL.against ? 0.35 : 0.15) * pw7[al] * Math.exp(-kmBetween(capOf[al], b) / Math.max(1, reach[al])); } } // 盟军夹击
           if (P[p].n >= cap[p]) att *= 0.35;
+          att *= 1 - 0.9 * (rug[b] - 0.5);                                                                // 兵锋先向平原：平原一马平川，山地易守难攻、得之难治
+          if (!P[p].rebel && !looseAt(P[p], y)) { const X = eraOf(cs[p]);
+            if (q < 0 || looseAt(P[q], y)) att *= X.wild;                                                  // 向蛮荒拓展：城邦与王国把部族之地、无主之地收入版图
+            else if (!P[q].rebel && P[q].civ === P[p].civ && !imperial.has(q)) att *= X.kin;              // 同族诸邦的统一：王国统一诸城，前近代统一同族诸侯
+            if (imperial.has(p) && !imperial.has(q)) att *= 1 + 0.5 * impB(p); }                         // 帝国兵威
           if (ptype[p] !== 'pastoral' && !modP[p] && isSteppe(b)) att *= 0.5;                               // 前近代的农耕国家深入草原：补给难继，牧民远遁
+          if (!modP[p] && !looseAt(P[p], y) && R.frontier[b] >= 0.5 && (q < 0 || looseAt(P[q], y))) att *= 0.55; // 密林、荒漠、冻原上的部族之地：前近代的国家难以征服
           if (P[p].horde !== undefined && q >= 0 && ptype[q] !== 'pastoral') att *= 1.3;                  // 大汗南下
           { const mg = mil[p] - (q >= 0 ? mil[q] : milAt(b, y)); att *= clamp(Math.pow(1.18, mg), 0.65, 1.6); } // 军事思潮的差距：有优势，但不决定胜负
           if (q >= 0 && P[q].theo !== undefined && rel[capOf[p]] >= 0 && rel[capOf[p]] === rel[P[q].cap] && !P[p].rebel) att *= 0.4; // 同信仰的国家不愿攻打本教的教国
           if (P[p].claimLin >= 0 && coreLin[b] === P[p].claimLin && y < P[p].claimUntil) att *= 1.5; // 法统宣称
           if (coreLin[b] === P[p].lin) att *= 1.4;                                                       // 收复故土
+          if (q >= 0 && cs[p] === 5 && !P[p].rebel && sph[p] !== undefined && sph[p] === sph[q] && P[p].n >= P[q].n) att *= 1.3; // 古典时代：同一文明圈的强国志在一统
           if (gf > 0) { const kp = presentOf(p); if (kp >= 0) att *= R.country[b] === kp ? 1 + gf : 1 - 0.6 * gf; }
           let def;
-          if (q >= 0) { const dq = kmBetween(capOf[q], b); def = pw7[q] * Math.exp(-dq / reach[q]) * (1 + 0.25 * eRough[kk]) * (coreLin[b] === P[q].lin ? 1.3 : 1);
+          if (q >= 0) { const dq = kmBetween(capOf[q], b); def = pw7[q] * Math.exp(-dq / reach[q]) * (1 + 0.25 * eRough[kk]) * (coreLin[b] === P[q].lin ? 1.3 : 1) * (sea ? 1 + 0.5 * Math.min(1, marOf[q]) : 1);
             if (P[q].liege >= 0 && realm[q] >= 0 && P[realm[q]].died === null) { const L = realm[q]; def += 0.5 * pw7[L] * Math.exp(-kmBetween(capOf[L] || P[L].cap, b) / Math.max(1, reach[L])); } // 宗主出兵相护
             if (allyOf.has(q)) for (const al of alliesOf(q)) if (pw7[al] > 0) def += 0.4 * pw7[al] * Math.exp(-kmBetween(capOf[al] || P[al].cap, b) / Math.max(1, reach[al])); // 盟国来援
             if (ptype[p] === 'pastoral' && ptype[q] !== 'pastoral' && cs[p] >= 4 && cs[p] <= 6 && !has('gunpowder', capOf[q], y)) att *= 1.3; } // 对方有了火器，骑射之利不再
           else def = (v[b] * 0.5 + 0.06) * (sg[b] >= 3 ? 1.4 : 1) * (sg[b] <= 1 ? 0.5 : 1);
-          // 城市密集、地形分隔的地方政治生态中，中小邻国更难被远方大国迅速吞并。
-          if (q >= 0 && !P[q].rebel && P[q].n <= Math.max(3, regionsPerCountry * 1.3)) def *= 1 + .55 * fragmentation[b];
           att *= attackFactor[a]; def *= defenseFactor[b];
           const guards = fortManager.effect(b, R.eid[kk]); if (guards) def *= 1 + 20 * guards / Math.max(1, human.total(b));
           const ratio = att / Math.max(1e-6, def), base = p * KB; let n = bestN[p];
@@ -1027,9 +1182,8 @@
       alivePs.sort((x, z) => pw[z] - pw[x] || x - z);
       for (const p of alivePs) {
         const q0 = P[p]; if (q0.died !== null || !bestN[p]) continue;
-        if (!q0.rebel && q0.horde === undefined && q0.n >= Math.max(3, cap[p] * 1.5)) continue;
-        if (!q0.rebel && q0.horde === undefined && rnd() > 0.25 + 0.25 * q0.coh) continue;
-        const tries = 1 + Math.floor(Math.sqrt(q0.n) / 2) + (q0.horde !== undefined ? 2 : 0); // 大汗：连年南下
+        if (!q0.rebel && q0.horde === undefined && !imperial.has(p) && rnd() > (0.25 + 0.25 * q0.coh) * eraOf(cs[p]).att) continue;
+        const tries = 1 + Math.floor(Math.sqrt(q0.n) / 2) + (q0.horde !== undefined ? 2 : 0) + (imperial.has(p) ? 4 : 0); // 大汗：连年南下
         for (let t = 0, done = 0; t < bestN[p] && done < tries; t++) { const b = bestB[p * KB + t]; if (flipped[b] || owner[b] === p) continue; done++;
           const q = owner[b];
           const source = bestA[p * KB + t]; if(owner[source]!==p || q0.born >= y || (q >= 0 && P[q].born >= y))continue;
@@ -1038,14 +1192,14 @@
           const ci=bigCity(b,y),cpop=ci>=0?popAt(ci,y):0,isCap=q>=0&&P[q].cap===b;
           const city=ci>=0?{i:ci,pop:cpop,capital:isCap,walls:sg[b]>=3&&(cpop>=3000||isCap)}:null;
           const stageOf=a=>Math.max(2,sg[P[a].cap]),allies={attacker:q0.rebel?[]:allyForces(p,q,b,true,stageOf),defender:q>=0&&!P[q].rebel?allyForces(q,p,b,false,stageOf):[]};
-          const campaign=military.resolve({year:y,attacker:p,defender:q,source,target:b,edge,stage:cs[p],defenderStage:q>=0?cs[q]:sg[b],cohesion:q0.coh,defenderCohesion:q>=0?P[q].coh:.6,objective,religion:holy?holy.religion:undefined,city,allies});
-          holyWars.battle(campaign);
-          if (campaign.id === null) continue;
+          const seaEdge=edge>=0&&R.edges[edge].sea,naval=seaEdge?{attacker:{mar:marOf[p],ships:fleetOf(p)},defender:{mar:q>=0?marOf[q]:0,ships:fleetOf(q)}}:undefined;
+          const campaign=military.resolve({year:y,attacker:p,defender:q,source,target:b,edge,naval,cede:q>=0&&!q0.rebel&&!P[q].rebel&&pw[p]>=3*pw[q],stage:cs[p],defenderStage:q>=0?cs[q]:sg[b],cohesion:q0.coh,defenderCohesion:q>=0?P[q].coh:.6,objective,religion:holy?holy.religion:undefined,city,allies});
           if(q>=0)recentWar.set(warKey(p,q),y); for(const al of allies.attacker)if(q>=0)recentWar.set(warKey(al.p,q),y); for(const al of allies.defender)recentWar.set(warKey(al.p,p),y);
+          holyWars.battle(campaign);
           if(campaign.status!=='won')continue;
           if (q >= 0 && !P[q].rebel && !q0.rebel && ptype[p] !== 'pastoral' && !modP[p] && ptype[q] === 'pastoral' && P[q].horde === undefined && q0.liege < 0 && P[q].liege < 0 && rnd() < 0.75) { // 前近代：击败游牧政权多半只令其称臣纳贡，册封为藩，不能直辖
             if (!holy && !P.some(X => X.died === null && X.liege === q)) { flipped[b] = 1; setLiege(q, p, y, 'tributary'); military.setControl(campaign,q,'tributary'); done++; continue; } }
-          if (q >= 0 && !P[q].rebel && !q0.rebel && feudal(cs[p], y) && q0.liege < 0 && P[q].liege < 0 && !P[q].vasOf && P[q].n <= Math.max(4, 0.5 * q0.n) && rnd() < 0.6 * ({ feudal: 1.3, bureaucratic: 0.6 }[polStyle(q0)] || 1)) { // 封建时代：不吞并，收为附庸
+          if (q >= 0 && !P[q].rebel && !q0.rebel && feudal(cs[p], y) && q0.liege < 0 && P[q].liege < 0 && !P[q].vasOf && P[q].n <= Math.max(4, 0.5 * q0.n) && rnd() < 0.6 * ({ feudal: 1.3, bureaucratic: 0.6 }[polStyle(q0)] || 1) * (1 + 2 * (rug[b] - 0.5))) { // 山地诸侯据险，多半收为附庸 // 封建时代：不吞并，收为附庸
             if (!holy && !P.some(X => X.died === null && X.liege === q)) { flipped[b] = 1; setLiege(q, p, y, 'submit'); military.setControl(campaign,q,'vassal'); done++; continue; } }
           flipped[b] = 1; setOwner(b, p, y); won[p]++;
           if (isNW(b) && !isNW(P[p].cap) && cs[p] >= 7) { if (rndK() < 0.4) setCult(b, P[p].civ, y); if (rndK() < 0.4 && rel[P[p].cap] >= 0) setRel(b, rel[P[p].cap], y); } // 殖民统治的文化与传教影响
@@ -1059,6 +1213,9 @@
                 const inherited = []; for (let r = 1; r <= nR; r++) if (owner[r] === q) inherited.push(r); inheritRegions(inherited.map(r => [r, p]), y); for (const r of inherited) { flipped[r] = 1; if (P[p].civ !== cult[r] && rndC() < 0.25 * pastureFit(r)) setCult(r, P[p].civ, y); }
                 ev(y, 'nomad', { p, q, r: b, city }); kill(q, y, p, 'nomadic'); if (P[q].org && !P[p].org) P[p].org = y;
                 if (rnd() < 0.6) { P[p].cap = b; P[p].caps.push({ year: y, city, r: b }); P[p].lastCapMove = y; if (P[p].settled === undefined && Q.peakN >= 6) { P[p].settled = y; P[p].settledCiv = cult[b]; if (cult[b] !== -1 && cult[b] !== P[p].civ) P[p]._settledRegion = b; if (R.pasture[b] < 0.3) P[p].leftSteppe = true; } } /* 入主并定都旧都：改行定居王朝 */
+              } else if (imperial.has(p) && consolidate() && !Q.rebel && Q.liege < 0 && Q.n > 0 && Q.n <= Math.max(6, 0.3 * P[p].n) && !P.some(X => X.died === null && X.liege === q)) { // 帝国攻破一国都城：举国并入版图，设为行省
+                const taken = []; for (let r = 1; r <= nR; r++) if (owner[r] === q) taken.push(r);
+                inheritRegions(taken.map(r => [r, p]), y); for (const r of taken) flipped[r] = 1; kill(q, y, p);
               } else if (Q.n > 0) moveCapital(q, y, 'sack');
             } else { const city = bigCity(b, y); if (city >= 0 && rnd() < 0.3) sacks.push(city, y, 0.25); }
             if (Q.n === 0 && !Q.rebel) kill(q, y, p); } } }
@@ -1073,28 +1230,20 @@
         if (q.rebel) { q.coh = 0.75; continue; }
         const foreign = foreignN[p];
         const over = q.n / cap[p] - 1, age = y - q.dynStart;
-        // 王朝危机随年代增长而更可能出现，但不是固定寿命；少数家族可能延续很久。
-        // 家族和国家分别计时：延续性国家换家族时不视为国家灭亡。
-        const houseIndex = (q.dyn || []).length / 2, japan = /japanese/i.test(libKeyOf(rulingCultureAt(q, y)));
-        const endurance = ((Math.imul(p + 1, 1103515245) + Math.imul(houseIndex + 1, 12345)) >>> 0) % 1000;
-        const longHouse = endurance < (japan ? 180 : 35);
-        const successionRisk = age < 120 ? 0 : age < 200 ? .012 : age < 300 ? .035 : age < 450 ? .08 : age < 650 ? .13 : .20;
-        if (q.horde === undefined && rndSuccession() < successionRisk * (longHouse ? .20 : 1)) { dynasty(p, y); continue; }
-        // 过度扩张的国家会因地方分权产生危机，而不是靠高凝聚力永久维持巨型版图。
-        if (q.n >= 8 && q.n > cap[p] * 1.45 && countrySlots() && y - (q.lastSizeCrisis ?? q.born) >= 50) {
-          q.lastSizeCrisis = y; crisis(p, y, cap[p], foreign / q.n); continue;
-        }
-        q.coh += 0.0015 * adm[p] + 0.0035 * adm[p] * Math.max(0, over) - 0.003 * lag[p]; // 治理思潮使国家稳固、减轻疆域过大之累；落后于时代的思潮则人心浮动
+        q.coh += 0.0015 * adm[p] + 0.0035 * adm[p] * Math.max(0, over) - 0.003 * Math.min(4, lag[p]); // 治理思潮使国家稳固、减轻疆域过大之累；落后于时代的思潮则人心浮动
         const gst = polStyle(q); q.coh += (gst === 'bureaucratic' ? 0.0105 * Math.max(0, over) : 0) - (gst === 'tribal' ? 0.003 : 0); // 官僚制较能维系大国；部族制易离散
-        q.coh += 0.016 - 0.035 * Math.max(0, over) - 0.012 * (foreign / q.n) - 0.02 * Math.min(3, lost[p]) + 0.006 * Math.min(3, won[p]) - (age > 160 ? (0.025 + 0.014 * (age - 160) / 100) * (longHouse ? .15 : 1) : 0) - 0.01 * rnd();
+        const ib = impB(p), mr = (q.rugNow === undefined ? 0.5 : q.rugNow) - 0.5; q.coh += 0.016 + 0.01 * ib - 0.004 * mr + eraOf(cs[p]).coh - 0.035 * eraOf(cs[p]).over * (1 - 0.6 * ib) * (1 + 1.2 * mr) * Math.max(0, over) - (cs[p] >= 7 ? 0.022 : 0.012) * (foreign / q.n) - 0.02 * Math.min(3, lost[p]) + 0.006 * Math.min(3, won[p]) - dynWear(q, age) - 0.01 * rnd();
         if (q.theo !== undefined) q.coh += 0.006; // 神权：以教统民，较为稳固
         if (ptype[p] !== 'pastoral' && !modP[p]) q.coh -= 0.03 * steppeN[p] / q.n; // 直辖草原诸部：叛服无常，耗费甚巨
         q.coh = clamp(q.coh, 0, 1.2);
         if (q.horde !== undefined) q.coh = Math.max(q.coh, 0.75); // 大汗在世：诸部慑服
         if (q.peakN >= NAMEBIG) { // 中衰：凝聚力跌落时记下衰落的缘由（王朝老去、疆域过广、兵败、异族离心、落后于时代）
           if (q.coh < 0.3 && !q.decayed && y - q.born >= 60 && y - (q.lastDecay || -1e9) >= 100) { q.decayed = true; q.lastDecay = y;
-            const why = age > 220 ? 'age' : over > 0.3 ? 'over' : lost[p] >= 2 ? 'war' : foreign / q.n > 0.4 ? 'foreign' : lag[p] >= 2 ? 'lag' : 'court'; ev(y, 'decay', { p, why, r: q.cap }); }
+            const why = age > 0.7 * (q.mandate || 165) ? 'age' : over > 0.3 ? 'over' : lost[p] >= 2 ? 'war' : foreign / q.n > 0.4 ? 'foreign' : lag[p] >= 2 ? 'lag' : 'court'; ev(y, 'decay', { p, why, r: q.cap }); }
           else if (q.coh > 0.65) q.decayed = false; }
+        // 古典秩序的崩解：都城一带由古典时代步入中世纪时，大帝国内外交困（豪强坐大、蛮族入侵、瘟疫），凝聚力骤降，多半随之瓦解
+        if (q.eraCs !== undefined && q.eraCs <= 5 && cs[p] >= 6 && (q.n >= 0.8 * EMPN || q.crown !== undefined) && !q.antique) { q.antique = y; q.coh = Math.min(q.coh, 0.12 + 0.12 * rnd()); ev(y, 'eraCrisis', { p, r: q.cap, why: steppeN[p] > 0 || rnd() < 0.35 ? 'barbarian' : rnd() < 0.5 ? 'plague' : 'warlord', n: q.n }); }
+        q.eraCs = cs[p];
         if (q.coh < 0.18) crisis(p, y, cap[p], foreign / q.n);
       }
       for (let r = 1; r <= nR; r++) { const p = owner[r]; if (p >= 0 && y - linOwnSince[r] >= 150) coreLin[r] = P[p].lin; }
@@ -1108,39 +1257,76 @@
       // 4d. 宗藩的维系、脱离与撤藩
       for (const v of alivePs) { const V = P[v]; if (V.died !== null || V.liege < 0) continue; let L = V.liege;
         if (P[L].died !== null) { const succ = P[L].children.find(c => c.kind === 'dynasty' && P[c.id].died === null); if (succ) { setLiege(v, succ.id, y, 'dynasty', true); L = succ.id; } else { setLiege(v, -1, y, 'free'); continue; } }
-        if (V.n === 0) continue; const Lq = P[L], csL = Math.max(2, sg[Lq.cap]), late = csL >= 7 || y >= 4300 ? 1 : 0, held = y - (V.vasSince || y);
-        const pFree = 0.006 + 0.1 * Math.max(0, 0.4 - Lq.coh) + (V.n > 0.5 * Lq.n ? 0.04 : 0) + (V.n > Lq.n ? 0.3 : 0) + 0.05 * late; /* 附庸比宗主还大：很快脱离 */
+        if (V.n === 0) continue; const Lq = P[L], csL = Math.max(2, sg[Lq.cap]), late = csL >= 7 || worldEra(y) >= 7 ? 1 : 0, held = y - (V.vasSince || y);
+        const mV = (V.rugNow === undefined ? 0.5 : V.rugNow) - 0.5, pFree = (1 + mV) * 0.006 + 0.1 * Math.max(0, 0.4 - Lq.coh) + (V.n > 0.5 * Lq.n ? 0.04 : 0) + (V.n > Lq.n ? 0.3 : 0) + 0.025 * late; /* 附庸比宗主还大：很快脱离 */
         const steppeV = nomadAt(V, y) && !nomadAt(Lq, y) && !modP[L]; // 草原藩属：前近代的农耕宗主无力改土归流
-        const pAnnex = steppeV ? 0 : held >= 120 && Lq.coh > 0.55 && V.n <= 0.35 * Lq.n ? 0.015 + 0.08 * late : late && held >= 60 && V.n <= Lq.n ? 0.07 : 0; /* 集权时代：撤藩直辖 */
+        const lstyle = polStyle(Lq), lateK = lstyle === 'feudal' ? 0.012 : lstyle === 'bureaucratic' ? 0.05 : 0.03; /* 封建宗主（神圣罗马帝国式）很少撤藩，官僚帝国才大举改土归流 */
+        const pAnnex = steppeV ? 0 : (1 - 0.8 * mV) * ( (overfull() && held >= 60 && V.n <= Lq.n ? 0.03 : 0) + (held >= 120 && Lq.coh > 0.55 && V.n <= 0.35 * Lq.n ? 0.015 + lateK * late : late && held >= 60 && V.n <= Lq.n ? lateK : 0)); /* 集权时代：撤藩直辖；山地附庸据险自保，更难撤藩 */
         const roll = rnd();
         if (roll < pAnnex) { inheritOwned(v, L, y); for (const X of P) if (X.died === null && X.liege === v) setLiege(X.id, L, y, 'dynasty', true); setLiege(v, -1, y, 'annexV'); kill(v, y, L, 'integrate'); }
         else if (roll < pAnnex + pFree) setLiege(v, -1, y, 'free'); }
       // 4e. 封建时代：弱小邻国向强邻称臣（国力相差四倍以上）
-      for (const v of alivePs) { const V = P[v]; if (V.died !== null || V.rebel || V.liege >= 0 || V.n === 0 || V.n > 6 || cs[v] < 3 || rnd() > 0.05) continue; if (P.some(X => X.died === null && X.liege === v)) continue;
+      for (const v of alivePs) { const V = P[v]; if (V.died !== null || V.rebel || V.liege >= 0 || V.n === 0 || V.n > 6 || cs[v] < 3 || rnd() > 0.05 * (1 + 1.5 * ((V.rugNow === undefined ? 0.5 : V.rugNow) - 0.5))) continue; if (P.some(X => X.died === null && X.liege === v)) continue;
         let best = -1, bp = 0; for (let r = 1; r <= nR; r++) { if (owner[r] !== v) continue; for (let k = R.off[r]; k < R.off[r + 1]; k++) { const o = owner[R.nbr[k]]; if (o < 0 || o === v || P[o].rebel || P[o].died !== null || P[o].liege >= 0 || !feudal(cs[o], y)) continue; if (pw[o] > bp) { bp = pw[o]; best = o; } } }
         if (best >= 0 && bp > 4 * pw[v]) setLiege(v, best, y, 'submit'); }
+      // 4f. 联姻继承与归并：一两块地的小国紧邻十倍于己的强国，久之或因联姻承袭、或被和平归并（不经战事）
+      const full = overfull(); // 国家多于目标（中世纪割据之后）：近代的兼并与联姻承袭更频繁，小国更难自存
+      for (const v of alivePs) { const V = P[v], nat = cs[v] >= 7 && consolidate(); if (V.died !== null || V.rebel || V.n === 0 || V.n > (full || nat ? 4 : 2) || V.liege >= 0 || cs[v] < 4 || y - V.born < 40 || rnd() > (full ? 0.1 : nat ? 0.07 : 0.04)) continue; /* 前近代：同族小邦渐次并入近代国家 */ if (P.some(X => X.died === null && X.liege === v)) continue;
+        let best = -1, bp = 0; for (let r = 1; r <= nR; r++) { if (owner[r] !== v) continue; for (let k = R.off[r]; k < R.off[r + 1]; k++) { if (eSea[k]) continue; const o = owner[R.nbr[k]]; if (o < 0 || o === v || P[o].rebel || P[o].died !== null || P[o].liege >= 0) continue; if (pw[o] > bp) { bp = pw[o]; best = o; } } }
+        if (best < 0 || bp < (nat && P[best].civ === V.civ ? 3.5 : full ? 5 : 10) * pw[v] || (V.n > (full ? 4 : 2) && !(nat && P[best].civ === V.civ))) continue;
+        inheritOwned(v, best, y); kill(v, y, best, 'integrate'); ev(y, 'union', { p: best, q: v, r: P[best].cap }); }
+      if ((y / TICK) % 2 === 0) { imperialAbsorb(y, pw, cs); apoikiaStep(y, cs); }
       // 4b. 行政建制：古典时代起初置行省；新占领土地军管后设制；王朝衰弱时远省割据
       enforceProvinces(y);
-      for (const p of alivePs) { const q = P[p]; if (q.died !== null || q.n === 0 || q.rebel) continue; if (!q.org && cs[p] >= 5 && q.n >= 3) organize(p, y);
-        else if (q.org && q.coh < 0.35 && q.n >= 6 && !(isNW(q.cap) && typeOfCult(q.civ) === "new-world") && rnd() < 0.12) secedeProvince(p, y, reach[p]); }
+      for (const p of alivePs) { const q = P[p]; if (q.died !== null || q.n === 0 || q.rebel) continue; if (!q.org && cs[p] >= 5 && q.n >= 3 && !nomadAt(q, y) && !looseAt(q, y)) organize(p, y); // 游牧政权不设行省：各部各领其地
+        else if (q.org && q.coh < 0.35 && q.n >= 6 && !(isNW(q.cap) && typeOfCult(q.civ) === "new-world") && rnd() < 0.12 * eraOf(cs[p]).split * (1 - 0.8 * impB(p)) * (1 + 1.2 * ((q.rugNow === undefined ? 0.5 : q.rugNow) - 0.5))) secedeProvince(p, y, reach[p]); }
       incorporatePockets(y, cap);
+      resolveExclaves(y);
+      if ((y / TICK) % 2 === 0) seaStep(y, pw, cs);
+      convergeStep(y, pw, cs);
       admin(y);
       unrestStep(y, alivePs, cs, cap, reach);
       colonize(y, alivePs, cs);
-      settleDetachedTerritory(y); separateFragments(y);enforceProvinces(y);
+      nwTrim(y);
+      separateFragments(y);enforceProvinces(y);
       if ((y / TICK) % 2 === 0) { const a = new Uint8Array(nR + 1); for (let r = 1; r <= nR; r++) a[r] = Math.min(255, Math.round(unrest[r] * 255)); unrestSamples.push(y, a); }
       // 5. 复国：同文明的政权夺回已亡之国四分之三以上的核心
-      if ((y / TICK) % 5 === 0) for (const p of alivePs) { const q = P[p]; if (q.died !== null || q.restoreOf !== undefined || q.rebel) continue;
-        for (const X of P) { if (X.died === null || X.died >= q.born || X.restored || X.peakN < NAMEBIG || X.civ !== q.civ || X.lin === q.lin || y - X.died < 60 || y - X.died > 600 || !X.coreAtDeath || X.coreAtDeath.length < 4 || q.n < X.coreAtDeath.length) continue;
+      // 可复之国（亡于 60–600 年前、曾为大国、留有核心故地）按文明分组，组内保持原顺序；这些条件在本轮内不变，逐国比对时不必再扫全部政权
+      if ((y / TICK) % 5 === 0) { const lost = new Map();
+        for (const X of P) { if (X.died === null || X.restored || X.peakN < NAMEBIG || y - X.died < 60 || y - X.died > 600 || !X.coreAtDeath || X.coreAtDeath.length < 4) continue; let l = lost.get(X.civ); if (!l) lost.set(X.civ, l = []); l.push(X); }
+        if (lost.size) for (const p of alivePs) { const q = P[p]; if (q.died !== null || q.restoreOf !== undefined || q.rebel) continue;
+        const cand = lost.get(q.civ); if (!cand) continue;
+        for (const X of cand) { if (X.died >= q.born || X.restored || X.lin === q.lin || q.n < X.coreAtDeath.length) continue;
           let own = 0; for (const r of X.coreAtDeath) if (owner[r] === p) own++;
           if (own >= 0.75 * X.coreAtDeath.length && linkRestoration(P, p, X.id, y, owner, 0.75)) { q.coh = Math.min(1.2, q.coh + 0.3); ev(y, 'restore', { p, q: X.id, r: q.cap });
             if (X.crownS !== undefined && q.crown === undefined && q.liege < 0 && !crownOf.has(X.crownS) && crownOf.size < EMPMAX) crown(p, y, 'restore', X.id, X.crownS); // 复国：重奉故国的帝统
-            break; } } }
+            break; } } } }
+      // 5b. 法统随土地：据有一个已绝国统的大半核心故地、并定都其中的政权，承继这一法统——国统不认国号与血统，认的是这片土地与都城
+      //     （秦、汉、魏、晋、隋、唐一脉相承；墨洛温、加洛林、卡佩相继统治法兰克之地；正统、倭马亚、阿拔斯相继为哈里发）
+      if ((y / TICK) % 5 === 0) {
+        const linAlive = new Set(); for (const p of alivePs) { const q = P[p]; if (q.died === null && q.n > 0 && !q.rebel) linAlive.add(q.lin); }
+        const coreN = new Map(); for (let r = 1; r <= nR; r++) { const L = coreLin[r]; if (L >= 0) coreN.set(L, (coreN.get(L) || 0) + 1); }
+        for (const p of alivePs) { const q = P[p]; if (q.died !== null || q.rebel || q.n < 3 || q.liege >= 0) continue;
+          const L = coreLin[q.cap]; if (L < 0 || L === q.lin || linAlive.has(L)) continue;
+          const total = coreN.get(L) || 0; if (total < 4) continue;
+          let held = 0; for (let r = 1; r <= nR; r++) if (coreLin[r] === L && owner[r] === p) held++;
+          if (held < 0.5 * total) continue;
+          let last = -1; for (const X of P) if (X.lin === L && X.died !== null && (last < 0 || X.died > P[last].died)) last = X.id;
+          // 只有承继者本身（及其后继）转入这一法统；它此前的世系仍是自己的国统，不与旧法统的历代交错在一起
+          const old = q.lin; for (const X of P) { if (X.died === null && X.lin === old) X.lin = L; if (X.claimLin === old) X.claimLin = L; }
+          for (let r = 1; r <= nR; r++) { if (coreLin[r] === old) coreLin[r] = L; if (memLin[r] === old) memLin[r] = L; }
+          q.mandateOf = last; q.mandateYear = y; linAlive.add(L); q.coh = Math.min(1.2, q.coh + 0.1);
+          if (last >= 0) ev(y, 'mandate', { p, q: last, r: q.cap });
+        }
+      }
       // 6. 统一：城邦时代的政权吞并多座城邦，建立王国
       for (const p of alivePs) { const q = P[p]; if (q.died !== null || q.unified || !q.cityBorn) continue; if (q.n >= 4 && cs[p] >= 4) { q.unified = true; ev(y, 'unify', { p, r: q.cap, n: q.n }); } }
       // 6b. 帝统：本文化圈首屈一指的大国称帝（同一文化圈一个、全世界至多 EMPMAX 个）；公国晋为王国
       crownStep(y, alivePs, cs);
-      peacefulUnions(y, alivePs);
+      // 6c. 古典时代的大一统：一国据有本文明圈（同一文化库、同一大陆）六成以上的国土
+      if ((y / TICK) % 5 === 0) { const tot = new Map(), top = new Map();
+        for (const p of alivePs) { const q = P[p]; if (q.died !== null || q.rebel || !q.n) continue; const s0 = sph[p]; if (s0 === -1 || s0 === undefined) continue; tot.set(s0, (tot.get(s0) || 0) + q.n); const t0 = top.get(s0); if (t0 === undefined || q.n > P[t0].n) top.set(s0, p); }
+        for (const [s0, p] of top) { const q = P[p]; if (cs[p] !== 5 || q.hegemon !== undefined || q.n < 2 * KINGN || q.n < 0.6 * tot.get(s0)) continue; q.hegemon = y; q.coh = Math.min(1.2, q.coh + 0.15); ev(y, 'hegemony', { p, r: q.cap, n: q.n, sc: sphereCivs(q) }); } }
       // 7. 规模采样（单国视角用）
       if ((y / TICK) % 5 === 0) for (const q of P) if (q.died === null && q.n > 0) q.ext.push(y, q.n);
       enforceProvinces(y);
@@ -1150,10 +1336,18 @@
         const p = newPolity(y, w.target, [{ id:w.attacker, kind:'holyWar' }], rulingCultureAt(P[w.attacker], y));
         P[p].theo = y; P[p].theoRel = w.religion; P[p].stateRel = w.religion;
         setOwner(w.target, p, y); w.createdPolity = p;
-        const campaign=military.output().campaigns.find(c=>c.id===w.campaignId);if(campaign)military.setControl(campaign,p,'holy-state');
+        const campaign=military.campaignById(w.campaignId);if(campaign)military.setControl(campaign,p,'holy-state');
         ev(y, 'holyWarWon', { p, q:w.defender, r:w.target, f:w.religion, war:w.id });
       }
       emitWarEnds();
+      // 只剩无城无人的荒地（城邑都已失去或湮废）的政权无以为继：残余荒地复归部族，政权就此消亡（荒地无人可攻，否则会永远留着“一块荒地之国”）
+      if ((y / TICK) % 2 === 0) { const base = new Uint8Array(P.length), has = new Uint8Array(P.length);
+        const folk = new Float64Array(P.length);
+        for (let r = 1; r <= nR; r++) { const p = owner[r]; if (p < 0 || P[p].rebel) continue; has[p] = 1; folk[p] += human.total(r); if (!base[p] && (bigCity(r, y) >= 0 || (R.pasture[r] >= 0.3 && human.total(r) > 0))) base[p] = 1; }
+        for (let p = 0; p < P.length; p++) if (folk[p] >= 5000) base[p] = 1; // 有人烟的土地就撑得起一个政权
+        for (let p = 0; p < P.length; p++) if (has[p] && !base[p] && P[p].died === null) { const regs = []; for (let r = 1; r <= nR; r++) if (owner[r] === p) regs.push(r); releaseTribes(p, regs, y); for (const X of P) if (X.died === null && X.liege === p) setLiege(X.id, -1, y, 'free', true); } }
+      // 失去最后一块疆土的政权就此覆亡（割让、分裂、割据、殖民地独立等途径也可能让一国失尽疆土）
+      for (const q of P) if (q.died === null && q.n === 0 && !q.rebel && q.born < y) kill(q.id, y, -1);
       // 战争或割据可能改变同年归属；日志取本轮结束后的属主，不再建新堡。
       for (let r = 1; r <= nR; r++) fortPopulation[r] = human.total(r);
       fortManager.step({ year: y, owner, population: fortPopulation, food: lastFood, allowBuild: false, refreshOnly:true });
@@ -1171,7 +1365,7 @@
       if (sh >= 0.6 && Q.n >= 2 && rnd() < (typeOfCult(Q.civ) === 'pastoral' ? 0.9 : 0.5)) { Q.nomad = true; delete Q.settled; delete Q.settledCiv; delete Q._settledRegion; delete Q.leftSteppe; if (R.pasture[Q.cap] < 0.3 && best >= 0) { Q.cap = best; Q.caps[Q.caps.length - 1] = { year: Q.caps[Q.caps.length - 1].year, city: bigCity(best, y), r: best }; } }
       else if (sh < 0.4 && Q.nomad && Q.settled === undefined) { Q.settled = y; Q.settledCiv = settleCivOf(Q.cap, Q.civ); if (Q.settledCiv !== Q.civ && Q.settledCiv === cult[Q.cap]) Q._settledRegion = Q.cap; Q.leftSteppe = true; } }
     function nomadSplit(p, y, regs, kind) { // 把一片草原按相距较远的几个中心分给几个部族（游牧）
-      const q = P[p], k = Math.min(4, 1 + Math.floor(regs.length / 5), 1 + countrySlots()), seeds = [q.cap];
+      const q = P[p], k = Math.min(4, 1 + Math.floor(regs.length / 5), 1 + splitSlots()), seeds = [q.cap];
       const ranked = regs.filter(r => r !== q.cap).sort((a, b) => kmBetween(b, q.cap) - kmBetween(a, q.cap) || a - b);
       for (const r of ranked) { if (seeds.length >= k) break; if (seeds.every(s => kmBetween(s, r) > 300)) seeds.push(r); }
       if (seeds.length < 2) return [];
@@ -1199,7 +1393,7 @@
           if (!nomadAt(q, y)) { const home = []; for (let r = 1; r <= nR; r++) if (owner[r] === p && isSteppe(r) && cult[r] >= 0 && typeOfCult(cult[r]) === 'pastoral' && kmBetween(r, q.cap) > 400) home.push(r);
             if (home.length >= 3 && rnd() < 0.6) { const far = home.sort((a, b) => kmBetween(b, q.cap) - kmBetween(a, q.cap) || a - b)[0], grp = [far], seen = new Set(grp), hs = new Set(home);
               for (let i = 0; i < grp.length; i++) for (let k = R.off[grp[i]]; k < R.off[grp[i] + 1]; k++) { const b = R.nbr[k]; if (hs.has(b) && !seen.has(b)) { seen.add(b); grp.push(b); } }
-              if (grp.length >= 3 && countrySlots()) { const c = newPolity(y, far, [{ id: p, kind: 'secede' }], cult[far]); P[c].nomad = true; delete P[c].settled; delete P[c].settledCiv; delete P[c]._settledRegion; delete P[c].leftSteppe; P[c].coh = 0.8; for (const r of grp) setOwner(r, c, y); ev(y, 'steppeHome', { p: c, q: p, r: far }); } }
+              if (grp.length >= 3 && splitSlots()) { const c = newPolity(y, far, [{ id: p, kind: 'secede' }], cult[far]); P[c].nomad = true; delete P[c].settled; delete P[c].settledCiv; delete P[c]._settledRegion; delete P[c].leftSteppe; P[c].coh = 0.8; for (const r of grp) setOwner(r, c, y); ev(y, 'steppeHome', { p: c, q: p, r: far }); } }
             continue; }
           let gave = 0; const left = []; for (let r = 1; r <= nR; r++) if (owner[r] === p && R.pasture[r] < 0.35) left.push(r);
           const rest = []; for (const r of left) { const o = prevOwner[r]; if (o >= 0 && o !== p && P[o].died === null && !P[o].rebel && P[o].n > 0) { setOwner(r, o, y); gave++; } else rest.push(r); }
@@ -1242,7 +1436,7 @@
             if (at !== q.cap) { moveCapital(p, y, 'settle', at); ev(y, 'settle', { p, city: q.caps[q.caps.length - 1].city, r: at }); } else ev(y, 'sedent', { p, r: q.cap });
             continue; } }
         // 2b. 近代早期（火器、驿传普及）以后，游牧政权陆续定居，改行定居王朝
-        if (ptype[p] === 'pastoral' && q.settled === undefined && sg[q.cap] >= 7 && rnd() < 0.12) { q.settled = y; q.settledCiv = q.civ; ev(y, 'sedent', { p, r: q.cap }); continue; }
+        if (ptype[p] === 'pastoral' && q.settled === undefined && sg[q.cap] >= 7 && rnd() < (R.pasture[q.cap] >= 0.45 ? 0.012 : 0.12)) { q.settled = y; q.settledCiv = q.civ; ev(y, 'sedent', { p, r: q.cap }); continue; } // 草原腹地的游牧部族到近代仍多保持游牧
         // 3. 疆域广阔、都城偏居一隅：迁往离全国人口更近的大城（每三十年评估一次，两次迁都至少相隔一百二十年）
         if (q.n < 8 || (y / TICK) % 3 !== p % 3 || y - (q.lastCapMove || q.born) < 120) continue;
         const cand = own.filter(r => regionPop(r, y) > 0).sort((a, b) => regionPop(b, y) - regionPop(a, y) || a - b).slice(0, 10); if (!cand.includes(q.cap)) cand.push(q.cap);
@@ -1274,62 +1468,82 @@
         setRel(q.cap, g, y, 0.8, f); q.stateRel = g; ev(y, 'schism', { p: best, f, g, r: q.cap });
       }
     }
+    // 分国：以都城与几座相距较远的大城为中心把疆域分成几块，各立一国；有省份的国家沿省界分。返回 { kids, tribal }。
+    function splitRealm(p, y, k, sep, kind, spread) {
+      const q = P[p], own = []; for (let r = 1; r <= nR; r++) if (owner[r] === p) own.push(r);
+      const seeds = [q.cap];
+      if (spread) { // 分封诸子：各取离已有中心最远的一座城为都，疆土大致均分
+        const towns = own.filter(r => r !== q.cap && R.landComp[r] === R.landComp[q.cap] && bigCity(r, y) >= 0);
+        while (seeds.length < k) { let b = -1, bd = sep; for (const r of towns) { if (seeds.includes(r)) continue; let d = Infinity; for (const s0 of seeds) d = Math.min(d, kmBetween(s0, r)); if (d > bd) { bd = d; b = r; } } if (b < 0) break; seeds.push(b); } }
+      else { const ranked = own.filter(r => r !== q.cap).sort((a, b) => (regionPop(b, y) + R.weight[b] * 1e-3) - (regionPop(a, y) + R.weight[a] * 1e-3) || a - b);
+        for (const r of ranked) { if (seeds.length >= k) break; if (seeds.every(s => kmBetween(s, r) > sep)) seeds.push(r); } }
+      if (seeds.length < 2) return null;
+      const part = new Map(); const queue = []; seeds.forEach((s, i) => { part.set(s, i); queue.push(s); });
+      for (let i = 0; i < queue.length; i++) { const a = queue[i]; neighbors(a, (b, ed) => { if (owner[b] === p && !part.has(b) && !ed.sea) { part.set(b, part.get(a)); queue.push(b); } }); }
+      if (q.org) { // 有省份的国家沿省界分裂：整省归属于治所所在的一方
+        const pvPart = new Map(); for (const r of own) { const v = prov[r]; if (v < 0) continue; const sr = PV[v].seat; if (!pvPart.has(v)) pvPart.set(v, part.has(sr) ? part.get(sr) : part.get(r)); }
+        seeds.forEach((sd, i) => { if (prov[sd] >= 0) pvPart.set(prov[sd], i); });
+        for (const r of own) if (prov[r] >= 0 && pvPart.has(prov[r])) part.set(r, pvPart.get(prov[r])); }
+      const kids = [], partitionOwners = [p]; let slots = splitSlots();
+      const pieceN = new Array(seeds.length).fill(0); for (const r of own) if (part.has(r)) pieceN[part.get(r)]++;
+      for (let i = 1; i < seeds.length; i++) { if (pieceN[i] < 3) { partitionOwners[i] = p; continue; } // 一两块地立不成国，仍归旧朝
+        const civ = creole(seeds[i], q, y); if (!civilized(civ)) { partitionOwners[i] = -1; continue; }
+        if (!slots) { partitionOwners[i] = p; continue; } slots--;
+        const c = newPolity(y, seeds[i], [{ id: p, kind }], civ); partitionOwners[i] = c; { const lo = looseAt(q, y); if (lo) { P[c].loose = lo; P[c].nomad = lo === 'nomadic'; if (lo !== 'nomadic') { delete P[c].settled; delete P[c].settledCiv; delete P[c]._settledRegion; } } } P[c].claimLin = q.lin; P[c].claimUntil = y + 400; P[c].coh = 0.75; P[c].org = q.org; if (nomadAt(q, y) && P[c].settled === undefined) P[c].nomad = R.pasture[seeds[i]] >= 0.3; kids.push(c); } // 游牧汗国分裂：在草原上的部分仍是游牧部族
+      if (!kids.length && !partitionOwners.includes(-1)) return null;
+      const lost = own.filter(r => part.has(r) && part.get(r) > 0);
+      inheritRegions(lost.filter(r => partitionOwners[part.get(r)] >= 0).map(r => [r, partitionOwners[part.get(r)]]), y);
+      releaseTribes(p, lost.filter(r => partitionOwners[part.get(r)] === -1), y);
+      for (const c of kids) { if (P[c].n === 0) P[c].died = y; else if (owner[P[c].cap] !== c) moveCapital(c, y, 'split'); }
+      for (const c of kids) if (P[c].died === null) steppeKid(c, y, nomadAt(q, y)); // 分出去的一方若多半是草原牧地：退回草原，复归游牧
+      if (owner[q.cap] !== p && q.n > 0) moveCapital(p, y, 'split');
+      return { kids };
+    }
     function crisis(p, y, capP, foreignFrac) {
-      const q = P[p];
-      if (q.n >= 6 && (q.n > capP * 0.8 || foreignFrac > 0.3 || rnd() < 0.5)) { // 分裂
-        const own = []; for (let r = 1; r <= nR; r++) if (owner[r] === p) own.push(r);
-        const k = Math.min(4, 1 + Math.floor(q.n / 6)), seeds = [q.cap];
-        const ranked = own.filter(r => r !== q.cap).sort((a, b) => (regionPop(b, y) + R.weight[b] * 1e-3) - (regionPop(a, y) + R.weight[a] * 1e-3) || a - b);
-        const sep = Math.max(200, REACH[Math.max(2, stageAt(q.cap, y))] * 0.5);
-        for (const r of ranked) { if (seeds.length >= k) break; if (seeds.every(s => kmBetween(s, r) > sep)) seeds.push(r); }
-        if (seeds.length < 2) { dynasty(p, y); return; }
-        const part = new Map(); const queue = []; seeds.forEach((s, i) => { part.set(s, i); queue.push(s); });
-        for (let i = 0; i < queue.length; i++) { const a = queue[i]; neighbors(a, (b, ed) => { if (owner[b] === p && !part.has(b)) { part.set(b, part.get(a)); queue.push(b); } }); }
-        if (q.org) { // 有省份的国家沿省界分裂：整省归属于治所所在的一方
-          const pvPart = new Map(); for (const r of own) { const v = prov[r]; if (v < 0) continue; const sr = PV[v].seat; if (!pvPart.has(v)) pvPart.set(v, part.has(sr) ? part.get(sr) : part.get(r)); }
-          seeds.forEach((sd, i) => { if (prov[sd] >= 0) pvPart.set(prov[sd], i); });
-          for (const r of own) if (prov[r] >= 0 && pvPart.has(prov[r])) part.set(r, pvPart.get(prov[r])); }
-        const kids = [], partitionOwners = [p]; let slots = countrySlots();
-        for (let i = 1; i < seeds.length; i++) { const civ = creole(seeds[i], q, y); if (!civilized(civ)) { partitionOwners[i] = -1; continue; }
-          if (!slots) { partitionOwners[i] = p; continue; } slots--;
-          const c = newPolity(y, seeds[i], [{ id: p, kind: 'split' }], civ); partitionOwners[i] = c; P[c].claimLin = q.lin; P[c].claimUntil = y + 400; P[c].coh = 0.75; P[c].org = q.org; if (nomadAt(q, y) && P[c].settled === undefined) P[c].nomad = R.pasture[seeds[i]] >= 0.3; kids.push(c); } // 游牧汗国分裂：在草原上的部分仍是游牧部族
-        if (!kids.length && !partitionOwners.includes(-1)) { dynasty(p, y); return; }
-        const lost = own.filter(r => part.has(r) && part.get(r) > 0);
-        inheritRegions(lost.filter(r => partitionOwners[part.get(r)] >= 0).map(r => [r, partitionOwners[part.get(r)]]), y);
-        releaseTribes(p, lost.filter(r => partitionOwners[part.get(r)] === -1), y);
-        for (const c of kids) { if (P[c].n === 0) P[c].died = y; else if (owner[P[c].cap] !== c) moveCapital(c, y, 'split'); }
-        for (const c of kids) if (P[c].died === null) steppeKid(c, y, nomadAt(q, y)); // 分出去的一方若多半是草原牧地：退回草原，复归游牧
-        if (owner[q.cap] !== p && q.n > 0) moveCapital(p, y, 'split');
+      if (looseAt(P[p], y)) { // 部落联盟、游牧部族的危机：盟约瓦解，诸部各自为盟（太小的就只是换个首领）
+        const q = P[p]; if (q.n >= 4) { const res = splitRealm(p, y, Math.min(4, 1 + Math.floor(q.n / 4)), 150, 'split'); if (res && res.kids.length) { q.coh = 0.55; ev(y, 'split', { p, kids: res.kids, r: q.cap }); return; } }
+        q.coh = 0.5; return; }
+      if (imperial.has(p) && rnd() < 0.85) { dynasty(p, y, rnd() < 0.3 ? 'coup' : 'dynasty'); return; } // 帝国盛时的危机多半只是改朝换代，帝国不坠
+      const q = P[p], nwNat = isNW(q.cap) && typeOfCult(q.civ) === 'new-world'; /* 新大陆本土政权：危机只改朝换代，不分裂（国家稀少） */
+      const X = eraOf(stageAt(q.cap, y)); // 古典时代危机多半只是改朝换代、帝国不坠；中世纪一乱就裂成诸侯
+      const mr = (q.rugNow === undefined ? 0.5 : q.rugNow) - 0.5; // 山地之国一乱就各据一谷，平原之国多半只是改朝换代
+      if (!nwNat && q.n >= (X.split > 1 ? 4 : 6) && (q.n > capP * 0.8 / X.split || foreignFrac > 0.3 || rnd() < Math.min(0.92, 0.5 * X.split * (1 + 1.2 * mr)))) { // 分裂
+        // 封建之国裂得更碎（诸侯各据一方），官僚帝国多半裂成几大块
+        const fe = polStyle(q) === 'feudal' || feudal(stageAt(q.cap, y), y);
+        const k = Math.max(2, Math.round((fe ? Math.min(6, 1 + Math.floor(q.n / 5)) : Math.min(4, 1 + Math.floor(q.n / 6))) * X.frag * (1 + mr))), sep = Math.max(fe ? 150 : 200, REACH[Math.max(2, stageAt(q.cap, y))] * (fe ? 0.3 : 0.5));
+        const res = splitRealm(p, y, k, sep, 'split');
+        if (!res) { dynasty(p, y); return; }
+        const kids = res.kids;
         q.coh = 0.55; if (kids.length) ev(y, 'split', { p, kids, r: q.cap });
-        if (feudal(stageAt(q.cap, y), y) && q.liege < 0) for (const c of kids) if (P[c].died === null && P[c].n > 0 && rnd() < (polStyle(q) === 'feudal' ? 0.8 : 0.5)) setLiege(c, p, y, 'split'); // 封建时代：分出去的诸侯仍奉旧主为宗主
+        if (feudal(stageAt(q.cap, y), y) && q.liege < 0) for (const c of kids) if (P[c].died === null && P[c].n > 0 && rnd() < (polStyle(q) === 'feudal' ? 0.8 : 0.5) + 0.7 * ((P[c].rugNow === undefined ? rug[P[c].cap] : P[c].rugNow) - 0.5)) setLiege(c, p, y, 'split'); // 封建时代：分出去的诸侯仍奉旧主为宗主
       } else dynasty(p, y, rnd() < 0.3 ? 'coup' : 'dynasty');
     }
     function dynasty(p, y, how) { // 改朝换代：疆域不变，新王朝继承（国统延续），首都可能迁往最大的城市；how：dynasty / coup（宫廷政变）/ revolution（革命）
       const q = P[p], civ = civilized(civOfNew(q.cap)) ? civOfNew(q.cap) : rulingCultureAt(q, y); // 王朝更替延续既有文明统治集团，不借用未来当地文化。
-      const sameStateName = how !== 'revolution' && succOf(rulingCultureAt(q, y)) === 'house' && succOf(civ) === 'house';
-      const japan = /japanese/i.test(libKeyOf(rulingCultureAt(q, y)));
-      // 少数国家具有较强制度延续性，日本式文化尤其如此；家族更替不切断国家。
-      const continuousState = ((Math.imul(p + 1, 1103515245) >>> 0) % 1000) < (japan ? 500 : 60);
-      if (sameStateName && continuousState) {
-        (q.dyn = q.dyn || []).push(y, how === 'coup' ? 1 : 0); q.dynStart = y; q.coh = Math.max(q.coh, .8);
-        if (q.peakN >= 2 || how === 'coup') ev(y, 'house', {p, r:q.cap, how:how || 'dynasty', k:q.dyn.length / 2});
-        return p;
-      }
-      const nd = newPolity(y, q.cap, [{ id: p, kind: 'dynasty' }], civ, q.lin); P[nd].foundingHow = how || 'dynasty';
-      if (q.theo !== undefined && rnd() < 0.7) { P[nd].theo = y; P[nd].theoRel = q.theoRel; } if (q.settled !== undefined) { P[nd].settled = y; P[nd].settledCiv = q.settledCiv; if (q.leftSteppe) P[nd].leftSteppe = true; } // 神权四成延续；定居不再回到游牧
+      // 国祚过久：即便是换家族不换国号的文化，旧国号也终会随一场大乱终结，新朝另立国号（法兰克 → 法兰西；基辅罗斯 → 莫斯科大公国）；法统仍在这片土地上延续
+      const renew = how !== 'revolution' && y - q.born > 280 && rnd() < clamp((y - q.born - 280) / 400, 0, 0.75);
+      if (how !== 'revolution' && !renew && succOf(rulingCultureAt(q, y)) === 'house' && succOf(civ) === 'house') { // 西方式：还是同一个国家，只是换了王朝（家族）
+        (q.dyn = q.dyn || []).push(y, how === 'coup' ? 1 : 0); q.dynStart = y; q.mandate = drawMandate(); q.coh = Math.max(q.coh, 0.8);
+        // 诸子均分：封建时代的大国在王位更替时常被几位继承人瓜分（凡尔登条约三分法兰克），各自成国——欧洲式林立小国的来源之一
+        if (how !== 'coup' && q.n >= 12 && feudal(stageAt(q.cap, y), y) && polStyle(q) !== 'bureaucratic' && rnd() < 0.35) {
+          const res = splitRealm(p, y, rnd() < 0.4 ? 3 : 2, 150, 'split', true);
+          if (res && res.kids.length) { for (const c of res.kids) P[c].coh = 0.8; ev(y, 'partition', { p, kids: res.kids, r: q.cap }); } }
+        if (q.peakN >= 2) ev(y, 'house', { p, r: q.cap, how: how || 'dynasty', k: q.dyn.length / 2 });
+        return p; }
+      const nd = newPolity(y, q.cap, [{ id: p, kind: 'dynasty' }], civ, q.lin); if (renew) P[nd].newRealm = true; P[nd].bornHow = how || 'dynasty';
+      if (q.theo !== undefined && rnd() < 0.7) P[nd].theo = y; if (q.settled !== undefined) { P[nd].settled = y; P[nd].settledCiv = q.settledCiv; if (q.leftSteppe) P[nd].leftSteppe = true; } // 神权四成延续；定居不再回到游牧
       if (P[nd].settled === undefined) P[nd].nomad = nomadAt(q, y) && R.pasture[q.cap] >= 0.3; // 汗位更替不改游牧与否（不再随新朝重新抽签）
       if (q.horde !== undefined) { P[nd].horde = q.horde; P[nd].hordeEnd = q.hordeEnd; } if (q.lastHorde !== undefined) P[nd].lastHorde = q.lastHorde;
       if (q.liege >= 0) setLiege(nd, q.liege, y, 'dynasty', true); for (const X of P) if (X.died === null && X.liege === p) setLiege(X.id, nd, y, 'dynasty', true); // 宗藩随王朝延续
       P[nd].dynStart = y; P[nd].claimLin = q.claimLin; P[nd].claimUntil = q.claimUntil;
       P[nd].org = q.org;
-      if (q.colBase) { P[nd].colBase = new Map(q.colBase); P[nd].colSince = new Map(q.colSince); P[nd].colonized = q.colonized; }
       inheritOwned(p, nd, y);
       q.died = y; q.coreAtDeath = []; redirectRebels(p, nd, y, -1);
       if (q.king !== undefined) P[nd].king = y;
       if (q.crown !== undefined) { const s = q.crown; uncrown(p, y); crown(nd, y, null, -1, s); } // 改朝换代：新朝承继帝统
       moveCapital(nd, y, 'dynasty');
-      if (how === 'revolution' || q.republic) P[nd].republic = true;
-      if (q.peakN >= 2 || how === 'coup') ev(y, how === 'revolution' ? 'revolution' : sameStateName ? 'house' : how === 'coup' ? 'coup' : 'dynasty', { p: nd, q: p, r: P[nd].cap, how });
+      if (how === 'revolution') P[nd].republic = true;
+      if (q.peakN >= 2) ev(y, how === 'coup' || how === 'revolution' ? how : 'dynasty', { p: nd, q: p, r: P[nd].cap });
       return nd;
     }
     // ---------- 大航海与殖民 ----------
@@ -1340,13 +1554,11 @@
       const navOk = p => D.NAV >= 0 && D.ideaA[D.NAV * NN + P[p].cap] <= y;
       const can = alivePs.filter(p => P[p].died === null && !P[p].rebel && navOk(p) && coastal[p] && !isNW(P[p].cap) && P[p].n >= 3);
       if (!can.length) return;
+      can.sort((a, b) => (P[b].colBase ? 1 : 0) - (P[a].colBase ? 1 : 0) || P[b].n - P[a].n || a - b); can.length = Math.min(can.length, 4 + Math.round(NW_MAX / 2)); // 远渡重洋的只是少数几个海上强国
       if (colonialAge === null) { colonialAge = y; ev(y, 'discovery', { p: can[0], r: P[can[0]].cap }); }
       for (const p of can) { const q = P[p]; if (rndK() > 0.16 * q.coh) continue;
         // 选登陆点：新大陆沿岸，无主或本地政权弱小处；靠近自己已有的殖民地更可能
-        let tot = 0; const w = nwCoast.map(r => { const o = owner[r]; if (o === p) return 0;
-          // 同一大陆已有殖民据点后，仅沿已控制海岸扩张，避免随机散布飞地。
-          if (q.colBase && q.colBase.has(R.landComp[r])) { let adjacent = false; for (let k = R.off[r]; k < R.off[r+1]; k++) if (!eSea[k] && owner[R.nbr[k]] === p) { adjacent = true; break; } if (!adjacent) return 0; }
-          let v = 0.2 + R.hab[r]; if (o >= 0) { if (!isNW(P[o].cap) || cs[o] >= 6) return 0; v *= 0.35; } if (q.colBase && q.colBase.has(R.landComp[r])) v *= 2.5; tot += v; return v; });
+        let tot = 0; const w = nwCoast.map(r => { const o = owner[r]; if (o === p) return 0; let v = 0.2 + R.hab[r]; if (o >= 0) { if (!isNW(P[o].cap) || cs[o] >= 6) return 0; v *= 0.35; } if (q.colBase && q.colBase.has(R.landComp[r])) v *= 2.5; tot += v; return v; });
         if (!tot) continue; let pick = rndK() * tot, b = 0; for (let i = 0; i < w.length && pick > 0; i++) { pick -= w[i]; b = nwCoast[i]; }
         const o0 = owner[b]; setOwner(b, p, y); if (o0 >= 0 && P[o0].n === 0) kill(o0, y, p);
         if (rndK() < 0.6) setCult(b, q.civ, y); if (rndK() < 0.6 && rel[q.cap] >= 0) setRel(b, rel[q.cap], y); // 殖民统治与传教影响
@@ -1359,10 +1571,19 @@
       if ((y / TICK) % 3 === 0) for (const p of alivePs) { const q = P[p]; if (!q.colBase || q.died !== null) continue;
         for (const [lc, base] of [...q.colBase]) { if (y - q.colSince.get(lc) < 120) continue; const regs = []; for (let r = 1; r <= nR; r++) if (owner[r] === p && R.landComp[r] === lc) regs.push(r);
           if (!regs.length) { q.colBase.delete(lc); continue; } if (regs.length < 2 || rndK() > 0.06 + 0.02 * Math.min(10, regs.length) + (q.coh < 0.5 ? 0.12 : 0)) continue;
-          if (!countrySlots()) continue;
-          const seat = bigRegion(regs, y), civ = rulingCultureAt(q, y); setCult(seat, civ, y); if (rel[q.cap] >= 0) setRel(seat, rel[q.cap], y); // 独立时殖民者精英掌权：首都随宗主国的文化与宗教
-          const c = newPolity(y, seat, [{ id: p, kind: 'secede' }], civ); P[c].org = q.org || y; P[c].coh = 0.85; P[c].colonialFrom = p;
-          inheritRegions(regs.map(r => [r, c]), y); q.colBase.delete(lc); ev(y, 'independence', { p: c, q: p, r: seat }); } }
+          if (!splitSlots()) continue;
+          // 大片殖民地按各自的中心分成几块各自独立（西属美洲分出十几国，而不是一整块）
+          const k = Math.min(6, 1 + Math.floor(regs.length / 16)), inReg = new Set(regs), ranked = regs.slice().sort((a, b) => regionPop(b, y) - regionPop(a, y) || a - b), seeds = [ranked[0]];
+          for (const r of ranked) { if (seeds.length >= k) break; if (seeds.every(s0 => kmBetween(s0, r) > 450)) seeds.push(r); }
+          const part = new Map(seeds.map((s0, i) => [s0, i])), qq = seeds.slice();
+          for (let i = 0; i < qq.length; i++) { const a = qq[i]; for (let kk = R.off[a]; kk < R.off[a + 1]; kk++) { if (eSea[kk]) continue; const b = R.nbr[kk]; if (inReg.has(b) && !part.has(b)) { part.set(b, part.get(a)); qq.push(b); } } }
+          let left = 0;
+          for (let i = 0; i < seeds.length; i++) { const piece = regs.filter(r => part.get(r) === i); if (piece.length < 2 || !splitSlots()) { left += piece.length; continue; }
+            const seat = bigRegion(piece, y), civ = rulingCultureAt(q, y); setCult(seat, civ, y); if (rel[q.cap] >= 0) setRel(seat, rel[q.cap], y); // 独立时殖民者精英掌权：首都随宗主国的文化与宗教
+            const c = newPolity(y, seat, [{ id: p, kind: 'secede' }], civ); P[c].org = q.org || y; P[c].coh = 0.85; P[c].colonialFrom = p; P[c].creole = true;
+            inheritRegions(piece.map(r => [r, c]), y); ev(y, 'independence', { p: c, q: p, r: seat }); }
+          left += regs.filter(r => !part.has(r)).length;
+          if (left) q.colSince.set(lc, y - 90); else q.colBase.delete(lc); } }
     }
     // ---------- 民怨、灾年与起义 ----------
     function redirectRebels(oldTarget, newTarget, y, except) {
@@ -1376,26 +1597,26 @@
       if (Q.king !== undefined) Rb.king = y;
       if (Q.crown !== undefined) { const s = Q.crown; uncrown(q, y); crown(rb, y, null, -1, s); } // 推翻旧朝者承继帝统
       kill(q, y, -1, 'quiet'); Q.children.push({ id: rb, kind: 'overthrow' }); Rb.parents.push({ id: q, kind: 'dynasty' });
-      if (Rb.n > 0) trackCountry(Rb, -1); Rb.rebel = false; if (Rb.n > 0) trackCountry(Rb, 1); Rb.rebelUntil = y; redirectRebels(q, rb, y, rb); Rb.lin = Q.lin; Rb.org = Q.org; Rb.dynStart = y; Rb.coh = 0.85; Rb.cap = capR; Rb.caps.push({ year: y, city, r: capR });
+      if (Rb.n > 0) trackCountry(Rb, -1); Rb.rebel = false; if (Rb.n > 0) trackCountry(Rb, 1); Rb.rebelUntil = y; redirectRebels(q, rb, y, rb); Rb.lin = Q.lin; Rb.org = Q.org; Rb.dynStart = y; Rb.mandate = drawMandate(); Rb.coh = 0.85; Rb.cap = capR; Rb.caps.push({ year: y, city, r: capR });
       const restoreOf = Rb.rtype === 'loyalist' && Rb.memoryOf >= 0 && linkRestoration(P, rb, Rb.memoryOf, y, owner, 0) ? Rb.memoryOf : -1;
       Rb.outcome = 'overthrow'; ev(y, 'overthrow', { p: rb, q, city, r: capR, restoreOf });
       for (let r = 1; r <= nR; r++) if (owner[r] === rb) unrest[r] *= 0.4;
     }
-    function settleRebel(rb, y, why) { // 起义军坚持下来：割据成国（或遗民复国）
+    function settleRebel(rb, y, why, force) { // 起义军坚持下来：割据成国（或遗民复国）；force：久攻都城不下的起义军就地称王
       const Rb = P[rb], oldTarget = Rb.target;
-      if (Rb.rebelGoal !== 'independence' || !canRebelFound(rb, y)) return;
+      if ((Rb.rebelGoal !== 'independence' && !force) || !canRebelFound(rb, y, why === 'end')) return;
       // 朝廷仍存时，割据建国须有国家名额；朝廷已亡则承接其原有名额。
       if (P[oldTarget].died === null && !countrySlots()) return;
       if (Rb.n > 0) trackCountry(Rb, -1); Rb.rebel = false; if (Rb.n > 0) trackCountry(Rb, 1); Rb.rebelUntil = y;
       if (P[oldTarget].died !== null) redirectRebels(oldTarget, rb, y, rb);
-      Rb.coh = 0.8; Rb.claimLin = P[Rb.target].lin; Rb.claimUntil = y + 300;
+      Rb.coh = 0.8; Rb.dynStart = y; Rb.mandate = drawMandate(); Rb.claimLin = P[Rb.target].lin; Rb.claimUntil = y + 300;
       let restoreOf = -1; if (Rb.rtype === 'loyalist' && Rb.memoryOf >= 0 && linkRestoration(P, rb, Rb.memoryOf, y, owner, 0)) { restoreOf = Rb.memoryOf; Rb.lin = P[restoreOf].lin; }
       if (Rb.rtype === 'religious') { Rb.theo = y; Rb.theoRel = Rb.relAt; } // 教民起义建国：政教合一
       Rb.outcome = 'state'; ev(y, 'rebelState', { p: rb, q: Rb.target, r: Rb.cap, restoreOf, why });
     }
     // 建国需要真实、连片、有人口的支持地，以及现存城市或草原游牧基础。
-    function canRebelFound(p, y) {
-      const q = P[p]; if (q.n < 2 || y - q.rebelSince < 40 || !civilized(q.civ)) return false;
+    function canRebelFound(p, y, anyAge) {
+      const q = P[p]; if (q.n < 2 || (!anyAge && y - q.rebelSince < REBEL_HOLD) || !civilized(q.civ)) return false;
       const seen = new Set();
       for (let start = 1; start <= nR; start++) if (owner[start] === p && !seen.has(start)) {
         const group = [start]; seen.add(start); let populated = 0, seat = false;
@@ -1406,6 +1627,245 @@
         if (group.length >= 2 && populated >= 2 && seat) return true;
       }
       return false;
+    }
+    // ---------- 飞地：与本土隔着他国、又远又小的零碎领地守不住，多半割让（或被邻国吞并）给包围它的国家；海外与大块的领地不在此列 ----------
+    function resolveExclaves(y, final) {
+      const live = p => p >= 0 && P[p].died === null && !P[p].rebel && P[p].n > 0;
+      const byP = new Map(); for (let r = 1; r <= nR; r++) { const p = owner[r]; if (p >= 0 && !P[p].rebel) { let L = byP.get(p); if (!L) byP.set(p, L = []); L.push(r); } }
+      for (const [p, regs] of byP) { if (regs.length < 2) continue; const q = P[p];
+        const seen = new Set(), comps = [];
+        for (const s0 of regs) { if (seen.has(s0) || owner[s0] !== p) continue; const g = [s0]; seen.add(s0);
+          for (let i = 0; i < g.length; i++) for (let k = R.off[g[i]]; k < R.off[g[i] + 1]; k++) { if (eSea[k]) continue; const b = R.nbr[k]; if (owner[b] === p && !seen.has(b)) { seen.add(b); g.push(b); } }
+          comps.push(g); }
+        if (comps.length < 2) continue;
+        let main = comps.find(g => g.includes(q.cap)) || comps.reduce((a, b) => b.length > a.length ? b : a); const largest = comps.reduce((a, b) => b.length > a.length ? b : a);
+        if (main !== largest && main.length < 0.5 * largest.length && R.landComp[main[0]] === R.landComp[largest[0]]) { const to = bigRegion(largest, y); if (bigCity(to, y) >= 0) { moveCapital(p, y, 'center', to); main = largest; } } // 都城困在一小块孤地上：迁回疆土主体
+        const lc = R.landComp[main[0]];
+        for (const g of comps) { if (g === main || R.landComp[g[0]] !== lc) continue; // 隔海的领地不算
+          let far = Infinity; for (const a of g) for (const b of main) { const d = kmBetween(a, b); if (d < far) far = d; }
+          if (g.length > Math.max(3, 0.3 * main.length)) { // 大块的远地：与本土相隔太远，终会自立
+            if (far <= 350 || g.length < 3 || !splitSlots() || (!final && rndX() > 0.12)) continue;
+            const seat = bigRegion(g, y), civ = creole(seat, q, y); if (!civilized(civ) || seatCity(seat, y) < 0 && !R.pasture[seat]) continue;
+            const c = newPolity(y, seat, [{ id: p, kind: 'secede' }], civ); P[c].org = q.org; P[c].claimLin = q.lin; P[c].claimUntil = y + 300; P[c].coh = 0.8;
+            inheritRegions(g.map(r => [r, c]), y); ev(y, 'secede', { p: c, q: p, r: seat }); continue; }
+          const touch = new Map(); for (const a of g) for (let k = R.off[a]; k < R.off[a + 1]; k++) { if (eSea[k]) continue; const o = owner[R.nbr[k]]; if (o !== p && live(o)) touch.set(o, (touch.get(o) || 0) + Math.max(1, R.edges[R.eid[k]].len || 1)); }
+          let to = -1, best = 0; for (const [o, v] of touch) if (v > best) { best = v; to = o; }
+          if (to < 0 || topLiege(to) === topLiege(p)) continue;
+          if (final ? far <= 120 : rndX() > (far > 250 ? 0.45 : far > 120 ? 0.2 : 0.06)) continue; // 越远越难守；终局时远处的飞地一并结清
+          inheritRegions(g.map(r => [r, to]), y);
+          if (q.peakN >= 3 || P[to].peakN >= 3) ev(y, 'exclave', { p: to, q: p, r: g[0], n: g.length });
+        }
+      }
+    }
+    // ---------- 海上力量：希腊、南岛式的群岛文明 ----------
+    // 陆战只走陆路；海上另算：海洋文明、商贸文化，以及疆土多在海岛与沿海的国家有海上力量，航程随时代增长。
+    //  - 拓殖：附近无主的海岛渐次收入版图（南岛式的岛链扩张）；
+    //  - 渡海兼并：疆土全在海岛上的小国，被航程以内更强的海上国家兼并或收为附庸——群岛由此归于一两个海上强国（雅典、塞琉、满者伯夷式），
+    //    而不是一岛一国，把国家数量的份额都占在海上
+    function seaStep(y, pw, cs) {
+      const live = p => p >= 0 && P[p].died === null && !P[p].rebel && P[p].n > 0;
+      const coastN = new Float64Array(P.length), islN = new Float64Array(P.length);
+      for (let r = 1; r <= nR; r++) { const p = owner[r]; if (p < 0) continue; if (R.coast[r]) coastN[p]++; if (isle(r)) islN[p]++; }
+      const marC = new Float64Array(P.length).fill(-1);
+      const mar = p => { if (marC[p] >= 0) return marC[p]; const q = P[p], n = Math.max(1, q.n); let m = typeOfCult(q.civ) === 'maritime' ? 1 : polStyle(q) === 'mercantile' ? 0.8 : 0; m = Math.max(m, 0.7 * coastN[p] / n, islN[p] / n); return (marC[p] = m); };
+      const range = p => SEA_KM[clamp(cs[p] || Math.max(2, sg[P[p].cap]), 1, 8)] * (0.5 + 0.7 * mar(p));
+      const boost = overfull() ? 2 : 1; // 收束期国家太多：海上兼并更频繁
+      // 拓殖无主的海岛
+      for (let r = 1; r <= nR; r++) { if (owner[r] >= 0 || !isle(r) || !habitable(r) || sg[r] < 1) continue;
+        let to = -1, bv = 0; for (let k = R.off[r]; k < R.off[r + 1]; k++) { if (!eSea[k]) continue; const o = owner[R.nbr[k]]; if (!live(o) || looseAt(P[o], y) === 'primitive' || nwBlock(o, r, y)) continue; const km = R.edges[R.eid[k]].km; if (km > range(o)) continue; const v = pw[o] * mar(o); if (v > bv) { bv = v; to = o; } }
+        if (to >= 0 && rndSea() < 0.04 + 0.12 * mar(to)) { setOwner(r, to, y); ev(y, 'islandSettle', { p: to, r, n: 1, regions: [r] }); } }
+      // 渡海兼并：疆土全在海岛上的小国
+      const byP = new Map(); for (let r = 1; r <= nR; r++) { const p = owner[r]; if (p >= 0) { let L = byP.get(p); if (!L) byP.set(p, L = []); L.push(r); } }
+      const done = new Set();
+      for (const [v, regs] of byP) { const V = P[v]; if (!live(v) || done.has(v) || V.n > ISL_N || !regs.every(isle)) continue;
+        let to = -1, bv = 0; for (const a of regs) for (let k = R.off[a]; k < R.off[a + 1]; k++) { if (!eSea[k]) continue; const o = owner[R.nbr[k]]; if (o === v || !live(o) || done.has(o) || topLiege(o) === topLiege(v) || (allyOf.has(o) && allyOf.get(o) === allyOf.get(v))) continue;
+          if (R.edges[R.eid[k]].km > range(o)) continue; const v2 = pw[o] * (0.4 + mar(o)); if (v2 > bv) { bv = v2; to = o; } }
+        if (to < 0) continue; const m = mar(to), need = m >= 0.5 ? 1.6 : 3;
+        if ((pw[to] || 0) < need * (pw[v] || 0.01) || (cs[to] || 0) < 3) continue;
+        if (rndSea() > (0.03 + 0.07 * m) * boost) continue;
+        done.add(v); done.add(to);
+        if (V.liege < 0 && !looseAt(V, y) && feudal(cs[to], y) && !overfull() && rndSea() < 0.4) { setLiege(v, to, y, 'submit'); continue; }
+        inheritOwned(v, to, y); for (const X of P) if (X.died === null && X.liege === v) setLiege(X.id, to, y, 'dynasty', true); if (V.liege >= 0) setLiege(v, -1, y, 'annexV', true);
+        kill(v, y, to, 'integrate'); ev(y, 'islandAnnex', { p: to, q: v, r: regs[0] }); }
+      // 海岛诸部会盟：群岛上的部落联盟、诸部隔着不远的海峡归附更大的一部或近旁的海上国家（南岛式的跨岛酋邦），群岛不会一岛一部
+      for (const [v, regs] of byP) { const V = P[v]; if (!live(v) || done.has(v) || !looseAt(V, y) || V.liege >= 0 || !regs.every(isle)) continue;
+        let to = -1, bv = 0; for (const a of regs) for (let k = R.off[a]; k < R.off[a + 1]; k++) { if (!eSea[k]) continue; const o = owner[R.nbr[k]]; if (o === v || !live(o) || done.has(o) || P[o].liege >= 0) continue;
+          const km = R.edges[R.eid[k]].km, O = P[o]; if (km > Math.max(SEA_LINK * (looseAt(P[o], y) ? 2 : 1.6), range(o))) continue; if (O.n < V.n && (pw[o] || 0) < 1.3 * (pw[v] || 0.01)) continue;
+          const v2 = (O.n + 1) * (1 + mar(o)) / (1 + km / 200); if (v2 > bv) { bv = v2; to = o; } }
+        if (to < 0 || rndSea() > (0.06 + 0.06 * mar(to)) * boost) continue;
+        done.add(v); done.add(to); inheritOwned(v, to, y); for (const X of P) if (X.died === null && X.liege === v) setLiege(X.id, to, y, 'dynasty', true);
+        kill(v, y, to, 'integrate'); ev(y, looseAt(P[to], y) ? 'looseJoin' : 'islandAnnex', { p: to, q: v, r: regs[0] }); }
+    }
+    // ---------- 收束：最后一段历史把国家数量引向目标 ----------
+    // 国家多于当年的收束曲线时，按“最容易被并掉”的次序结清：附庸被撤藩、海岛小国被渡海兼并、部落联盟被邻国吞并或并入更大的联盟、
+    // 小国被十倍于己的强邻归并（联姻承袭）；国家太少时，疆土远超常规的大国分裂。每年只结清一部分差额，曲线平滑，不在最后一年突击
+    function convergeStep(y, pw, cs) {
+      if (y < convStart || convFrom < 0) return;
+      const live = p => p >= 0 && P[p].died === null && !P[p].rebel && P[p].n > 0;
+      // 两本账分开结清：成形的国家向开局所选的数量收拢；松散政体向自己的小份额收拢（它们之间合并、或被邻国收服，都不动成形国家的数目）
+      const gap = solidN() - targetAt(y);
+      let fadedN = 0; for (const q of P) if (live(q.id) && faded(q) && inQuota(q)) fadedN++; fadedLive = fadedN;
+      const fgap = fadedN - fadedGoalAt(y), lastTick = y + TICK > E;
+      if (gap > 0.5 || fgap > 0.5) {
+        const quota = { solid: gap > 0.5 ? Math.ceil(gap * (lastTick ? 1 : 0.35)) : 0, faded: fgap > 0.5 ? Math.ceil(fgap * (lastTick ? 1 : 0.35)) : 0 }, C = [];
+        const touch = new Map(); // v → Map(o → 接壤长度)
+        for (let a = 1; a <= nR; a++) { const v = owner[a]; if (v < 0) continue; for (let k = R.off[a]; k < R.off[a + 1]; k++) { const o = owner[R.nbr[k]]; if (o < 0 || o === v) continue;
+          const ed = R.edges[R.eid[k]]; if (eSea[k] && ed.km > 400) continue; let m = touch.get(v); if (!m) touch.set(v, m = new Map()); m.set(o, (m.get(o) || 0) + (eSea[k] ? 0.3 : 1)); } }
+        const mainland = new Int32Array(P.length), held = new Uint8Array(P.length); for (let r = 1; r <= nR; r++) if (owner[r] >= 0) { held[owner[r]] = 1; if (!isle(r)) mainland[owner[r]]++; }
+        let islandN = 0; for (const q of P) if (live(q.id) && held[q.id] && !mainland[q.id] && !faded(q) && inQuota(q)) islandN++;
+        const islandK = islandN > islandGoal ? 5 : 0.8; // 海岛小国超出应有份额时先并（不能把大陆国家的份额占掉）
+        const pwOf = p => Math.max(0.01, pw[p] || 0.05);
+        for (const q of P) { const v = q.id; if (!live(v) || !inQuota(q)) continue;
+          const F = faded(q), cls = F ? 'faded' : 'solid'; if (!quota[cls]) continue;
+          let to = -1, sc = 0, kind = 'union';
+          if (q.liege >= 0 && live(q.liege)) { to = q.liege; kind = 'vassalAnnex'; sc = 2.5 * (1 + Math.log(Math.max(1, pwOf(to) / pwOf(v)))); }
+          else { const m = touch.get(v); if (!m) continue; const L = looseAt(q, y), islandV = !mainland[v];
+            for (const [o, len] of m) { if (!live(o) || topLiege(o) === v) continue; const oF = faded(P[o]);
+              if (!F && oF) continue; // 成形的国家只并入成形的国家：并入松散政体不会让国家变少，反倒把国土变成渐淡的部族之地
+              const peer = F && oF; // 有成形的邻国时多半由邻国收服（现在的世界以成形的国家为主）；松散政体之间：地盘大的一方合并小的（国力多半都很弱，不看倍数）
+              const ratio = peer ? Math.max(1, P[o].n / Math.max(1, q.n)) * Math.max(0.8, pwOf(o) / pwOf(v)) : pwOf(o) / pwOf(v); if (peer ? P[o].n < q.n : ratio < (F ? 1.2 : 2)) continue;
+              const v2 = (1 + Math.log(Math.max(1, ratio))) * Math.sqrt(Math.min(len, 9)) * (islandV && !F ? islandK : 1) * (F && !oF ? 4 : 1) * (imperial.has(o) ? 2.5 : 1); /* 小邦多半并入称雄一方的大国 */ if (v2 > sc) { sc = v2; to = o; } }
+            if (to < 0) continue; kind = islandV && !L ? 'islandAnnex' : L ? (looseAt(P[to], y) ? 'looseJoin' : 'annex') : F ? 'annex' : pwOf(to) >= 6 * pwOf(v) && rndConv() < 0.5 ? 'annex' : 'union'; }
+          C.push({ v, to, cls, sc: sc / (1 + q.n / Math.max(1, regionsPerCountry)), kind }); }
+        C.sort((a, b) => b.sc - a.sc || a.v - b.v);
+        const used = new Set(), recv = new Set(); // used：本轮已被并掉的；recv：本轮刚接收了别国的（不在同一轮里再被并掉，免得一串连锁）
+        for (const c of C) { if (!quota.solid && !quota.faded) break; if (!quota[c.cls] || used.has(c.v) || recv.has(c.v) || used.has(c.to) || !live(c.v) || !live(c.to)) continue; used.add(c.v); recv.add(c.to);
+          const V = P[c.v], first = V.cap;
+          inheritOwned(c.v, c.to, y); for (const X of P) if (X.died === null && X.liege === c.v) setLiege(X.id, c.to, y, 'dynasty', true);
+          if (c.kind === 'vassalAnnex') { setLiege(c.v, -1, y, 'annexV'); kill(c.v, y, c.to, 'integrate'); }
+          else { if (V.liege >= 0) setLiege(c.v, -1, y, 'annexV', true);
+            if (c.kind === 'annex') kill(c.v, y, c.to); else { kill(c.v, y, c.to, 'integrate'); ev(y, c.kind, { p: c.to, q: c.v, r: first }); } }
+          quota[c.cls]--; } }
+      if (fgap < -0.5) frontierBreakaway(y, Math.ceil(-fgap * (lastTick ? 1 : 0.35)));
+      if (gap < -0.5) {
+        let quota = Math.ceil(-gap * (lastTick ? 1 : 0.35));
+        const key = q => q.n * (1.3 - q.coh) * (0.6 + (q.rugNow || 0.5)); // 先裂山地与人心离散的大国；称雄一方的大国排在最后
+        const big = P.filter(q => live(q.id) && !faded(q) && q.liege < 0 && q.n >= Math.max(6, 1.8 * regionsPerCountry)).sort((a, b) => (imperial.has(a.id) ? 1 : 0) - (imperial.has(b.id) ? 1 : 0) || key(b) - key(a) || a.id - b.id);
+        for (const q of big) { if (quota <= 0 || !splitSlots()) break; const cst = Math.max(2, sg[q.cap]);
+          const res = splitRealm(q.id, y, 2 + (q.n >= 6 * regionsPerCountry ? 1 : 0), Math.max(150, REACH[cst] * 0.3), 'split'); if (!res || !res.kids.length) continue;
+          q.coh = Math.max(0.4, q.coh - 0.1); ev(y, 'split', { p: q.id, kids: res.kids, r: q.cap }); quota -= res.kids.length; }
+        // 可分的国家不够时：远省割据自立（大国只失去边远的一省，仍是大国）
+        if (quota > 0 && !lastTick) { quota = Math.ceil(quota * 0.6); const order = P.filter(q => live(q.id) && !faded(q) && q.liege < 0 && q.org && q.n >= 6).sort((a, b) => (imperial.has(a.id) ? 1 : 0) - (imperial.has(b.id) ? 1 : 0) || b.n - a.n || a.id - b.id);
+          for (let pass = 0; pass < 2 && quota > 0; pass++) for (const q of order) { if (quota <= 0 || !splitSlots()) break; if (!live(q.id)) continue; const before = P.length; secedeProvince(q.id, y, (q.reachNow || 600) * 0.35); if (P.length > before) quota--; } } }
+    }
+    // 松散政体少于第 22 题的份额、又已没有无主之地可结盟时：远离都城、无城可守的草原与边疆（密林、荒漠、冻原）脱离控制，
+    // 当地诸部恢复自治，结成游牧部族或部落联盟（史书里的“失其边地、诸部自立”）。只取成片的边地，城邑与都城一带不动
+    function frontierBreakaway(y, quota) {
+      const live = p => p >= 0 && P[p].died === null && !P[p].rebel && P[p].n > 0;
+      const wild = r => !isNW(r) && habitable(r) && human.total(r) > 0 && (R.pasture[r] >= 0.45 || (R.frontier[r] >= 0.5 && !cityIn[r].some(i => alive(C.cities[i], y))));
+      const minN = Math.max(2, Math.round(looseSize / 2)), cand = [];
+      for (const q of P) { if (!live(q.id) || faded(q) || q.n < minN + 2 || imperial.has(q.id)) continue; const p = q.id, seen = new Set(); // 称雄一方的大国镇得住边疆（缺的松散政体由成形的国家名额补上）
+        for (let r0 = 1; r0 <= nR; r0++) { if (owner[r0] !== p || seen.has(r0) || r0 === q.cap || !wild(r0) || kmBetween(r0, q.cap) < 350) continue;
+          const g = [r0]; seen.add(r0);
+          for (let i = 0; i < g.length; i++) for (let k = R.off[g[i]]; k < R.off[g[i] + 1]; k++) { if (eSea[k]) continue; const b = R.nbr[k]; if (seen.has(b) || owner[b] !== p || b === q.cap || !wild(b) || kmBetween(b, q.cap) < 350) continue; seen.add(b); g.push(b); }
+          if (g.length >= minN && g.length <= q.n * 0.6) cand.push({ p, g }); } }
+      cand.sort((a, b) => b.g.length - a.g.length || a.p - b.p);
+      const hit = new Set();
+      for (const { p, g } of cand) { if (quota <= 0) break; if (hit.has(p) || !live(p)) continue; hit.add(p);
+        const piece = g.length > looseSize * 1.5 ? g.slice(0, Math.round(looseSize * 1.5)) : g; // BFS 顺序取一片相连的
+        const cap = bigRegion(piece, y), civ = civilized(cult[cap]) ? cult[cap] : P[p].civ; if (!civilized(civ)) continue;
+        releaseTribes(p, piece, y);
+        let pw0 = 0, ww = 0, st = 0; for (const r of piece) { const w = R.weight[r] + 1e-6; pw0 += w * R.pasture[r]; ww += w; st = Math.max(st, sg[r]); }
+        const type = pw0 / ww >= 0.4 ? 'nomadic' : st >= 2 ? 'tribal' : 'primitive';
+        const id = newPolity(y, cap, [], civ), Q = P[id]; Q.loose = type; Q.coh = 0.6;
+        if (type === 'nomadic') { Q.nomad = true; delete Q.settled; delete Q.settledCiv; delete Q._settledRegion; delete Q.leftSteppe; } else Q.nomad = false;
+        for (const r of piece) setOwner(r, id, y);
+        Q.ext.push(y, Q.n);
+        ev(y, 'looseForm', { p: id, r: cap, n: piece.length, lt: type });
+        quota--; }
+    }
+    // 被国家（或湖海）围住的零星无主小块：并入接壤最长的国家；没有陆上邻国的小岛、湖中洲就近归附（不超过 150 km）
+    function absorbEnclosedPockets(y) {
+      const seen = new Uint8Array(nR + 1), meanArea = R.area.reduce((a, b) => a + b, 0) / Math.max(1, nR);
+      const live = p => p >= 0 && P[p].died === null && !P[p].rebel && P[p].n > 0;
+      for (let first = 1; first <= nR; first++) { if (seen[first] || owner[first] >= 0) continue;
+        const comp = [first]; seen[first] = 1; const touch = new Map(); let area = 0, sea = null, seaKm = Infinity;
+        for (let i = 0; i < comp.length; i++) { const a = comp[i]; area += R.area[a];
+          for (let k = R.off[a]; k < R.off[a + 1]; k++) { const b = R.nbr[k], ed = R.edges[R.eid[k]];
+            if (ed.sea) { if (live(owner[b]) && ed.km < seaKm) { seaKm = ed.km; sea = owner[b]; } continue; }
+            if (owner[b] >= 0) { if (live(owner[b])) touch.set(owner[b], (touch.get(owner[b]) || 0) + Math.max(1, ed.len || 1)); }
+            else if (!seen[b]) { seen[b] = 1; comp.push(b); } } }
+        if (comp.length > 3 || area > 2.5 * meanArea) continue;
+        let to = -1, best = 0; for (const [o, v] of touch) if (v > best) { best = v; to = o; }
+        if (to < 0 && sea !== null && seaKm <= 150) to = sea;
+        if (to < 0) { let bk = 150; for (let r = 1; r <= nR; r++) { if (!live(owner[r])) continue; const km = kmBetween(r, comp[0]); if (km < bk) { bk = km; to = owner[r]; } } }
+        if (to < 0) continue;
+        for (const r of comp) setOwner(r, to, y);
+        ev(y, 'territoryIntegrate', { p: to, r: comp[0], n: comp.length, regions: comp });
+      }
+    }
+    // ---------- 松散政体：到现在仍无国家统治的可居之地，由当地诸部结成游牧部族、部落联盟或落后政体——它们也是有明确疆界的国家，
+    //            只是内部松散，不设省份。种类看地理：草原牧地为游牧政体；已有酋邦、村社的为部落政体；仍以采集渔猎为生的为落后政体 ----------
+    function looseKind(q) { const lo = looseAt(q, E); if (lo) return lo; if (q.republic || q.theo !== undefined || q.rebel) return null; if (nomadAt(q, E)) return 'nomadic'; return stageAt(q.cap, E) <= 2 && bigCity(q.cap, E) < 0 ? 'tribal' : null; } // 有城邑的小国（城邦）不算
+    // 松散政体在历史里自然生成：无主之地上的诸部，到了酋邦阶段（或在草原上放牧、在山林水泽渔猎）便会结成部落联盟、游牧部族或落后诸部，
+    // 与城邦、王国一同参与历史——会扩张、被征服、分裂，出现城邑后归于一统、成为有都城的国家。快要自行发展出城邦的地方留给城邦。
+    // 群岛上的诸部可以隔着不远的海峡结盟（南岛式的跨岛酋邦）。final：终局只把零星的无主小块并入邻国，不再凭空新立政体
+    function formLoose(y, final) {
+      const live = p => p >= 0 && P[p].died === null && !P[p].rebel && P[p].n > 0, rndL = final ? mulberry32((h.seed | 0) + 91019) : rndLoose;
+      const cityNow = r => cityIn[r].some(i => alive(C.cities[i], y));
+      const ok = r => owner[r] < 0 && habitable(r) && human.total(r) > 0 && (final || (sg[r] < 3 ? Y[3 * NN + r] > y + 150 : !cityNow(r)));
+      const seen = new Uint8Array(nR + 1), comps = [];
+      for (let r0 = 1; r0 <= nR; r0++) { if (seen[r0] || !ok(r0)) continue; const g = [r0]; seen[r0] = 1;
+        for (let i = 0; i < g.length; i++) for (let k = R.off[g[i]]; k < R.off[g[i] + 1]; k++) { const b = R.nbr[k]; if (seen[b] || !ok(b)) continue;
+          if (eSea[k] && !(isle(g[i]) && isle(b) && R.edges[R.eid[k]].km <= SEA_LINK * 1.4)) continue; seen[b] = 1; g.push(b); }
+        comps.push(g); }
+      // 一两块的零星无主地紧邻国家：并入接壤最长的邻国
+      const cand = [];
+      for (const g of comps) { const folk = g.reduce((a, r) => a + human.total(r), 0);
+        if (g.length < 3) { const touch = new Map(); for (const a of g) for (let k = R.off[a]; k < R.off[a + 1]; k++) { if (eSea[k]) continue; const o = owner[R.nbr[k]]; if (live(o)) touch.set(o, (touch.get(o) || 0) + 1); }
+          let to = -1, bv = 0; for (const [o, v] of touch) if (v > bv) { bv = v; to = o; }
+          if (to >= 0 && (final || (rndL() < 0.15 && !g.some(r => nwBlock(to, r, y))))) { for (const r of g) setOwner(r, to, y); ev(y, 'territoryIntegrate', { p: to, r: g[0], n: g.length, regions: g }); continue; }
+          if (folk < 3000) continue; }
+        if (final) continue;
+        let st = 0; for (const r of g) st = Math.max(st, sg[r]);
+        if (rndL() > (st >= 2 ? 0.3 : st === 1 ? 0.1 : 0.05)) continue; // 酋邦阶段的诸部很快结盟；仍以采集渔猎为生的散居部族要久得多
+        const nwG = g.filter(isNW).length * 2 > g.length, islG = g.every(isle); // 群岛上的诸部结成的联盟更大（跨岛酋邦），一岛一部的情形少
+        cand.push({ g, nw: nwG ? 1 : 0, score: st * 1e7 + folk, want: Math.max(1, Math.round(g.length / (looseSize * (islG ? 2.2 : 1)))) }); }
+      if (final) return;
+      cand.sort((a, b) => a.nw - b.nw || (a.nw ? b.score - a.score : 0)); // 新大陆：名额有限，先给人烟最盛、发展最早的地方
+      const anyCiv = (() => { for (let c = 0; c < (h.civLib || []).length; c++) if (civilized(c)) return c; return -1; })();
+      const civNear = r0 => { const q0 = [r0], s0 = new Set(q0); for (let i = 0; i < q0.length && i < 400; i++) { const r = q0[i]; for (const c of [cult[r], R.civ[r]]) if (civilized(c)) return c; for (let k = R.off[r]; k < R.off[r + 1]; k++) { const b = R.nbr[k]; if (!s0.has(b)) { s0.add(b); q0.push(b); } } } return anyCiv; };
+      // 收束期：只有松散政体少于自己的份额时，余下的部族之地才继续结盟（不占成形国家的名额）
+      let looseShort = Infinity; if (y >= convStart) { let n = 0; for (const q of P) if (live(q.id) && faded(q) && inQuota(q)) n++; looseShort = Math.max(0, Math.floor(fadedGoalAt(y)) - n); }
+      let nwN = nwNativeN(); const nwCap = nwCapAt(y);
+      for (const c of cand) { const g = c.g, inG = new Set(g); let k, capSize = Infinity;
+        if (c.nw) { k = Math.min(c.want, nwCap - nwN); if (k <= 0) continue; nwN += k; capSize = Math.min(looseSize, nwSizeAt(y)); } // 新大陆：只在一小片土地上结成部落联盟，其余仍是无主的部族之地
+        else { const slots = Math.min(y >= convStart ? Math.max(countrySlots(), looseShort) : Infinity, looseShort); if (slots <= 0) continue; looseShort -= Math.min(c.want, slots); k = Math.min(c.want, slots); }
+        // 分成 k 部：各以人烟最盛、彼此相距最远的地方为中心
+        const seeds = [bigRegion(g, y)]; while (seeds.length < k) { let b = -1, bd = -1; for (const r of g) { if (seeds.includes(r)) continue; let d = Infinity; for (const s0 of seeds) d = Math.min(d, kmBetween(s0, r)); const v = d * (1 + Math.sqrt(human.total(r) / 1e4)); if (v > bd) { bd = v; b = r; } } if (b < 0) break; seeds.push(b); }
+        const part = new Map(seeds.map((s0, i) => [s0, i])), qq = seeds.slice(), size = seeds.map(() => 1);
+        for (let i = 0; i < qq.length; i++) { const a = qq[i]; for (let kk = R.off[a]; kk < R.off[a + 1]; kk++) { const b = R.nbr[kk]; if (!inG.has(b) || part.has(b)) continue; if (eSea[kk] && !(R.edges[R.eid[kk]].km <= SEA_LINK * 1.4)) continue; const pi = part.get(a); if (size[pi] >= capSize) continue; part.set(b, pi); size[pi]++; qq.push(b); } }
+        for (let i = 0; i < seeds.length; i++) { const piece = g.filter(r => part.get(r) === i); if (!piece.length) continue;
+          const cap = bigRegion(piece, y); let pw0 = 0, ww = 0, st = 0; for (const r of piece) { const w = R.weight[r] + 1e-6; pw0 += w * R.pasture[r]; ww += w; st = Math.max(st, sg[r]); }
+          const civ = civilized(cult[cap]) ? cult[cap] : civNear(cap); if (civ === -1 || !civilized(civ)) continue;
+          const type = pw0 / ww >= 0.4 ? 'nomadic' : st >= 2 ? 'tribal' : 'primitive';
+          const id = newPolity(y, cap, [], civ), Q = P[id]; Q.loose = type; Q.coh = 0.6;
+          if (type === 'nomadic') { Q.nomad = true; delete Q.settled; delete Q.settledCiv; delete Q._settledRegion; delete Q.leftSteppe; } else Q.nomad = false;
+          for (const r of piece) setOwner(r, id, y);
+          Q.ext.push(y, Q.n);
+          ev(y, 'looseForm', { p: id, r: cap, n: piece.length, lt: type }); } }
+    }
+    // 新大陆本土政权多于当年的上限（分裂、起义多出来的）：最小的一个并入相邻的本土政权；没有相邻的就诸部离散，土地重归无主
+    function nwTrim(y, slack = 1) {
+      if (!NW_MAX) return; const lim = nwCapAt(y) + slack;
+      for (let guard = 0, n = nwNativeN(); n > lim && guard < 20; guard++, n = nwNativeN()) {
+        let v = -1; for (const id of activeCountryActors.keys()) { const q = P[id]; if (!nwNatQ(q) || q.rebel || q.died !== null || P.some(X => X.rebel && X.died === null && X.target === id)) continue; if (v < 0 || q.n < P[v].n) v = id; }
+        if (v < 0) break; const V = P[v], touch = new Map(), regs = [];
+        for (let r = 1; r <= nR; r++) { if (owner[r] !== v) continue; regs.push(r); for (let k = R.off[r]; k < R.off[r + 1]; k++) { if (eSea[k]) continue; const o = owner[R.nbr[k]]; if (o >= 0 && o !== v && nwNatQ(P[o]) && P[o].died === null && !P[o].rebel) touch.set(o, (touch.get(o) || 0) + 1); } }
+        let to = -1, bv = 0; for (const [o, c] of touch) if (c > bv) { bv = c; to = o; }
+        for (const X of P) if (X.died === null && X.liege === v) setLiege(X.id, -1, y, 'free', true);
+        if (to >= 0) { inheritOwned(v, to, y); kill(v, y, to, 'integrate'); ev(y, looseAt(P[to], y) ? 'looseJoin' : 'union', { p: to, q: v, r: V.cap }); }
+        else { inheritRegions(regs.map(r => [r, -1]), y); kill(v, y, -1, 'quiet'); ev(y, 'nwDisperse', { p: v, r: V.cap, n: regs.length }); } }
+    }
+    // 部落联盟出现城邑：诸部归于一统，首领定居城中，成为有都城的国家（酋邦 / 城邦 / 王国，同一政权）；游牧部族筑城定居时同理
+    function looseRise(y) {
+      for (const q of P) { if (q.died !== null || !q.n || !looseAt(q, y)) continue;
+        if (q.loose === 'nomadic') { if (q.settled !== undefined && q.settled <= y) q.looseUntil = Math.max(q.born, q.settled); continue; }
+        let best = -1, bp = 0; for (let r = 1; r <= nR; r++) { if (owner[r] !== q.id || sg[r] < 3) continue; const c = bigCity(r, y); if (c < 0) continue; const v = popAt(c, y) * (r === q.cap ? 1.5 : 1); if (v > bp) { bp = v; best = r; } }
+        if (best < 0) continue;
+        q.looseUntil = y; q.cityBorn = true; q.coh = Math.max(q.coh, 0.75);
+        if (best !== q.cap) { q.cap = best; q.caps.push({ year: y, city: bigCity(best, y), r: best }); q.lastCapMove = y; }
+        ev(y, 'looseRise', { p: q.id, r: best, lt: q.loose, city: bigCity(best, y) }); }
     }
     function disperseRebel(p, y, target) {
       const q=P[p]; for (let r=1;r<=nR;r++) if (owner[r] === p) { setOwner(r, target, y); unrest[r] *= .4; }
@@ -1454,31 +1914,40 @@
         for (const k of cl) { setOwner(k, rb, y); unrest[k] *= 0.6; }
         ev(y, 'revolt', { p: rb, q: p, r: seat, rtype, cause: c0, famine: famine[r] > 0.3 });
       }
-      // 起义的结局：被镇压、割据建国，或在七十年演算步时结束；日期细化最多回拨十年。
+      // 起义的结局：被镇压 / 坚持六十年割据成国 / 朝廷先亡则自立
       for (const p of alivePs) { const Rb = P[p]; if (!Rb.rebel || Rb.died !== null) continue;
         if (Rb.n === 0) { Rb.died = y; Rb.rebelUntil = y; Rb.outcome = 'suppress'; ev(y, 'suppress', { p, q: Rb.target, r: Rb.cap }); for (let r = 1; r <= nR; r++) if (owner[r] === Rb.target) unrest[r] *= 0.85; continue; }
-        if (y - Rb.rebelSince >= 70) {
-          if (Rb.rebelGoal === 'independence' && canRebelFound(p, y)) settleRebel(p, y, P[Rb.target].died === null ? 'hold' : 'fall');
-          if (Rb.rebel) disperseRebel(p, y, P[Rb.target].died === null ? Rb.target : -1);
-          continue;
-        }
         if (P[Rb.target].died !== null) {
           const other = alivePs.some(id => id !== p && P[id].rebel && P[id].died === null && P[id].target === Rb.target && P[id].rebelGoal === 'independence' && canRebelFound(id, y));
           if (Rb.rebelGoal === 'independence' && canRebelFound(p, y)) settleRebel(p, y, 'fall');
           else if (!other) disperseRebel(p, y, -1);
           continue;
         }
-        if (Rb.rebelGoal === 'independence' && y - Rb.rebelSince >= 40 && canRebelFound(p, y)) settleRebel(p, y, 'hold');
-        if (Rb.rebel && y - Rb.lastRebelGain >= 60 && rndU() < .15 + .35 * P[Rb.target].n / Math.max(1, P[Rb.target].n + Rb.n)) disperseRebel(p, y, Rb.target);
+        // 起义的时限：揭竿而起之后十几二十年内必见分晓——割据成国、攻入都城，或被镇压、自行瓦解；没有绵延百年的“起义军”
+        const age = y - Rb.rebelSince;
+        if (Rb.rebelGoal === 'independence' && age >= REBEL_HOLD && canRebelFound(p, y)) settleRebel(p, y, 'hold');
+        else if (Rb.rebelGoal !== 'independence' && age >= REBEL_HOLD + 10 && canRebelFound(p, y) && rndU() < 0.5) settleRebel(p, y, 'stalemate', true); // 久攻都城不下，就地称王
+        if (Rb.rebel && age >= REBEL_MAX) { if (canRebelFound(p, y)) settleRebel(p, y, 'stalemate', true); if (Rb.rebel) disperseRebel(p, y, Rb.target); continue; }
+        if (Rb.rebel && y - Rb.lastRebelGain >= 20 && rndU() < .3 + .45 * P[Rb.target].n / Math.max(1, P[Rb.target].n + Rb.n)) disperseRebel(p, y, Rb.target);
       }
     }
 
     enforceRuinsThrough(E);
     terminalCityPopulation=G.HistoryAdministration.cityPopulations(h,R,Float64Array.from({length:nR+1},(_,r)=>human.total(r)));
+    // 终局：仍在进行的起义一并了结——据地成片、有城可守者割据成国，其余散去、土地归还朝廷（现在的地图上不留起义军控制区）
+    for (const q of P) if (q.rebel && q.died === null) { if (q.n > 0) settleRebel(q.id, E, 'end', true); if (q.rebel) { if (q.n > 0) disperseRebel(q.id, E, P[q.target].died === null ? q.target : -1); else { q.died = E; q.rebelUntil = E; q.outcome = 'suppress'; } } }
+    nwTrim(E, 0); // 新大陆本土政权到现在也不过十个上下
+    // 终局：被别国或湖海围住的零星无主小块，就近并入接壤最多的国家（部族与荒野的大片土地照旧）
+    absorbEnclosedPockets(E); resolveExclaves(E, true);
     // 终点只校验现有国土与行政结构，不按国家数量吞并或结清战争。
     for (const q of P) if (q.died === null && q.n === 0) q.died = E;
-    for (const q of P) if (q.died === null && q.n > 0 && !q.rebel && !q.org) organize(q.id, E, true);
+    looseRise(E); formLoose(E, true);
+    const looseNow = q => !!looseKind(q); // 游牧、部落与仍在酋邦阶段的政权都是松散政体
+    for (const q of P) if (q.died === null && q.n > 0 && !q.rebel && !q.org && !looseNow(q)) organize(q.id, E, true);
     for (let r = 1; r <= nR; r++) occSince[r] = -1e9; admin(E); separateFragments(E);
+    // 松散政体（游牧部族、部落联盟、落后政体）不设省份：境内各部各领其地，现在的地图上只标“某某部、某某旗、某某盟”
+    { const hit = new Set(); for (let r = 1; r <= nR; r++) { const o = owner[r]; if (o >= 0 && prov[r] >= 0 && looseNow(P[o])) { hit.add(prov[r]); setProv(r, -1, E); } }
+      for (const v of hit) { const X = PV[v]; if (X.abolished === null && X.n === 0) { X.abolished = E; X.abolishWhy = 'loose'; } } }
     const adminDays=new Float64Array(nR+1).fill(Infinity);enforceProvinces(E,adminDays);
     for (const q of P) if (q.died === null && q.n > 0 && (owner[q.cap] !== q.id || q.caps[q.caps.length - 1].city < 0)) { if (owner[q.cap] !== q.id) moveCapital(q.id, E, 'final'); if (q.caps[q.caps.length - 1].city < 0) { let best = -1, bp = 0; for (let r = 1; r <= nR; r++) if (owner[r] === q.id) { const v = regionPop(r, E); if (v > bp) { bp = v; best = r; } } if (best >= 0) moveCapital(q.id, E, 'found', best); } }
 
@@ -1571,7 +2040,8 @@
     // 公国（王国之下一级）：文化库显式填写的优先（自定义库可以写任何语言的称号）；没填就从君主国称号里找“公国 / 侯国”，再没有就不设这一级
     const duchyOf = (lib, t) => { const kt = (t.monarchy && t.monarchy[0]) || '王国', d = (G.CultureExt && G.CultureExt.extraTitle(lib, 'duchy')) || (t.monarchy || []).find(x => /^(公国|侯国)$/.test(x)) || (t.monarchy || []).find(x => /公国|侯国/.test(x)) || null;
       return d && d !== kt && d !== ((t.empire && t.empire[0]) || '帝国') ? d : null; };
-    const titlesOf = (lib, tp) => { const t = lib.t || {}; const f = (k, d) => (t[k] && t[k][0]) || d; const xt = k => G.CultureExt ? G.CultureExt.extraTitle(lib, k) : null; return { vassal: xt('vassal') || f('monarchy', '王国'), colony: xt('colony') || '殖民地', theo: xt('theocracy') || '教国', city: tp === 'maritime' ? f('cityRepublic', '城邦') : f('city', '城邦'), kingdom: f('monarchy', '王国'), duchy: duchyOf(lib, t), empire: f('empire', '帝国'), nomadEmpire: xt('nomadEmpire') || null, nomad: f('nomadic', '部族邦联'), chief: f('chiefdom', '酋邦'), republic: f('republic', '共和国') }; };
+    const titlesOf = (lib, tp) => { const t = lib.t || {}; const f = (k, d) => (t[k] && t[k][0]) || d; const xt = k => G.CultureExt ? G.CultureExt.extraTitle(lib, k) : null; return { vassal: xt('vassal') || f('monarchy', '王国'), colony: xt('colony') || '殖民地', theo: xt('theocracy') || '教国', city: tp === 'maritime' ? f('cityRepublic', '城邦') : f('city', '城邦'), kingdom: f('monarchy', '王国'), duchy: duchyOf(lib, t), empire: f('empire', '帝国'), nomadEmpire: xt('nomadEmpire') || null, nomad: f('nomadic', '部族邦联'), chief: f('chiefdom', '酋邦'), republic: f('republic', '共和国'), tribal: looseT(lib, 'tribal', '部落联盟'), primitive: looseT(lib, 'primitive', '诸部') }; };
+    const looseT = (lib, key, d) => { const L = G.CultureExt && G.CultureExt.looseTitles ? G.CultureExt.looseTitles(lib, key) : null; return L && L[0] || d; };
     const sameRealm = q => { const pa = q.parents.find(x => x.kind === 'dynasty'); if (!pa) return null; const A = P[pa.id], a = rulingCultureAt(A, q.born), b = rulingCultureAt(q, q.born); return libKeyOf(a) === libKeyOf(b) && succOf(a) === 'house' && succOf(b) === 'house' ? A : null; };
     const order = P.map(q => q.id).sort((a, b) => P[a].born - P[b].born || a - b);
     const namingEvents = [];
@@ -1583,9 +2053,8 @@
     namingEvents.sort((a,b) => a[0] - b[0] || b[2] - a[2] || a[1] - b[1]);
     for (const [year, id, settled] of namingEvents) { const q = P[id], civ = rulingCultureAt(q, year), lib = libOf(civOr(civ, q.caps[0] && q.caps[0].r));
       if (settled === 1 && q.restoreYear === year) continue;
-      const dynParent = q.parents.find(x => x.kind === 'dynasty');
-      const keepDynastyName = !dynParent || (succOf(rulingCultureAt(P[dynParent.id], year)) === 'house' && succOf(civ) === 'house');
-      let name = settled === 1 || (!settled && !keepDynastyName) ? null : inheritedStateName(q, P, year, libKeyOf, R.cx, R.cy, h.W, used, settled === 2);
+      const dpa = q.parents.find(x => x.kind === 'dynasty'), keepDyn = !dpa || !!q.republic || (!q.newRealm && succOf(rulingCultureAt(P[dpa.id], Math.min(q.born, P[dpa.id].died === null ? q.born : P[dpa.id].died))) === 'house');
+      let name = settled === 1 ? null : inheritedStateName(q, P, year, libKeyOf, R.cx, R.cy, h.W, used, settled === 2, keepDyn);
       if (!name && settled === 2 && q.names.length && libKeyOf(rulingCultureAt(q, year - 1)) === libKeyOf(civ)) continue;
       if (!name) { const short = drawRulingName(lib, 'state', used, rndName); name = { short, bare: bareOf(short) }; }
       q.names.push([year, name.short, name.bare]); q.short = name.short; q.bare = name.bare;
@@ -1617,20 +2086,20 @@
     let symI = 0;
     for (const q of P) { if (!q.rtype) continue; const lib = libOf(q.civ), place = (() => { const ci = bigCity(q.caps[0].r, q.born); if (ci < 0) return (q.names[0][1] || '').slice(0, 2); q._rebelCity = ci; return G.HistoryCities.reference(ci, q.born); })();
       const RX = G.CultureExt ? G.CultureExt.ext(lib).rebel : null;
-      if (RX) { const syms = RX.symbols && RX.symbols.length ? RX.symbols : SYM, sym2 = syms[((symI++ + (h.seed | 0)) % syms.length + syms.length) % syms.length], fr = q.relAt >= 0 && RELS[q.relAt] ? RELS[q.relAt] : null, her = fr && fr.heresies && fr.heresies.length ? fr.heresies[((q.id + (h.seed | 0)) % fr.heresies.length + fr.heresies.length) % fr.heresies.length] : null;
+      if (RX) { const syms = RX.symbols && RX.symbols.length ? RX.symbols : SYM, sym2 = syms[(symI++ + (h.seed | 0)) % syms.length], fr = q.relAt >= 0 && RELS[q.relAt] ? RELS[q.relAt] : null, her = fr && fr.heresies && fr.heresies.length ? fr.heresies[(q.id + (h.seed | 0)) % fr.heresies.length] : null;
         q.rebelName = q.rtype === 'religious' ? (her ? her + '起义军' : place + '圣战军') : q.rtype === 'loyalist' ? (q.memoryOf >= 0 && P[q.memoryOf].short ? P[q.memoryOf].short + '遗民军' : place + '义军') : q.rtype === 'ethnic' ? (cultName(q.civ).replace(/文明$/, '') + '人起义军')
           : (RX.style === 'symbol' ? RX.fmt.replace('{sym}', sym2) : RX.fmt.replace('{place}', place).replace('{sym}', sym2)); continue; }
-      const sym = SYM[((symI++ + (h.seed | 0)) % SYM.length + SYM.length) % SYM.length];
+      const sym = SYM[(symI++ + (h.seed | 0)) % SYM.length];
       q.rebelName = q.rtype === 'religious' ? (eastern(lib) ? sym + '教军' : place + '圣战军') : q.rtype === 'loyalist' ? (q.memoryOf >= 0 && P[q.memoryOf].short ? P[q.memoryOf].short + '遗民军' : place + '义军') : q.rtype === 'ethnic' ? (cultName(q.civ).replace(/文明$/, '') + '人起义军') : eastern(lib) ? sym + '军' : place + '起义军'; }
     // 帝号是法理名分，不看当下大小：称帝以后就是帝国，哪怕只剩一城；政体（君主制、游牧、封建、集权、神权）照旧，只是等级升到了帝国
     const empAt = (q, y) => { const L = q.emp; if (!L) return false; if (y === undefined) return q.crown !== undefined; for (let i = 0; i < L.length; i += 2) if (y >= L[i] && (L[i + 1] === null || y < L[i + 1])) return true; return false; };
     const kingAt = (q, y) => q.king !== undefined && (y === undefined || y >= q.king);
-    const formOf = (q, n, cs, vas, y) => q.theo !== undefined && (y === undefined || y >= q.theo) ? 'theo' : empAt(q, y) ? 'empire' : nomadAt(q, y) ? (cs >= 3 ? 'nomad' : 'chief') : n <= 2 && cs <= 3 ? 'city' : vas && cs >= 3 ? 'vassal' : cs <= 2 ? 'chief' : 'kingdom';
+    const formOf = (q, n, cs, vas, y) => looseAt(q, y) === 'tribal' ? 'tribal' : looseAt(q, y) === 'primitive' ? 'primitive' : looseAt(q, y) === 'nomadic' && nomadAt(q, y) ? 'nomad' : q.theo !== undefined && (y === undefined || y >= q.theo) ? 'theo' : empAt(q, y) ? 'empire' : nomadAt(q, y) ? (cs >= 3 ? 'nomad' : 'chief') : n <= 2 && cs <= 3 ? 'city' : vas && cs >= 3 ? 'vassal' : cs <= 2 ? 'chief' : 'kingdom';
     // 政体（与等级分开）：君主制 / 封建 / 集权 / 游牧 / 神权 / 共和 / 城邦 / 酋邦 / 附庸
-    const regimeOf = (q, y) => { const n = nAt(q, y), cs = stageAt(capAt(q, y).r, y); if (q.theo !== undefined && y >= q.theo) return 'theo'; if (q.republic) return 'republic'; if (nomadAt(q, y)) return 'nomad'; if (vasAt(q, y) && cs >= 3) return 'vassal'; const e = empAt(q, y); if (!e && n <= 2 && cs <= 3) return 'city'; if (cs <= 2) return e ? 'monarchy' : 'chief'; return cs >= 7 ? 'central' : cs === 6 ? 'feudal' : 'monarchy'; };
+    const regimeOf = (q, y) => { const n = nAt(q, y), cs = stageAt(capAt(q, y).r, y); { const lo = looseAt(q, y); if (lo === 'tribal' || lo === 'primitive') return lo; } if (q.theo !== undefined && y >= q.theo) return 'theo'; if (q.republic) return 'republic'; if (nomadAt(q, y)) return 'nomad'; if (vasAt(q, y) && cs >= 3) return 'vassal'; const e = empAt(q, y); if (!e && n <= 2 && cs <= 3) return 'city'; if (cs <= 2) return e ? 'monarchy' : 'chief'; return cs >= 7 ? 'central' : cs === 6 ? 'feudal' : 'monarchy'; };
     const REGW = { monarchy: '君主制', feudal: '封建', central: '集权', nomad: '游牧', theo: '神权' };
     const formLabelOf = (q, y) => { const g = regimeOf(q, y); if (empAt(q, y)) return (REGW[g] || '君主制') + '帝国';
-      if (g === 'theo') return '神权政体（政教合一）'; if (g === 'republic') return '共和国'; if (g === 'nomad') return '游牧政权'; if (g === 'vassal') return '附庸国（自有疆土与朝廷，向宗主称臣）'; if (g === 'city') return '城邦'; if (g === 'chief') return '酋邦';
+      if (g === 'theo') return '神权政体（政教合一）'; if (g === 'republic') return '共和国'; if (g === 'nomad') return '游牧政体（松散）'; if (g === 'tribal') return '部落政体（松散）'; if (g === 'primitive') return '落后政体（松散）'; if (g === 'vassal') return '附庸国（自有疆土与朝廷，向宗主称臣）'; if (g === 'city') return '城邦'; if (g === 'chief') return '酋邦';
       const T = titlesAt(q, y); return REGW[g] + (!kingAt(q, y) && T.duchy ? '公国' : '王国'); }; // 附庸：用文化库的附庸称号（公国、藩国、萨特拉普辖地……），不称帝
     const vasAt = (q, y) => { let l = -1; for (let i = 0; i < q.vas.length; i += 2) { if (q.vas[i] > y) break; l = q.vas[i + 1]; } return l >= 0; };
     const nAt = (q, y) => { let n = q.ext.length ? q.ext[1] : 1; for (let i = 0; i < q.ext.length; i += 2) { if (q.ext[i] > y) break; n = q.ext[i + 1]; } return n; };
@@ -1669,8 +2138,16 @@
         case 'sack': t = `${nameAt(e.p, y)}${e.gun ? '凭火器之利，' : ''}攻破${nameAt(e.q, Math.min(y - 1, P[e.q].peakYear))}都城${cityName(e.city)}`; major = big(e.q); break;
         case 'nomad': t = `${nameAt(e.p, y)}攻入${cityName(e.city)}，${nameAt(e.q, Math.min(y - 1, P[e.q].peakYear))}亡，${shortAt(e.p, y)}入主其地`; major = true; break;
         case 'split': t = `${nameAt(e.p, y)}陷入内乱，${e.kids.map(c => nameAt(c, y)).join('、')}自立`; major = big(e.p); break;
+        case 'partition': t = `${nameAt(e.p, y)}王位更替，诸子分国：${e.kids.map(c => nameAt(c, y)).join('、')}各领一方`; major = big(e.p); break;
         case 'dynasty': t = `${nameAt(e.q, Math.min(y - 1, P[e.q].peakYear))}亡，${nameAt(e.p, y)}代之`; major = big(e.q); break;
         case 'restore': t = `${nameAt(e.p, y)}收复${shortAt(e.q, y)}故土，宣告复国`; major = true; break;
+        case 'exclave': t = `${nameAt(e.q, y)}的飞地孤悬境外、难以据守，${e.n > 1 ? e.n + ' 地' : ''}归于${nameAt(e.p, y)}`; major = false; break;
+        case 'union': t = `${nameAt(e.q, Math.max(P[e.q].born, y - 1))}${succOf(rulingCultureAt(P[e.q], Math.max(P[e.q].born, y - 1))) === 'house' ? '王室绝嗣，由' + nameAt(e.p, y) + '联姻承袭' : '归并于' + nameAt(e.p, y)}`; major = P[e.q].peakN >= 3; break;
+        case 'islandAnnex': t = `${nameAt(e.p, y)}渡海兼并${nameAt(e.q, Math.max(P[e.q].born, y - 1))}`; major = P[e.q].peakN >= 3; break;
+        case 'islandSettle': t = looseAt(P[e.p], y) ? `${nameAt(e.p, y)}的部众驾舟渡海，在附近的海岛上落脚` : `${nameAt(e.p, y)}的船队渡海拓殖，附近的海岛归入版图`; major = false; break;
+        case 'looseJoin': t = `${nameAt(e.q, Math.max(P[e.q].born, y - 1))}诸部归附${nameAt(e.p, y)}`; major = P[e.q].peakN >= 3; break;
+        case 'looseRise': { const was = nameAt(e.p, Math.max(P[e.p].born, y - 1)), now = nameAt(e.p, y), cn = e.city >= 0 ? cityName(e.city) : ''; t = e.lt === 'primitive' ? `${was}渐有城邑${cn ? '，以' + cn + '为中心' : ''}，诸部归于一统，称${now}` : `${was}诸部归于一统，首领定居${cn || '城中'}，建立${now}`; major = true; break; }
+        case 'mandate': t = `${nameAt(e.p, y)}据有${shortAt(e.q, Math.min(y - 1, P[e.q].peakYear))}故地、定都于此，承其法统`; major = big(e.p) || big(e.q); break;
         case 'crown': { const cn = (e.sc || []).map(c => cultName(c).replace(/文明$/, '')), sw = cn.length <= 3 ? cn.join('、') : cn.slice(0, 2).join('、') + '等文明', nm = nameAt(e.p, y);
           t = e.how === 'conquer' ? `${nameAt(e.p, y - 1)}灭${nameAt(e.q, y - 1)}，承袭其帝统，改称${nm}` : e.how === 'nomad' ? `${shortAt(e.p, y)}入主${nameAt(e.q, y - 1)}故地，并承其帝统，称${nm}` : e.how === 'restore' ? `${nm}重奉${shortAt(e.q, y)}的帝统，帝号中兴`
             : nomadAt(P[e.p], y) ? `${nameAt(e.p, y - 1)}的大汗号令草原诸部，建立游牧帝国，称${nm}` : `${nameAt(e.p, y - 1)}的君主称帝，改称${nm}，成为${sw}诸国法理上的最高君权`; major = true; break; }
@@ -1678,6 +2155,13 @@
         case 'regal': { const q0 = P[e.p], T0 = titlesAt(q0, y), a = nameAt(e.p, Math.max(q0.born, y - 1)), b = nameAt(e.p, y); if (a === b || !T0.duchy || !a.endsWith(T0.duchy) || !b.endsWith(T0.kingdom)) break; t = `${a}晋为王国，称${b}`; major = false; break; } // 只记公国级 → 王国级（同年成为附庸、改称藩 / 土邦的不算）
         case 'wane': { const k = clamp(Math.round((1 - e.n / e.peak) * 10), 1, 9), CN = '〇一二三四五六七八九', nm = nameAt(e.p, y), emp = empAt(P[e.p], y);
           t = e.lv === 1 ? `${nm}由盛转衰，疆土较鼎盛时十去其${CN[k]}` : emp ? `${nm}名存实亡，疆土较鼎盛时十去其${CN[k]}，帝号徒存` : `${nm}日渐衰微，疆土较鼎盛时十去其${CN[k]}`; major = big(e.p); break; }
+        case 'looseForm': { const nm = nameAt(e.p, y); t = e.lt === 'nomadic' ? `草原诸部会盟，共推一位首领，结为${nm}` : e.lt === 'tribal' ? `${nm}结成：诸部落互相盟誓，共御外敌，各部仍自治其地` : `${nm}渐成气候：散居的诸部族以血缘相系，各据山林水泽`; major = e.n >= NAMEBIG; break; }
+        case 'eraCrisis': t = `古典秩序崩解：${nameAt(e.p, Math.max(P[e.p].born, y - 1))}${{ barbarian: '边地诸族大举内侵', plague: '大疫流行、户口锐减', warlord: '地方豪强拥兵自重、赋税不入中央' }[e.why] || '内外交困'}，大一统的帝国体制难以为继`; major = true; break;
+        case 'imperium': { const cn = (e.sc || []).map(c => cultName(c).replace(/文明$/, '')), sw = cn.length <= 2 ? cn.join('、') : cn.slice(0, 2).join('、') + '等'; t = e.form === 'reunify' ? `${nameAt(e.p, y)}重整${sw}诸侯，再造一统，帝国复兴` : e.form === 'modern' ? `${nameAt(e.p, y)}整合诸侯、厉行集权，成为称雄一方的近代大国` : `${nameAt(e.p, y)}四出征伐、广置行省，崛起为雄踞一方的古典帝国`; major = true; break; }
+        case 'imperialFall': t = `${nameAt(e.p, Math.max(P[e.p].born, y - 1))}${e.why === 'shrink' ? '屡遭败绩，疆土丧失大半' : '盛极而衰：边患不息、财用匮乏、地方坐大'}，帝国气数已尽`; major = true; break;
+        case 'subjugate': t = `${nameAt(e.q, Math.max(P[e.q].born, y - 1))}慑于${nameAt(e.p, y)}兵威，举国归附，并入其版图`; major = P[e.q].peakN >= 3; break;
+        case 'apoikia': t = `${nameAt(e.q, y)}的移民渡海，在蛮荒之地的海岸${e.city >= 0 ? '筑起' + cityName(e.city) + '，' : ''}建立殖民城邦${nameAt(e.p, y)}`; major = false; break;
+        case 'hegemony': { const cn = (e.sc || []).map(c => cultName(c).replace(/文明$/, '')), sw = cn.length <= 2 ? cn.join('、') : cn.slice(0, 2).join('、') + '等'; t = `${nameAt(e.p, y)}一统${sw}诸邦，疆土达 ${e.n} 地，成为古典时代的大一统帝国`; major = true; break; }
         case 'decay': t = nameAt(e.p, Math.max(P[e.p].born, y - 1)) + ({ age: '立国日久，弊政丛生，律令废弛，国势中衰', over: '疆域过广，鞭长莫及，地方日益离心', war: '连年兵败，国力虚耗，人心浮动', foreign: '异族达半，各怀异志，统治动摇', lag: '墨守旧制，落后于邻国，朝野失望', court: '朝政紊乱，权臣当道，内争不休' }[e.why] || '国势中衰'); major = big(e.p); break;
         case 'defeat': t = `${nameAt(e.q, Math.max(P[e.q].born, y - 1))}为${nameAt(e.p, y)}所败，丧失 ${e.n} 地`; major = big(e.q) && e.n >= 5; break;
         case 'perish': t = `${nameAt(e.p, Math.max(P[e.p].born, y - 1))}失去最后的疆土，就此覆亡`; major = big(e.p); break;
@@ -1690,6 +2174,7 @@
         case 'adopt': t = `${nameAt(e.p, y)}接纳${D.IDEAS[e.k].name}思潮${D.IDEAS[e.k].id === 'navigation' ? '，从此可以远渡重洋' : ''}`; major = D.IDEAS[e.k].id === 'navigation'; break;
         case 'schism': t = `${nameAt(e.p, y)}改奉${RELS[e.g].name}，自${RELS[e.f].name}分裂而出`; major = true; break;
         case 'theocracy': t = `${nameAt(e.p, y - 1)}祭司掌权，以${relName(e.f)}立国，政教合一，改称${nameAt(e.p, y)}`; major = true; break;
+        case 'nwDisperse': t = `${nameAt(e.p, Math.max(P[e.p].born, y - 1))}诸部离散，各部重归自治`; major = false; break;
         case 'tribalFree': t = `${nameAt(e.p, y)}失去 ${e.n} 处边地的控制，当地部族恢复松散自治`; major = e.n >= 3; break;
         case 'secede': t = `${nameAt(e.p, y)}脱离${nameAt(e.q, Math.min(y - 1, P[e.q].peakYear))}独立`; major = true; break;
         case 'rise': t = `${nameAt(e.p, y)}建立`; major = true; break;
@@ -1706,9 +2191,8 @@
         case 'suppress': t = `${nameAt(e.q, y)}镇压了${P[e.p].rebelName}`; major = false; break;
         case 'rebelState': t = e.restoreOf >= 0 ? `${P[e.p].rebelName}光复故土，${nameAt(e.p, y)}复国` : `${P[e.p].rebelName}割据一方，建立${nameAt(e.p, y)}`; major = true; break;
         case 'overthrow': t = shortAt(e.p, y) === shortAt(e.q, y - 1) && e.restoreOf < 0 ? `${P[e.p].rebelName}攻入都城${cityName(e.city)}，${houseAt(e.q, y - 1)}覆亡，${houseAt(e.p, y)}入主${nameAt(e.p, y)}` : e.restoreOf >= 0 ? `${P[e.p].rebelName}攻入${cityName(e.city)}，${nameAt(e.q, y - 1)}亡，遗民光复故国，${nameAt(e.p, y)}复国` : `${P[e.p].rebelName}攻入都城${cityName(e.city)}，${nameAt(e.q, y - 1)}亡，${nameAt(e.p, y)}代之`; major = true; break;
-        case 'house': { const L = P[e.p].houses || [], a = e.q === undefined ? L[e.k - 1]?.[2] : houseAt(e.q, y - 1), b = e.q === undefined ? L[e.k]?.[2] : houseAt(e.p, y), nm = nameAt(e.p, y);
-          if (!a || !b) break;
-          t = e.how === 'coup' ? `${nm}宫廷政变，${a}被推翻，${b}夺得大位，国号不改` : `${nm}的${a}终结，${b}入继大统`; major = big(e.q === undefined ? e.p : e.q); break; }
+        case 'house': { const L = P[e.p].houses || [], a = L[e.k - 1], b = L[e.k]; if (!a || !b) break; const nm = nameAt(e.p, y);
+          t = e.how === 'coup' ? `${nm}宫廷政变，${a[2]}被推翻，${b[2]}夺得大位，国号不改` : `${nm}的${a[2]}绝嗣，${b[2]}入继大统`; major = big(e.p); break; }
         case 'coup': t = `${nameAt(e.q, y - 1)}宫廷政变，${nameAt(e.p, y)}代之`; major = big(e.q); break;
         case 'revolution': t = `${nameAt(e.q, y - 1)}爆发革命，改建${nameAt(e.p, y)}`; major = true; break;
         case 'colonyCity': t = `${nameAt(e.p, y)}在新大陆建起第一座殖民${e.port ? '港口' : '城市'}${cityName(e.city)}`; major = true; break;
@@ -1716,8 +2200,6 @@
         case 'colony': t = `${nameAt(e.p, y)}在新大陆建立殖民地${e.city >= 0 ? cityName(e.city) : ''}`; major = !!e.first; break;
         case 'independence': t = `${nameAt(e.q, y)}的新大陆殖民地宣布独立，建立${nameAt(e.p, y)}`; major = true; break;
         case 'migrate': t = `${cultName(e.c)}的部族随${nameAt(e.p, y)}的征服迁入新地`; major = big(e.p); break;
-        case 'peacefulUnion': t = `${nameAt(e.q, y - 1)}与邻国${nameAt(e.p, y)}和平合邦`; break;
-        case 'territoryCede': t = `${nameAt(e.q, y)}失去对远离本土的 ${e.n} 处领地的控制，${nameAt(e.p, y)}接管当地`; break;
         case 'territoryIntegrate': t = `${nameAt(e.p, y)}将境内及沿海 ${e.n} 处无主地区纳入行政管辖`; break;
         case 'frontierAffiliation': t = `边疆聚落归附${nameAt(e.p, y)}`; break;
         case 'holyWarStart': t = `${nameAt(e.p, y)}以${RELS[e.f].name}之名发起圣战`; major = true; break;
@@ -1728,11 +2210,11 @@
       }
       if (t) texts.push({ year: y, kind: e.kind === 'secede' ? 'secede' : e.kind, text: t, r: e.r || 0, city: e.city !== undefined ? e.city : undefined, p: e.p, q: e.q, restoreOf: e.kind === 'restore' ? e.q : e.restoreOf, war: e.war, religion: e.f, reason: e.reason, regions: e.regions, kids: e.kids, pv: e.pv, nv: e.nv, pvs: e.olds ? e.olds.concat(e.news) : undefined, major }); }
     // ---------- 君主世系与政府组织：人名、王朝（家族）、称谓、庙号或序数、官制，均取自文化库 ----------
-    { const CE = G.CultureExt, rndR = mulberry32((h.seed | 0) + 5353), accessionRnd = mulberry32((h.seed | 0) ^ 0x62af1893), regCount = new Map(), firstOf = new Map();
-      const govKey = (q, y) => { if (q.rtype && y >= q.rebelSince && (q.rebelUntil === undefined || y < q.rebelUntil)) return 'rebel'; if (q.theo !== undefined && y >= q.theo) return 'theo'; if (q.republic) return 'republic'; if (nomadAt(q, y)) return stageAt(capAt(q, y).r, y) >= 3 ? 'nomad' : 'chief';
+    { const CE = G.CultureExt, rndR = mulberry32((h.seed | 0) + 5353), regCount = new Map(), firstOf = new Map();
+      const govKey = (q, y) => { if (q.rtype && y >= q.rebelSince && (q.rebelUntil === undefined || y < q.rebelUntil)) return 'rebel'; if (looseAt(q, y) === 'tribal' || looseAt(q, y) === 'primitive') return 'chief'; if (q.theo !== undefined && y >= q.theo) return 'theo'; if (q.republic) return 'republic'; if (nomadAt(q, y)) return stageAt(capAt(q, y).r, y) >= 3 ? 'nomad' : 'chief';
         const c = capAt(q, y), cs = stageAt(c.r, y), fm = formOf(q, nAt(q, y), cs, vasAt(q, y), y); if (fm === 'vassal') return 'vassal'; if (fm === 'nomad') return 'nomad'; if (fm === 'chief') return 'chief'; if (fm === 'city') return 'city'; if (cs >= 7) return 'central'; if (cs === 6) return 'feudal'; return fm === 'empire' ? 'empire' : 'king'; };
       for (const q of P) { q.rulers = []; q.gov = []; if (!CE || !q.houses.length) continue;
-        buildDynastyRulers(q, { CE, libAt:dynastyLibAt, rnd:rndR, accessionRnd, end:q.died === null ? E : q.died, govKey, governmentStyle:(p,y,X) => p.settled !== undefined && y >= p.settled ? polStyle(p) : X.gov.style, formAt:(p,y) => formOf(p, nAt(p,y), stageAt(capAt(p,y).r,y), vasAt(p,y), y), religions:RELS, regCount, firstOf }); } }
+        buildDynastyRulers(q, { CE, libAt:dynastyLibAt, rnd:rndR, polities:P, end:q.died === null ? E : q.died, govKey, governmentStyle:(p,y,X) => p.settled !== undefined && y >= p.settled ? polStyle(p) : X.gov.style, formAt:(p,y) => formOf(p, nAt(p,y), stageAt(capAt(p,y).r,y), vasAt(p,y), y), religions:RELS, regCount, firstOf }); } }
     // ---------- 思潮：兴起与大国接纳（写进编年史） ----------
     { D.IDEAS.forEach((I, k) => { const yb = D.ideaBorn[k]; if (!(yb < INF) || yb > E) return; const o = D.ideaOrigins[k].filter(r => D.ideaA[k * NN + r] <= yb + 60)[0] || D.ideaOrigins[k][0]; if (!o) return;
         ev(G.HistoryDate.ceil(yb), 'idea', { k, r: o, city: bigCity(o, G.HistoryDate.ceil(yb)) });
@@ -1780,10 +2262,11 @@
         const allowed = cultureRollbackLimit(cultureHistory.get(r) || [], year, civ); if (allowed === null) continue;
         const key = find(K(year, q.id)); maxRollback.set(key, Math.min(maxRollback.get(key) ?? (TICK - 1), allowed));
       }
-      for (const c of military.output().campaigns) {
+      const milOut = military.output();
+      for (const c of milOut.campaigns) {
         if (!isTick(c.year)) continue;
         const earliest = Math.max(P[c.attacker].born, c.defender >= 0 ? P[c.defender].born : 0);
-        const allowed = Math.max(0, c.year - earliest - (c.preResultDays || 0) / military.output().yearDays), key = find(K(c.year, c.attacker));
+        const allowed = Math.max(0, c.year - earliest - (c.preResultDays || 0) / milOut.yearDays), key = find(K(c.year, c.attacker));
         maxRollback.set(key, Math.min(maxRollback.get(key) ?? (TICK - 1), Math.floor(allowed * 12 + 1e-7) / 12));
       }
       const dOf = (p, y) => {if(!isTick(y)||p===undefined||p<0)return 0;const key=find(K(y,p));return Math.min(Math.floor(hj(key + (h.seed | 0) * 7919) * TICK * 12) / 12, Math.floor((maxRollback.get(key)??(TICK-1))*12+1e-7)/12, y);};
@@ -1817,7 +2300,7 @@
         if (q._rebelCity !== undefined) { const old = G.HistoryCities.reference(q._rebelCity, b0), now = G.HistoryCities.reference(q._rebelCity, q.born); q.rebelName = q.rebelName.split(old).join(now); rebelRefs.set(id, [old, now]); }
         for (const x of q.names) x[0] = J(id, x[0]); for (const x of q.rulingCulture) x[0] = J(id, x[0]); for (const x of q.titlesLog) x[0] = J(id, x[0]);
         for (const c of q.caps) c.year = J(id, c.year); for (let i = 0; i < q.vas.length; i += 2) q.vas[i] = J(id, q.vas[i]); for (let i = 0; i < q.ext.length; i += 2) q.ext[i] = J(id, q.ext[i]);
-        q.peakYear = J(id, q.peakYear); for (const f of ['org', 'theo', 'settled', 'rebelSince', 'rebelUntil', 'restoreYear', 'king']) if (typeof q[f] === 'number') q[f] = J(id, q[f]);
+        q.peakYear = J(id, q.peakYear); for (const f of ['org', 'theo', 'settled', 'rebelSince', 'rebelUntil', 'restoreYear', 'king', 'mandateYear']) if (typeof q[f] === 'number') q[f] = J(id, q[f]);
         if (q.rebelTargets) for (const x of q.rebelTargets) x[0] = J(id, x[0]);
         if (q.emp) for (let i = 0; i < q.emp.length; i++) if (q.emp[i] !== null) q.emp[i] = J(id, q.emp[i]);
         if (q.ideaAdopt) for (const a of q.ideaAdopt) a[1] = Math.max(q.born, J(id, a[1]));
@@ -1841,15 +2324,6 @@
       }
       // 编年史：跟着当事的政权（没有政权的按地点）
       for (const t of texts) { t.year = t.kind === 'holyWarStart' ? warStart.get(t.war) : t.kind === 'convert' ? G.HistoryDate.ceil(t.year) : t.p !== undefined && t.p >= 0 ? J(t.p, t.year) : Jr(t.r || 0, t.year); for (const p of [t.p, t.q]) { const pair = rebelRefs.get(p); if (pair) t.text = t.text.split(pair[0]).join(pair[1]); } } }
-
-    // 弑君、篡位与继位是同一次实际交接；日期细化后用君主记录的日期生成编年史。
-    for (const q of P) for (let i = 1; i < q.rulers.length; i++) {
-      const ruler = q.rulers[i], previous = q.rulers[i - 1];
-      if (ruler[6] !== 'regicide' && ruler[6] !== 'usurp') continue;
-      const at = ruler[0], cap = capAt(q, at), murdered = ruler[6] === 'regicide';
-      texts.push({ year: at, kind: ruler[6], p: q.id, r: cap.r, major: q.peakN >= NAMEBIG,
-        text: murdered ? `${nameAt(q.id, at)}的${previous[2]}${previous[1]}遭${ruler[1]}弑杀，${ruler[1]}夺位` : `${nameAt(q.id, at)}的${previous[2]}${previous[1]}被${ruler[1]}废黜，${ruler[1]}篡位` });
-    }
 
     // ---------- 地名按当时的统治文化正向命名，同库易主保留原名 ----------
     {
@@ -1889,7 +2363,7 @@
     const chgY = new Float64Array(off[nR + 1]), chgO = new Int32Array(off[nR + 1]);
     for (let r = 1; r <= nR; r++) { const l = per[r]; for (let i = 0; i < l.length; i += 2) { chgY[off[r] + i / 2] = l[i]; chgO[off[r] + i / 2] = l[i + 1]; } }
     const polities = P.map(q => ({ short: q.short, bare: q.bare && q.bare !== q.short ? q.bare : undefined, names: q.names, rulingCulture: q.rulingCulture, titles: q.titles, titlesLog: q.titlesLog, type: q.type, nomad: !!q.nomad, civ: q.civ, theoRel: q.theoRel, born: q.born, died: q.died, parents: q.parents, children: q.children,
-      caps: q.caps.map(c => [c.year, c.city, c.r]), vas: q.vas.slice(), peakN: q.peakN, peakYear: q.peakYear, color: q.color, heirOf: q.heirOf, ext: q.ext, restoreOf: q.restoreOf === undefined ? -1 : q.restoreOf, restoreYear: q.restoreYear, restoreRegions: q.restoreRegions || [], restoreOrigin: q.rtype === 'loyalist' && q.restoreOf !== undefined ? q.memoryRegion : -1, coreAtDeath: q.coreAtDeath || [] }));
+      caps: q.caps.map(c => [c.year, c.city, c.r]), vas: q.vas.slice(), peakN: q.peakN, peakYear: q.peakYear, color: q.color, heirOf: q.heirOf, ext: q.ext, restoreOf: q.restoreOf === undefined ? -1 : q.restoreOf, restoreYear: q.restoreYear, restoreRegions: q.restoreRegions || [], restoreOrigin: q.rtype === 'loyalist' && q.restoreOf !== undefined ? q.memoryRegion : -1, coreAtDeath: q.coreAtDeath || [], loose: q.loose || null, looseUntil: q.looseUntil === undefined ? null : q.looseUntil }));
     const csr = L => { const per = Array.from({ length: nR + 1 }, () => []); for (let i = 0; i < L.length; i += 3) per[L[i]].push(L[i + 1], L[i + 2]);
       const o = new Int32Array(nR + 2); for (let r = 1; r <= nR + 1; r++) o[r] = o[r - 1] + (r - 1 >= 1 ? per[r - 1].length / 2 : 0);
       const yy = new Float64Array(o[nR + 1]), vv = new Int32Array(o[nR + 1]); for (let r = 1; r <= nR; r++) { const l = per[r]; for (let i = 0; i < l.length; i += 2) { yy[o[r] + i / 2] = l[i]; vv[o[r] + i / 2] = l[i + 1]; } } return { off: o, year: yy, val: vv }; };
@@ -1904,10 +2378,10 @@
       if (sl < 0) for (let t = 0; t < 36; t++) { const c = ((X.id * 7 + t * 5) % 12) + 12 * ((X.id + Math.floor(t / 12)) % 3); if (!usedS.has(c)) { sl = c; break; } } if (sl < 0) sl = X.id % 36;
       pslot[X.id] = sl; X.color = hsl(HUES[sl % 12] + ((X.id * 11) % 9) - 4, [0.42, 0.38, 0.4][Math.floor(sl / 12)], [0.76, 0.83, 0.68][Math.floor(sl / 12)]); }
     const provinces = PV.map(X => ({ name: X.name, created: X.created, abolished: X.abolished, seats: X.seats, kind: X.kind, parents: X.parents, children: X.children, hist: X.hist, present: X.present, fromState: X.fromState, color: X.color, stage: X.stage, names: X.names, why: X.abolishWhy || null }));
-    polities.forEach((q, i) => { const Q = P[i]; q.ideaAdopt = (Q.ideaAdopt || []).sort((a, b) => a[1] - b[1]); q.msys = Q.msys || []; q.rulers = Q.rulers; q.gov = Q.gov; q.houseName = Q.houseName; q.govStyle = Q.govStyle; q.houses = (Q.houses || []).map(x => [x[4] !== undefined ? x[4] : x[0], x[2], x[3], x[5], x[1], x[6]]); if (Q.theoRel !== undefined) q.theoRel = Q.theoRel; if (Q.theo !== undefined) q.theo = Q.theo; if (Q.settled !== undefined) q.settled = Q.settled; q.org = Q.org === undefined ? null : Q.org; q.lin = Q.lin; q.territorialPredecessors = Q.territorialPredecessors || []; if (Q.outcome) q.outcome = Q.outcome; if (Q.colonialFrom !== undefined) q.colonialFrom = Q.colonialFrom; if (Q.rtype) { q.rebelName = Q.rebelName; q.rtype = Q.rtype; q.rebelGoal = Q.rebelGoal; q.rebelTargets = Q.rebelTargets; q.rebelSince = Q.rebelSince; q.rebelUntil = Q.rebelUntil === undefined ? Q.died : Q.rebelUntil; } if (Q.republic) q.republic = true; q.emp = Q.emp ? Q.emp.slice() : null; if (Q.king !== undefined) q.king = Q.king; });
+    polities.forEach((q, i) => { const Q = P[i]; q.ideaAdopt = (Q.ideaAdopt || []).sort((a, b) => a[1] - b[1]); q.msys = Q.msys || []; q.rulers = Q.rulers; q.gov = Q.gov; q.houseName = Q.houseName; q.govStyle = Q.govStyle; q.houses = (Q.houses || []).map(x => [x[4] !== undefined ? x[4] : x[0], x[2], x[3], x[5], x[1], x[6]]); if (Q.theoRel !== undefined) q.theoRel = Q.theoRel; if (Q.theo !== undefined) q.theo = Q.theo; if (Q.settled !== undefined) q.settled = Q.settled; q.org = Q.org === undefined ? null : Q.org; q.lin = Q.lin; if (Q.outcome) q.outcome = Q.outcome; if (Q.colonialFrom !== undefined) q.colonialFrom = Q.colonialFrom; if (Q.rtype) { q.rebelName = Q.rebelName; q.rtype = Q.rtype; q.rebelGoal = Q.rebelGoal; q.rebelTargets = Q.rebelTargets; q.rebelSince = Q.rebelSince; q.rebelUntil = Q.rebelUntil === undefined ? Q.died : Q.rebelUntil; } if (Q.republic) q.republic = true; q.emp = Q.emp ? Q.emp.slice() : null; if (Q.king !== undefined) q.king = Q.king; });
     const uS = unrestSamples.length / 2, uYears = new Float32Array(uS), uData = new Uint8Array(uS * (nR + 1)); for (let i = 0; i < uS; i++) { uYears[i] = unrestSamples[2 * i]; uData.set(unrestSamples[2 * i + 1], i * (nR + 1)); }
     // ---------- 终局：现在的国家与省份（写回现在的地图） ----------
-    const FORMS = { city: 'cityRepublic', kingdom: 'monarchy', empire: 'empire', nomad: 'nomadic', chief: 'chiefdom', theo: 'theocracy', vassal: 'vassal' };
+    const FORMS = { city: 'cityRepublic', kingdom: 'monarchy', empire: 'empire', nomad: 'nomadic', chief: 'chiefdom', theo: 'theocracy', vassal: 'vassal', tribal: 'tribal', primitive: 'primitive' };
     const aliveNow = P.filter(q => q.died === null && q.n > 0 && !q.rebel).sort((a, b) => b.n - a.n || a.id - b.id);
     const countryOfP = new Int32Array(P.length).fill(-1); aliveNow.forEach((q, i) => countryOfP[q.id] = i);
     // 起义军独立前仍属于其反叛的国家；军事与历史记录保留实际控制方。
@@ -1918,7 +2392,8 @@
     }
     const settleIdx = ci => ci >= 0 && C.cities[ci] ? C.cities[ci].idx : -1;
     const nowCountries = aliveNow.map(q => { const f = q.republic ? 'republic' : FORMS[formOf(q, nAt(q, E), stageAt(capAt(q, E).r, E), vasAt(q, E), E)] || 'monarchy'; // 与国名（nameAt）用同一套输入，国名与政体一致
-      return { p: q.id, name: nameAt(q.id, E), short: q.short, bare: q.bare && q.bare !== q.short ? q.bare : undefined, form: f, formLabel: f === 'republic' ? '共和国' : formLabelOf(q, E), regime: regimeOf(q, E), imperial: empAt(q, E), capRegion: q.cap, capital: settleIdx(bigCity(q.cap, E)), civ: rulingCultureAt(q, E), religion: q.theoRel !== undefined ? q.theoRel : rel[q.cap], n: q.n, color: q.color, liegeP: q.liege >= 0 && P[q.liege].died === null ? topLiege(q.id) : -1, liegeD: q.liege >= 0 && P[q.liege].died === null ? q.liege : -1, gov: q.gov.length ? q.gov[q.gov.length - 1][1] : '', govKey: q.gov.length ? q.gov[q.gov.length - 1][2] : '', govStyle: q.govStyle, ruler: q.rulers.length ? q.rulers[q.rulers.length - 1] : null, house: q.houseName, rulers: q.rulers.length, ideas: D.IDEAS.map((I, k) => D.ideaA[k * NN + q.cap] <= E ? I.name : null).filter(Boolean), mil: milAt(q.cap, E), adm: admAt(q.cap, E) }; });
+      const lk = looseKind(q);
+      return { p: q.id, loose: lk, name: nameAt(q.id, E), short: q.short, bare: q.bare && q.bare !== q.short ? q.bare : undefined, form: f, formLabel: f === 'republic' ? '共和国' : formLabelOf(q, E), regime: regimeOf(q, E), imperial: empAt(q, E), capRegion: q.cap, capital: settleIdx(bigCity(q.cap, E)), civ: rulingCultureAt(q, E), religion: q.theoRel !== undefined ? q.theoRel : rel[q.cap], n: q.n, color: q.color, liegeP: q.liege >= 0 && P[q.liege].died === null ? topLiege(q.id) : -1, liegeD: q.liege >= 0 && P[q.liege].died === null ? q.liege : -1, gov: q.gov.length ? q.gov[q.gov.length - 1][1] : '', govKey: q.gov.length ? q.gov[q.gov.length - 1][2] : '', govStyle: q.govStyle, ruler: q.rulers.length ? q.rulers[q.rulers.length - 1] : null, house: q.houseName, rulers: q.rulers.length, ideas: D.IDEAS.map((I, k) => D.ideaA[k * NN + q.cap] <= E ? I.name : null).filter(Boolean), mil: milAt(q.cap, E), adm: admAt(q.cap, E) }; });
     const provIdx = new Int32Array(PV.length).fill(-1), nowProvinces = [];
     for (const X of PV) { if (X.n <= 0 || X.abolished !== null) continue; const regs = []; for (let r = 1; r <= nR; r++) if (prov[r] === X.id) regs.push(r); if (!regs.length) continue;
       const own = owner[regs[0]], seatR = X.seat;if(!regs.includes(seatR)||seatCity(seatR,E)<0)throw Error('终局省份缺少有效治所');provIdx[X.id] = nowProvinces.length;
@@ -1932,17 +2407,44 @@
     for (const fort of fortManager.forts) { const last = fort.log[fort.log.length - 1]; guards[fort.region] = last[1]; }
     const foodAfterFort = Float64Array.from(finalFood.foodAvailable);
     const economy = { foodDemand: finalFood.foodDemand, foodProduction: finalFood.foodProduction, foodImport: finalFood.foodImport, foodExport: finalFood.foodExport, foodExportLoss: finalFood.foodExportLoss, foodAvailable: finalFood.foodAvailable, foodAfterFort, militaryExtra:finalFood.militaryExtra, militaryLaborLoss:finalFood.militaryLaborLoss, unitCost: finalFood.unitCost, guards, summary: finalFood.summary, guardModel: '道路边界要塞按区域图绕行和本区当期粮食余量维持驻守，不模拟精确山口。' };
+    // 编年史只记战争的结局：同一对交战方前后相隔不过五年的连续战役合为一场战争，一条记下谁与谁、几年、几战、得失何地；
+    // 集结、行军、接敌、战术与伤亡这些过程留在战事簿（军事面板）里，不进大事记
     const campaignEvents = [];
-    for (const c of military.output().campaigns) for (const e of c.events) {
-      if (e.type === 'occupation') continue; // The result and political records already describe control changes.
-      const at = G.HistoryDate.time(e.at), attacker = nameAt(c.attacker, Math.max(P[c.attacker].born, e.at)), defender = c.defender >= 0 ? nameAt(c.defender, Math.max(P[c.defender].born, Math.min(e.at, c.resultTime - 1 / 12))) : '当地守军';
-      const subject = e.side === 'attacker' ? attacker + '军队' : e.side === 'defender' ? defender + '军队' : attacker + '与' + defender;
-      if (e.type === 'allies') { const L = (c.allies?.[e.side] || []).map(x => nameAt(x.p, Math.max(P[x.p].born, e.at))).join('、'); campaignEvents.push({year:at, kind:'campaign', phase:'allies', campaign:c.id, p:c.attacker, q:c.defender, r:c.target, text: e.side === 'attacker' ? `${attacker}联合${L}进军：${e.detail}` : `${L}出兵援救${defender}：${e.detail}`, major: big(c.attacker) || c.defender >= 0 && big(c.defender)}); continue; }
-      campaignEvents.push({year:at, kind:'campaign', phase:e.type, campaign:c.id, p:c.attacker, q:c.defender, r:e.type === 'mobilization' || e.type === 'march' ? c.source : c.target,
-        text:`${subject}：${e.label}。${e.detail}`, major:e.type === 'result' && (big(c.attacker) || c.defender >= 0 && big(c.defender))});
+    { const EP = new Map(), episodes = [], GAP = 5;
+      const camps = military.output().campaigns.filter(c => Number.isFinite(c.resultTime) && c.timeline && c.timeline.length && c.timeline[0].phase !== 'aborted').sort((a, b) => a.resultTime - b.resultTime);
+      for (const c of camps) { const a = c.attacker, d = c.defender, key = d < 0 ? 'L' + a : (a < d ? a + ':' + d : d + ':' + a);
+        let ep = EP.get(key); if (!ep || c.startTime - ep.end > GAP) { ep = { a, d, start: c.startTime, end: c.resultTime, n: 0, gains: new Map(), held: 0, first: c.id, r: c.target, allies: new Set(), sub: null }; EP.set(key, ep); episodes.push(ep); }
+        ep.n++; ep.end = Math.max(ep.end, c.resultTime); if (c.naval) { ep.sea = true; if (c.naval.fought) ep.navalN = (ep.navalN || 0) + 1; }
+        if (c.status === 'won' && c.control) { if (c.control.kind === 'tributary' || c.control.kind === 'vassal') ep.sub = { p: a, q: d, kind: c.control.kind }; else if (c.control.to === a) { let L = ep.gains.get(a); if (!L) ep.gains.set(a, L = []); if (!L.includes(c.target)) L.push(c.target); ep.r = c.target; } }
+        else ep.held++;
+        if (c.allies) for (const side of ['attacker', 'defender']) for (const x of c.allies[side] || []) ep.allies.add(x.p); }
+      const placeIn = (r, y) => { const ci = bigCity(r, Math.floor(y)); return ci >= 0 ? cityName(ci) : ''; };
+      const CN = n => n <= 10 ? '〇一二三四五六七八九十'[n] : String(n);
+      const places = (regs, y) => { const named = [...new Set(regs.map(r => placeIn(r, y)).filter(Boolean))]; const k = regs.length;
+        return named.length ? named.slice(0, 2).join('、') + (k > Math.min(2, named.length) ? `等${CN(k)}地` : '') : `${CN(k)}处边地`; };
+      const fights = n => n === 1 ? '一战' : `前后${CN(n)}战`;
+      const nm = (p, t) => nameAt(p, Math.max(P[p].born, Math.min(P[p].died === null ? E : P[p].died, t)));
+      const yr = t => Math.floor(t);
+      for (const ep of episodes) { const t = ep.end, gA = ep.gains.get(ep.a) || [], gD = ep.d >= 0 ? (ep.gains.get(ep.d) || []) : [], gain = gA.length + gD.length;
+        const range = yr(ep.start) < yr(ep.end) ? `（${yr(ep.start)}—${yr(ep.end)} 年）` : '';
+        let text, brief, major = false;
+        if (ep.d < 0) { // 向无主的部族之地用兵：零星拓地不记，成片收服才记一笔
+          if (gA.length < 3) continue; const A = nm(ep.a, t);
+          text = `${A}向边地用兵${range}，收服${CN(gA.length)}处部族之地`; brief = `${A}拓地${CN(gA.length)}处`; }
+        else { const namedGain = [...(ep.gains.values())].some(L => L.some(r => placeIn(r, t)));
+          if (!ep.sub && !(gain >= 2 || (gain === 1 && (namedGain || big(ep.a) || big(ep.d))) || (!gain && ep.n >= 4))) continue; // 零星的边境摩擦、一两场无果的冲突不入大事记
+          const [W, Lz, gw, gl] = gD.length > gA.length ? [ep.d, ep.a, gD, gA] : [ep.a, ep.d, gA, gD], Wn = nm(W, t), Ln = nm(Lz, t);
+          const al = [...ep.allies].filter(x => x !== ep.a && x !== ep.d && P[x]).slice(0, 2).map(x => nm(x, t)), alT = al.length ? `，${al.join('、')}亦出兵相助` : '';
+          if (ep.sub && !gain) continue; // 战败称臣已由宗藩事件记下
+          const seaT = ep.navalN ? `（其中海战${CN(ep.navalN)}场）` : '', crossT = ep.sea ? '隔海' : '';
+          if (gain) { text = `${Wn}与${Ln}${crossT}交兵${range}，${fights(ep.n)}${seaT}，${Wn}取${places(gw, t)}${gl.length ? `，${Ln}亦得${places(gl, t)}` : ''}${alT}`; brief = `${Wn}自${Ln}手中取得${CN(gw.length)}地`;
+            major = gw.length >= 4 || (gw.length >= 2 && (big(W) || big(Lz))); }
+          else { const A = nm(ep.a, t), B = nm(ep.d, t); text = `${A}与${B}${crossT}交兵${range}，${fights(ep.n)}${seaT}，互有胜负，疆界未改${alT}`; brief = `${A}与${B}交兵无果`; } }
+        const win = ep.d < 0 ? ep.a : gD.length > gA.length ? ep.d : gain ? ep.a : -1;
+        campaignEvents.push({ year: G.HistoryDate.time(t), kind: 'campaign', campaign: ep.first, p: ep.a, q: ep.d, r: ep.r, n: ep.n, gain, w: win, wn: Math.max(gA.length, gD.length), text, brief, major }); }
     }
-    return { end, military: military.output(), forts: fortManager.forts, holyWars: holyWars.records, human: { species, snapshots: humanSnapshots, exchange: humanExchange, migration: humanMigration, economy, ledger: { initial: initialPopulation, births, deaths, migrated }, stats: { snapshotBytes, peakSampledGroups: peakGroups, ms: humanMs }, model: '区块人口以现今承载权重的8%作为初值；按十年一轮计算人口与相邻陆路粮食；每百年采样。粮食是当轮估算，不含库存和海贸。' }, unrest: { years: uYears, data: uData }, provinces, provLog: csr(pvLog), cultLog: csr(cLog), relLog: csr(rLog), polities, alliances: alliances.map(A => ({ id: A.id, from: A.from, to: A.to, against: A.against, founders: A.founders, members: [...new Set(A.roster.map(x => x[0]).concat([...A.members]))], roster: A.roster.concat([...A.members].map(m => [m, A.joined.get(m), null])) })), own: { off, year: chgY, owner: chgO }, events: texts, campaignEvents, EMPN, T0, stats: { pcap: Math.round(PCAP), popSplits: PV.filter(X => X.why === 'pop').length, maxPP: Math.round(maxPP), polities: P.length, alive: aliveNow.length, changes: chgY.length } };
+    return { end, military: military.output(), forts: fortManager.forts, holyWars: holyWars.records, human: { species, snapshots: humanSnapshots, exchange: humanExchange, migration: humanMigration, economy, ledger: { initial: initialPopulation, births, deaths, migrated }, stats: { snapshotBytes, peakSampledGroups: peakGroups, ms: humanMs }, model: '区块人口以现今承载权重的8%作为初值；按十年一轮计算人口与相邻陆路粮食；每百年采样。粮食是当轮估算，不含库存和海贸。' }, unrest: { years: uYears, data: uData }, provinces, provLog: csr(pvLog), cultLog: csr(cLog), relLog: csr(rLog), polities, alliances: alliances.map(A => ({ id: A.id, from: A.from, to: A.to, against: A.against, founders: A.founders, members: [...new Set(A.roster.map(x => x[0]).concat([...A.members]))], roster: A.roster.concat([...A.members].map(m => [m, A.joined.get(m), null])) })), own: { off, year: chgY, owner: chgO }, events: texts, campaignEvents, EMPN, T0, stats: { imperial: impLog, pcap: Math.round(PCAP), popSplits: PV.filter(X => X.why === 'pop').length, maxPP: Math.round(maxPP), polities: P.length, alive: aliveNow.length, changes: chgY.length } };
   }
 
-  G.HistoryPolity = { run, regionalFragmentation, historicalCores, theocracyProbability, attemptTheocracy, linkRestoration, splitStateName, rulingCultureAt, cultureRollbackLimit, datedName, drawRulingName, advancePlaceName, inheritedStateName, buildDynastyHouses, buildDynastyRulers, alignCultureYear };
+  G.HistoryPolity = { run, historicalCores, theocracyProbability, attemptTheocracy, linkRestoration, splitStateName, rulingCultureAt, cultureRollbackLimit, datedName, drawRulingName, advancePlaceName, inheritedStateName, buildDynastyHouses, buildDynastyRulers, alignCultureYear };
 })(typeof self !== 'undefined' ? self : this);

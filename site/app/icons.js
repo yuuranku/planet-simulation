@@ -36,7 +36,26 @@
 
   /* 聚落：kind = town | city | metro | capital | ancient（古城）| site（小聚落）
    *  o.r 自定半边长（历史图按人口连续缩放），o.sel 选中（蓝框） */
+  // 港口：城市符号正下方的蓝色小锚（海港、岛港、湖港），不挡左右两侧的城名
+  const PORT = '#1f5f93', portOf = ct => !!ct && (ct.type === 'port' || ct.type === 'island-port' || ct.type === 'lake-port');
+  function anchorPath(c, x, y, k) { // 锚：环、锚杆、横杆与两侧弯钩；(x, y) 为锚杆中心，k 为半高
+    c.beginPath(); c.arc(x, y - k * 0.78, k * 0.24, 0, Math.PI * 2);
+    c.moveTo(x, y - k * 0.54); c.lineTo(x, y + k * 0.9);
+    c.moveTo(x - k * 0.42, y - k * 0.28); c.lineTo(x + k * 0.42, y - k * 0.28);
+    c.moveTo(x - k * 0.78, y + k * 0.22); c.quadraticCurveTo(x - k * 0.62, y + k * 0.92, x, y + k * 0.9); c.quadraticCurveTo(x + k * 0.62, y + k * 0.92, x + k * 0.78, y + k * 0.22);
+  }
+  function drawAnchor(c, x, y, k) {
+    c.save(); c.lineCap = 'round'; c.lineJoin = 'round';
+    anchorPath(c, x, y, k); c.lineWidth = Math.max(2.6, k * 0.62); c.strokeStyle = 'rgba(255,253,247,.95)'; c.stroke();
+    anchorPath(c, x, y, k); c.lineWidth = Math.max(1.05, k * 0.26); c.strokeStyle = PORT; c.stroke();
+    c.restore();
+  }
   function drawCity(c, x, y, kind, o) {
+    const r = drawCityBase(c, x, y, kind, o);
+    if (o && o.port && kind !== 'site' && kind !== 'ancient') { const k = Math.max(3.2, Math.min(4.6, r * 1.05)); drawAnchor(c, x, y + r + k * 1.05 + 1, k); }
+    return r;
+  }
+  function drawCityBase(c, x, y, kind, o) {
     o = o || {}; const r = o.r || R0[kind] || 3;
     c.save(); c.lineJoin = 'miter'; c.lineCap = 'butt';
     if (o.sel) { c.beginPath(); c.rect(x - r - 4.5, y - r - 4.5, 2 * r + 9, 2 * r + 9); c.fillStyle = 'rgba(26,115,232,.14)'; c.fill(); c.strokeStyle = 'rgba(26,115,232,.9)'; c.lineWidth = 2; c.stroke(); }
@@ -119,6 +138,8 @@
     if (kind === 'metro') s += sq(x, y, Math.max(1.1, r * 0.42), `fill:${INK};stroke:none`);
     return wrap(s);
   }
+  const svgPort = () => { const x = 11, y = 7, k = 4.2, d = `M${x} ${y - k * 0.54}V${y + k * 0.9}M${x - k * 0.42} ${y - k * 0.28}H${x + k * 0.42}M${x - k * 0.78} ${y + k * 0.22}Q${x - k * 0.62} ${y + k * 0.92} ${x} ${y + k * 0.9}Q${x + k * 0.62} ${y + k * 0.92} ${x + k * 0.78} ${y + k * 0.22}`;
+    return wrap(sq(3.6, 7, 3.1, `fill:${PAPER};stroke:${INK};stroke-width:1.4`) + `<g transform="translate(6 0)"><circle cx="${x}" cy="${y - k * 0.78}" r="${k * 0.24}" style="stroke:${PORT};stroke-width:1.1"/><path d="${d}" style="stroke:${PORT};stroke-width:1.1;stroke-linecap:round;stroke-linejoin:round"/></g>`); };
   const svgFort = type => {
     if (type === 'pass-fort') { const k = 4.4, x = 14, y = 7, w = k * 1.15, h = k * 0.42, g = k * 0.36, t = k * 0.5;
       return wrap(`<path d="M${x - w} ${y - h}h${w - g}v${2 * h}h${-(w - g)}Z M${x + g} ${y - h}h${w - g}v${2 * h}h${-(w - g)}Z M${x - g - t} ${y - t * 1.35}h${t}v${t * 2.7}h${-t}Z M${x + g} ${y - t * 1.35}h${t}v${t * 2.7}h${-t}Z" style="fill:#4b3a2c;stroke:none"/>`); }
@@ -133,5 +154,5 @@
     return `<svg class="mi" viewBox="-5 -5 34 34" width="${size}" height="${size}" style="display:inline-block;vertical-align:-4px;margin-right:6px;flex:none">${bg}${g}</svg>`;
   }
 
-  G.MapIcons = { GLYPH, R0, path, drawCity, drawFort, drawHoly, drawRuin, drawBadge, svgCity, svgFort, svgHoly, svgRuin, svgBadge, hexPath, COLORS: { INK, RED, SEL, HOLY, RUIN, PAPER } };
+  G.MapIcons = { GLYPH, R0, path, drawCity, drawAnchor, portOf, svgPort, drawFort, drawHoly, drawRuin, drawBadge, svgCity, svgFort, svgHoly, svgRuin, svgBadge, hexPath, COLORS: { INK, RED, SEL, HOLY, RUIN, PAPER } };
 })(window);

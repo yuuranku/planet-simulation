@@ -780,14 +780,34 @@
         const best = new Map();
         for (let i = 0; i < N; i++) { const a = label[i]; if (a < 0) continue; for (const d of [2, 4, 6, 7]) { const j = NB[i * 8 + d]; if (j < 0) continue; const b = label[j]; if (b < 0 || b === a) continue; const c = dist[i] + dist[j] + 1; const key = a < b ? a * 65536 + b : b * 65536 + a; const o = best.get(key); if (!o || c < o[0]) best.set(key, a < b ? [c, i, j] : [c, j, i]); } }
         const maxKm = era === 'industrial' ? 6000 : 2400;
-        const edges = [...best.entries()].map(([key, v]) => ({ a: Math.floor(key / 65536), b: key % 65536, c: v[0], i: v[1], j: v[2] })).filter(ed => ed.c * cellKm < maxKm).sort((p, q2) => p.c - q2.c);
-        const kk = ROAD_NEIGHBORS[cfg.transport], inc = Array.from({ length: portWater.length }, () => []);
-        edges.forEach((ed, idx) => { inc[ed.a].push(idx); inc[ed.b].push(idx); });
-        const keep = new Set(); for (let n = 0; n < portWater.length; n++) inc[n].slice(0, kk).forEach(idx => keep.add(idx));
-        for (const idx of keep) {
-          const ed = edges[idx]; const pa = []; let x = ed.i; while (x >= 0) { pa.push(x); x = pred[x]; } const pb = []; x = ed.j; while (x >= 0) { pb.push(x); x = pred[x]; }
+        const edges = [...best.entries()].map(([key, v]) => ({ a: Math.floor(key / 65536), b: key % 65536, c: v[0], i: v[1], j: v[2] })).filter(ed => ed.c * cellKm < maxKm).sort((p, q2) => p.c - q2.c || p.a - q2.a || p.b - q2.b);
+        // 选线：先保证各港相连（最小生成树），再给每港补上真正省航程的捷径（绕行超过三成五才补），避免同一片海上并行的航线一团乱麻
+        const kk = ROAD_NEIGHBORS[cfg.transport], nP = portWater.length, par = new Int32Array(nP).map((_, i) => i), deg = new Int32Array(nP), padj = Array.from({ length: nP }, () => []);
+        const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+        const netDist = (a, b, lim) => { const d = new Map([[a, 0]]), hp2 = new Heap(64); hp2.push(a, 0); while (hp2.n) { const u = hp2.pop(), du = hp2.top; if (du !== d.get(u)) continue; if (u === b) return du; if (du > lim) break; for (const [v, w] of padj[u]) { const nd = du + w; if (nd < (d.get(v) ?? Infinity)) { d.set(v, nd); hp2.push(v, nd); } } } return Infinity; };
+        const chosen = [];
+        for (const ed of edges) { const ra = find(ed.a), rb = find(ed.b);
+          if (ra !== rb) par[ra] = rb;
+          else if (Math.min(deg[ed.a], deg[ed.b]) >= kk || netDist(ed.a, ed.b, ed.c * 1.35) <= ed.c * 1.35) continue;
+          deg[ed.a]++; deg[ed.b]++; padj[ed.a].push([ed.b, ed.c]); padj[ed.b].push([ed.a, ed.c]); chosen.push(ed); }
+        // 航线走向：前工业时代船只多沿岸航行（离岸太远或贴着浅滩礁石都要多费），工业时代的轮船可以直穿大洋；
+        // 已有航线经过的水道打折，后来的航线并入主航道（航线汇成一束，而不是各走各的）
+        const lane = new Uint8Array(N), stamp = new Int32Array(N), gS = new Float64Array(N), from = new Int32Array(N), hpA = new Heap(4096); let stampN = 0;
+        const coastF = era === 'industrial' ? (i => dCoast[i] <= 1 ? 1.3 : 0.95) : (i => dCoast[i] <= 1 ? 1.3 : dCoast[i] <= 5 ? 1 : Math.min(1.8, 1 + 0.05 * (dCoast[i] - 5)));
+        const hx = (i, t) => { const yi = (i / W) | 0, yt = (t / W) | 0; let dx = Math.abs((i - yi * W) - (t - yt * W)); dx = Math.min(dx, W - dx); return Math.hypot(dx * Math.min(cosL[yi], cosL[yt]), yi - yt) * 0.55; };
+        const route = (s0, t0) => { stampN++; hpA.n = 0; stamp[s0] = stampN; gS[s0] = 0; from[s0] = -1; hpA.push(s0, hx(s0, t0));
+          for (let it = 0; hpA.n && it < 400000; it++) { const i = hpA.pop(); if (i === t0) break; const gi = gS[i], y = (i / W) | 0;
+            for (let d = 0; d < 8; d++) { const j = NB[i * 8 + d]; if (j < 0 || !sea[j] || seaIce[j]) continue; const len = DL[d] * (d === 1 || d === 6 ? 1 : 0.5 + 0.5 * cosL[y]);
+              const ng = gi + len * coastF(j) * (lane[j] ? 0.6 : 1); if (stamp[j] === stampN && ng >= gS[j]) continue; stamp[j] = stampN; gS[j] = ng; from[j] = i; hpA.push(j, ng + hx(j, t0)); } }
+          if (stamp[t0] !== stampN) return null; const out = []; for (let x = t0; x >= 0; x = from[x]) out.push(x); return out.reverse(); };
+        chosen.sort((p, q2) => (tierRank(portWater[q2.a].s) + tierRank(portWater[q2.b].s)) - (tierRank(portWater[p.a].s) + tierRank(portWater[p.b].s)) || p.c - q2.c);
+        for (const ed of chosen) {
           const A = portWater[ed.a], B = portWater[ed.b];
-          seaRoutes.push({ a: A.k, b: B.k, cells: [A.s.cell].concat(pa.reverse(), pb, [B.s.cell]), km: ed.c * cellKm, imp: tierRank(A.s) + tierRank(B.s) >= 3 ? 'trunk' : 'regional', mode: 'sea' });
+          let path = route(A.cell, B.cell);
+          if (!path) { const pa = []; let x = ed.i; while (x >= 0) { pa.push(x); x = pred[x]; } const pb = []; x = ed.j; while (x >= 0) { pb.push(x); x = pred[x]; } path = pa.reverse().concat(pb); }
+          for (const c of path) lane[c] = 1;
+          let km = 0; for (let k = 1; k < path.length; k++) km += gcKm(path[k - 1], path[k]);
+          seaRoutes.push({ a: A.k, b: B.k, cells: [A.s.cell].concat(path, [B.s.cell]), km, imp: tierRank(A.s) + tierRank(B.s) >= 3 ? 'trunk' : 'regional', mode: 'sea' });
         }
       } }
     const roadTier = new Uint8Array(N);
@@ -836,9 +856,11 @@
     const nuclei = territory(urbanSeeds, { valid: domain, friction: stateFr, trans: stateTrans, road: accessFinal, owner: civ, max: 11.5 * kmScale * 3 }).labels;
     if (P.newWorld) { const nwSeeds = urbanSeeds.filter(sd => newW[sd.cell]); if (nwSeeds.length) { const nw = territory(nwSeeds, { valid: domain, friction: stateFr, trans: stateTrans, road: accessFinal, owner: civ, max: 11.5 * kmScale * 9 }).labels; for (let i = 0; i < N; i++) if (nw[i] && newW[i]) nuclei[i] = 1; } }
     // 无国家边疆（游牧、部族与弱治理带）
+    const FRONTIER_FS = 2.3; // 约相当于类地世界三成的可居土地；草原荒漠、密林冻原多的世界边疆更广
     const frontier = new Uint8Array(N);
     { let nwFront = 0; if (era !== 'industrial') for (let i = 0; i < N; i++) if (newW[i] && domain[i] && !nuclei[i]) nwFront++;
-      const target = Math.max(0, Math.round(validCount * cfg.tribal) - nwFront);
+      // 边疆的多少由地理决定：人烟稀少、交通不便、土地贫瘠的草原、荒漠、密林、冻原与高山才是无国家的边疆（不再按问卷给定的比例划出）
+      const legacyTarget = Number.isFinite(cfg.tribal) ? Math.max(0, Math.round(validCount * cfg.tribal) - nwFront) : null;
       const prop = new Float32Array(N);
       for (let i = 0; i < N; i++) if (domain[i]) { const b = biome[i]; prop[i] = 0.94 * (1 - density[i] / maxDen) + 0.76 * (1 - accessFinal[i]) + 0.56 * (1 - pot[i]) + 0.48 * (b === 3 || b === 9 ? 1 : 0) + 0.42 * (b === 7 || b === 8 ? 1 : 0) + 0.32 * (b === 2 || b === 4 || b === 5 || b === 10 || b === 11 ? 1 : 0) + 0.58 * (b === 1 || b === 12 ? 1 : 0) + 0.42 * clamp((eN[i] - 0.42) / 0.34, 0, 1) + 0.3 * clamp((0.1 - annualN[i]) / 0.1, 0, 1) + 0.28 * (civ[i] <= 0 ? 1 : 0) - 0.16 * clamp(order[i] / 5, 0, 1); }
       const r = Math.max(4, Math.round(Math.min(W, H) / 54 * 1.4));
@@ -849,7 +871,7 @@
       const cand = [];
       for (let i = 0; i < N; i++) { if (!domain[i] || protectedC[i] || nuclei[i]) continue; const rel = density[i] / Math.max(meanDensity, 1e-9); const settled = rel >= 0.75 || (rel >= 0.45 && (accessFinal[i] >= 0.25 || pot[i] >= 0.45)); if (settled) continue; cand.push(i); }
       cand.sort((a, b) => fs[b] - fs[a]);
-      const take = Math.min(target, cand.length);
+      const take = legacyTarget !== null ? Math.min(legacyTarget, cand.length) : cand.filter(i => fs[i] >= FRONTIER_FS).length;
       for (let k = 0; k < take; k++) frontier[cand[k]] = 1;
       // 新大陆：未治理部分全部为边疆
       for (let i = 0; i < N; i++) if (newW[i] && domain[i] && !nuclei[i] && era !== 'industrial') frontier[i] = 1;
@@ -1571,7 +1593,7 @@
           for (let i = 2; i < l.length; i += 2) { const ax = l[i - 2], ay = l[i - 1], ex = l[i] - ax, ey = l[i + 1] - ay; if (Math.abs(ax - c.x) > 8 || Math.abs(ay - c.y) > 8) continue; const L2 = ex * ex + ey * ey, t = L2 ? Math.max(0, Math.min(1, ((c.x - ax) * ex + (c.y - ay) * ey) / L2)) : 0, qx = ax + ex * t, qy = ay + ey * t, d = Math.hypot(qx - c.x, qy - c.y); if (d < bd) { bd = d; bx = qx; by = qy; } } }
         if (bd < 7 && G.Noise.coastSurface(P.elev, FW, P.H, bx, by) > 0.2 && G.Noise.surface(Hy.lakeSoft, FW, P.H, bx, by) < 0.35) { c.x = bx; c.y = by; } }); }
     // 海运航线：平滑（抽稀 + 保留首尾）
-    const seaOut = { trunk: [], regional: [] };
+    const seaOut = { trunk: [], regional: [] }; const seaLanes = [];
     for (const r of seaRoutes) {
       const A = settlements[r.a], B = settlements[r.b];
       const f = refine(r.cells.slice(1, -1).length >= 2 ? r.cells.slice(1, -1) : r.cells, null, null, r.imp, true);
@@ -1579,10 +1601,35 @@
       // 航线两端接到港口城市本身（港口即交通网节点）
       const near = (x, ref) => x + Math.round((ref - x) / FW) * FW; // 经度接缝：港口取与航线同侧的副本
       if (lines.length) { const first = lines[0], last = lines[lines.length - 1]; lines[0] = Float32Array.from([near(A.fx, first[0]), A.fy, ...first]); lines[lines.length - 1] = Float32Array.from([...last, near(B.fx, last[last.length - 2]), B.fy]); }
-      for (const l of lines) { const o = []; for (let k = 0; k < l.length; k += 2) if ((k / 2) % 2 === 0 || k >= l.length - 2 || k <= 2) o.push(l[k], l[k + 1]); roadOut.sea.push(Float32Array.from(o)); seaOut[r.imp === 'trunk' ? 'trunk' : 'regional'].push(Float32Array.from(o)); }
+      const laneLines = []; for (const l of lines) { const o = []; for (let k = 0; k < l.length; k += 2) if ((k / 2) % 2 === 0 || k >= l.length - 2 || k <= 2) o.push(l[k], l[k + 1]); const f = Float32Array.from(o); laneLines.push(f); roadOut.sea.push(f); seaOut[r.imp === 'trunk' ? 'trunk' : 'regional'].push(f); }
+      seaLanes.push({ imp: r.imp, sa: r.a, sb: r.b, km: Math.round(r.km), lines: laneLines });
     }
     for (const l of ferryOut.trunk) { roadOut.sea.push(l); seaOut.trunk.push(l); } for (const l of ferryOut.regional) roadOut.sea.push(l); // 渡口：与海运航线同画法
     roadOut.seaTrunk = seaOut.trunk;
+    // 内河航运：流量足够的大河可以行船——从最上游的河港起，顺流而下直到入海（或入湖）口，在河口接上海运；支流的航道在汇流处并入干流
+    const riverLanes = []; roadOut.river = []; roadOut.riverTrunk = [];
+    { const RV = Hy.rivers, rp = RV.pts, ro = RV.offs, nRch = ro.length - 1, NAVQ = Hy.qth * 25, BIGQ = Hy.qth * 120, NBX = Math.ceil(FW / 4);
+      const key = (x, y) => Math.round(x * 4) + ',' + Math.round(y * 4);
+      const startOf = new Map(); for (let r = 0; r < nRch; r++) if (ro[r + 1] > ro[r]) startOf.set(key(rp[ro[r] * 7], rp[ro[r] * 7 + 1]), r);
+      const downR = new Int32Array(nRch).fill(-1), indeg = new Int32Array(nRch);
+      for (let r = 0; r < nRch; r++) { const k = ro[r + 1] - 1; if (k < ro[r]) continue; const t = startOf.get(key(rp[k * 7], rp[k * 7 + 1])); if (t !== undefined && t !== r) { downR[r] = t; indeg[t]++; } }
+      const bucket = new Map(), bx = x => Math.floor((((x % FW) + FW) % FW) / 4);
+      for (let r = 0; r < nRch; r++) for (let k = ro[r]; k < ro[r + 1]; k++) if (rp[k * 7 + 2] >= NAVQ) { const b = bx(rp[k * 7]) + ':' + Math.floor(rp[k * 7 + 1] / 4); let L = bucket.get(b); if (!L) bucket.set(b, L = []); L.push(k, r); }
+      const head = new Int32Array(nRch).fill(-1), users = Array.from({ length: nRch }, () => []);
+      allSettlements.forEach((st, si) => { if (st.fx === undefined || st.tier === 'site') return; let bd = 3.2, bkk = -1, br = -1; const cx = bx(st.fx), cy = Math.floor(st.fy / 4);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const L = bucket.get(((cx + dx + NBX) % NBX) + ':' + (cy + dy)); if (!L) continue;
+          for (let t = 0; t < L.length; t += 2) { const k = L[t]; let ddx = Math.abs(rp[k * 7] - st.fx); ddx = Math.min(ddx, FW - ddx); const d = Math.hypot(ddx, rp[k * 7 + 1] - st.fy); if (d < bd) { bd = d; bkk = k; br = L[t + 1]; } } }
+        if (br < 0) return; if (head[br] < 0 || bkk < head[br]) head[br] = bkk; users[br].push(si); });
+      // 自上游向下游：有河港的河段，其下游河段整段通航（直到河口）
+      const queue = []; for (let r = 0; r < nRch; r++) if (!indeg[r]) queue.push(r);
+      for (let qi = 0; qi < queue.length; qi++) { const r = queue[qi], t = downR[r]; if (t < 0) continue;
+        if (head[r] >= 0) { let k0 = ro[t]; while (k0 < ro[t + 1] - 1 && rp[k0 * 7 + 2] < NAVQ) k0++; if (head[t] < 0 || k0 < head[t]) head[t] = k0; for (const u of users[r]) if (users[t].length < 8 && !users[t].includes(u)) users[t].push(u); }
+        if (--indeg[t] === 0) queue.push(t); }
+      for (let r = 0; r < nRch; r++) { if (head[r] < 0 || ro[r + 1] - head[r] < 2) continue; const pts = [];
+        for (let k = head[r]; k < ro[r + 1]; k++) pts.push(rp[k * 7], rp[k * 7 + 1]);
+        const line = Float32Array.from(pts), imp = rp[head[r] * 7 + 2] >= BIGQ ? 'trunk' : 'regional';
+        roadOut.river.push(line); if (imp === 'trunk') roadOut.riverTrunk.push(line);
+        riverLanes.push({ imp, lines: [line], sas: users[r].slice(0, 8), q: Math.round(rp[(ro[r + 1] - 1) * 7 + 2] / Hy.qth) }); } }
     // 工业时代：国内主要城市之间的铁路（沿干线/区域道路走廊）
     if (era === 'industrial') { for (const r of roads) { if (r.imp === 'local') continue; const A = allNodes[r.a], B = allNodes[r.b]; if (!A.s || !B.s) continue; if (state[A.cell] >= 0 && state[A.cell] === state[B.cell] && (A.s.tier !== 'town' && B.s.tier !== 'town')) for (const l of fineByRoute.get(roads.indexOf(r))) roadOut.rail.push(l); } }
     // 导航图：节点 = 城市/锚点，边 = 道路/海路（含长度与地形）
@@ -1644,6 +1691,7 @@
       LIBS, usedNames, popTotal,
       // 道路：两端的格与聚落（用于推算修建年代），以及最终绘制的全分辨率折线
       ...(G.debugSociety && G.debugSociety.roadConnections ? {roadConnections:weldLinks} : {}),
+      seaLanes, riverLanes,
       roads: (() => { const idxOf = new Map(allSettlements.map((s, k) => [s, k])); return roads.map((r, k) => { const A = allNodes[r.a], B = allNodes[r.b]; return { imp: r.imp, a: A ? A.cell : -1, b: B ? B.cell : -1, sa: A && A.s && idxOf.has(A.s) ? idxOf.get(A.s) : -1, sb: B && B.s && idxOf.has(B.s) ? idxOf.get(B.s) : -1, cells: r.cells, lines: fineByRoute.get(k) || [], ferries: ferryByRoute.get(k) || [] }; }); })()
     };
     return {

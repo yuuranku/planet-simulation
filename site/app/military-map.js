@@ -41,7 +41,7 @@
     revision++;
   }
   function setEnabled(value){if(enabled===!!value)return;enabled=!!value;clear();app?.map?.drawDynamic();}
-  const BATTLE_PHASES=['encounter','siege','battle'];
+  const BATTLE_PHASES=['naval','encounter','siege','battle'];
   function monthList(){return world?rows(world,time).filter(c=>c.battle&&G.MilitaryUI.atMonth(c,time)):[];}
   function totalMob(c){return (c.forces?.attacker?.mobilized||0)+(c.forces?.defender?.mobilized||0);}
   function totalDead(c){let n=0;for(const k of ['attacker','defender']){const d=c.forces?.[k]?.deaths;if(d)n+=d.combat+d.disease+d.starvation;}return n;}
@@ -127,7 +127,7 @@
         c.save();c.globalAlpha=alpha;c.lineCap='round';c.lineJoin='round';
         // 未走的部分
         c.beginPath();c.moveTo(X(path.points[0]),Y(path.points[0]));for(let i=1;i<path.points.length;i++)c.lineTo(X(path.points[i]),Y(path.points[i]));
-        c.setLineDash([2,4]);c.lineWidth=on?1.6:1.1;c.strokeStyle='rgba(60,45,35,.5)';c.stroke();c.setLineDash([]);
+        const seaRoute=cp.route.kind==='sea-crossing';c.setLineDash(seaRoute?[5,4]:[2,4]);c.lineWidth=on?1.8:seaRoute?1.4:1.1;c.strokeStyle=seaRoute?'rgba(47,111,166,.75)':'rgba(60,45,35,.5)';c.stroke();c.setLineDash([]);
         // 已走的部分（白色描边 + 国色）
         const end=position(path,peak);c.beginPath();c.moveTo(X(path.points[0]),Y(path.points[0]));for(let i=1;i<path.points.length&&path.lengths[i]<lim;i++)c.lineTo(X(path.points[i]),Y(path.points[i]));c.lineTo(X(end),Y(end));
         c.lineWidth=on?8:6.5;c.strokeStyle='rgba(255,253,247,.75)';c.stroke();c.globalAlpha=alpha*.85;c.lineWidth=on?5:3.8;c.strokeStyle=col;c.stroke();c.globalAlpha=alpha;
@@ -152,13 +152,18 @@
   // 交战标记：交叉双刃；围城外加一圈围困短线；当月决出胜负盖印
   function findBattles(map,ks,records){
     const v=map.view,m=month(time),seen=new Map();battles=[];
-    for(const record of records){
-      const cp=record.campaign,phase=record.state.phase,fighting=['encounter','siege','battle'].includes(phase),decided=cp.battle&&month(cp.resultTime)===m;
-      if(!fighting&&!decided)continue;const path=route(cp,map.W);if(!path)continue;
-      const at=position(path,cp.battle?.kind==='siege'?1:.94),gx=((at[0]%map.W)+map.W)%map.W;
+    const mark=(cp,path,t,atSea,fighting,result)=>{const at=position(path,t),gx=((at[0]%map.W)+map.W)%map.W;
       for(const k of ks){const x=v.x+(gx+k*map.W)*v.s,y=v.y+at[1]*v.s;if(x<-30||x>map.vw+30||y<-30||y>map.vh+30)continue;
-        const key=Math.round(x/22)+','+Math.round(y/22);let b=seen.get(key);if(!b){b={x,y,entries:[],siege:false,fighting:false,won:0,lost:0};seen.set(key,b);battles.push(b);}
-        b.entries.push({campaign:cp});if(cp.battle?.kind==='siege')b.siege=true;if(fighting)b.fighting=true;if(decided&&record.state.finished!==false&&phase!=='battle'){cp.status==='won'?b.won++:b.lost++;}}
+        const key=(atSea?'s':'')+Math.round(x/22)+','+Math.round(y/22);let b=seen.get(key);if(!b){b={x,y,entries:[],siege:false,naval:atSea,fighting:false,won:0,lost:0};seen.set(key,b);battles.push(b);}
+        b.entries.push({campaign:cp});if(cp.battle?.kind==='siege'&&!atSea)b.siege=true;if(fighting)b.fighting=true;if(result==='won')b.won++;else if(result==='lost')b.lost++;}};
+    for(const record of records){
+      const cp=record.campaign,phase=record.state.phase;const path=route(cp,map.W);if(!path)continue;
+      // 海战：在海峡中段；当月打过海战就标出（海战往往只有一两日，与登陆后的战斗同在一月）
+      if(cp.naval?.fought){const nt=cp.timeline?.find(n=>n.phase==='naval')?.at;if(phase==='naval'||(Number.isFinite(nt)&&month(nt)===m))mark(cp,path,.5,true,phase==='naval',phase==='naval'?null:cp.naval.won?'won':'lost');}
+      if(cp.battle?.kind==='naval')continue;
+      const fighting=['encounter','siege','battle'].includes(phase),decided=cp.battle&&month(cp.resultTime)===m;
+      if(!fighting&&!decided)continue;
+      mark(cp,path,cp.battle?.kind==='siege'?1:.94,false,fighting,decided&&record.state.finished!==false&&phase!=='battle'?(cp.status==='won'?'won':'lost'):null);
     }
     return battles;
   }
@@ -170,15 +175,25 @@
     for(const pass of [0,1]){c.strokeStyle=pass?col:'rgba(255,253,247,.95)';for(const sx of [1,-1]){c.save();c.scale(sx,1);c.lineWidth=pass?2:5;blade();c.stroke();c.lineWidth=pass?1.7:4.6;hilt();c.stroke();c.restore();}}
     c.restore();
   }
+  // 帆船（海战符号）：船身 + 桅杆 + 三角帆，下有水波
+  function ship(c,x,y,k,col){
+    c.save();c.translate(x,y);c.lineJoin='round';c.lineCap='round';
+    const hull=()=>{c.beginPath();c.moveTo(-k,k*.25);c.lineTo(k,k*.25);c.lineTo(k*.62,k*.78);c.lineTo(-k*.62,k*.78);c.closePath();};
+    const sail=()=>{c.beginPath();c.moveTo(0,-k);c.lineTo(k*.72,k*.08);c.lineTo(0,k*.08);c.closePath();c.moveTo(-k*.1,-k*.55);c.lineTo(-k*.66,k*.08);c.lineTo(-k*.1,k*.08);c.closePath();};
+    for(const pass of [0,1]){c.lineWidth=pass?1.3:4;c.strokeStyle=pass?col:'rgba(255,253,247,.95)';hull();c.stroke();sail();c.stroke();c.beginPath();c.moveTo(0,-k);c.lineTo(0,k*.25);c.stroke();
+      c.beginPath();c.moveTo(-k*1.05,k*1.12);c.quadraticCurveTo(-k*.55,k*.85,0,k*1.12);c.quadraticCurveTo(k*.55,k*1.38,k*1.05,k*1.12);c.stroke();}
+    c.fillStyle=col;hull();c.fill();c.globalAlpha=.85;c.fillStyle='#fffdf7';sail();c.fill();c.globalAlpha=1;c.lineWidth=1.1;c.strokeStyle=col;sail();c.stroke();
+    c.restore();
+  }
   function drawBattles(c,map){
     for(const b of battles){
       const {x,y}=b,on=selected&&b.entries.some(e=>e.campaign.id===selected.id);
       c.save();
       if(b.fighting||on){const g=c.createRadialGradient(x,y,2,x,y,18);g.addColorStop(0,on?'rgba(26,115,232,.28)':'rgba(190,52,36,.32)');g.addColorStop(1,'rgba(190,52,36,0)');c.fillStyle=g;c.beginPath();c.arc(x,y,18,0,7);c.fill();}
       if(b.siege){c.beginPath();c.arc(x,y,13,0,7);c.setLineDash([2.5,2.5]);c.lineWidth=1.6;c.strokeStyle='#9b2a1f';c.stroke();c.setLineDash([]);}
-      sabres(c,x,y,on?8.5:7.5,b.fighting?'#9b2a1f':'#4b3a2c');
-      const tag=b.fighting?(b.siege?'围城':'交战'):b.won>=b.lost&&b.won?'攻克':b.lost?'击退':'';
-      if(tag){c.font='600 10px "Songti SC","STSong","Noto Serif SC",serif';c.textAlign='center';c.textBaseline='top';c.lineWidth=3;c.strokeStyle='rgba(255,253,247,.95)';const t=tag+(b.entries.length>1?' ×'+b.entries.length:'');c.strokeText(t,x,y+11);c.fillStyle=b.fighting||b.won>=b.lost?'#9b2a1f':'#55606a';c.fillText(t,x,y+11);}
+      if(b.naval)ship(c,x,y,on?9:8,b.fighting?'#1f5f93':'#3d4d5c');else sabres(c,x,y,on?8.5:7.5,b.fighting?'#9b2a1f':'#4b3a2c');
+      const tag=b.naval?(b.fighting?'海战':b.lost>b.won?'海战·败退':b.won?'海战·告捷':'海战'):b.fighting?(b.siege?'围城':'交战'):b.won>=b.lost&&b.won?'攻克':b.lost?'击退':'';
+      if(tag){c.font='600 10px "Songti SC","STSong","Noto Serif SC",serif';c.textAlign='center';c.textBaseline='top';c.lineWidth=3;c.strokeStyle='rgba(255,253,247,.95)';const t=tag+(b.entries.length>1?' ×'+b.entries.length:'');c.strokeText(t,x,y+11);c.fillStyle=b.naval?'#1f5f93':b.fighting||b.won>=b.lost?'#9b2a1f':'#55606a';c.fillText(t,x,y+11);}
       c.restore();
     }
   }
@@ -227,7 +242,7 @@
     markers.sort((a,b)=>a.y-b.y);
     for(const marker of markers){
       const entries=marker.entries,colors=[...new Set(entries.map(e=>ink(H,e.polity,colorOf)))].slice(0,3),stack=new Set(entries.map(e=>e.campaign.id)).size;
-      const active=!!(selected&&entries.some(e=>e.campaign.id===selected.id)),engaged=entries.some(e=>['encounter','siege','battle'].includes(e.phase));
+      const active=!!(selected&&entries.some(e=>e.campaign.id===selected.id)),engaged=entries.some(e=>BATTLE_PHASES.includes(e.phase));
       const n=entries.reduce((s,e)=>s+e.state.remaining,0),label=G.MilitaryUI.short(n);
       marker.box=counter(c,marker.x,marker.y,{colors,side:marker.side,label,stack,active,engaged,ang:marker.atBattle?(marker.side==='attacker'?0:Math.PI):entries[0].ang,align:marker.align});drawn.push(marker);
     }

@@ -38,6 +38,7 @@
     if (vis('results')) { $('results').hidden = true; return true; }
     if (vis('tip')) { $('tip').hidden = true; return true; }
     if (vis('stylePanel')) return tap(document.querySelector('[data-tool=style]'));
+    if (vis('tipPanel')) return tap(document.querySelector('[data-tool=hover]'));
     var ps = ['layerPanel', 'infoPanel', 'savedPanel'];
     for (var i = 0; i < ps.length; i++) if (vis(ps[i])) return tap($(ps[i]).querySelector('[data-close]'));
     if (vis('tlRiver')) return tap($('tlRiverX'));

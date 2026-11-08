@@ -44,11 +44,11 @@ body.tl-on:has(#tlFeedAll:not([hidden])) .bottomright { display: none; }
 
 /* 编年史字幕：浮在地图下方正中，像视频字幕 */
 .tl-caption { position: fixed; left: calc(50% + var(--rail) / 2); transform: translateX(-50%); bottom: calc(var(--tlh) + var(--tld) + 26px); z-index: 6; max-width: min(620px, calc(100vw - var(--rail) - 520px)); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
-.tl-feed-row { pointer-events: auto; max-width: 100%; border: 0; cursor: pointer; padding: 6px 14px; border-radius: 10px; background: rgba(29, 25, 21, .78); color: #fbf6ea; font: 14px "Songti SC", "STSong", "Noto Serif SC", serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; backdrop-filter: blur(4px); box-shadow: 0 2px 10px rgba(0, 0, 0, .2); transition: opacity .4s; }
+.tl-feed-row { pointer-events: auto; max-width: 100%; border: 0; cursor: pointer; padding: 6px 14px; border-radius: 10px; background: rgba(29, 25, 21, .78); color: #fbf6ea; font: 14px "Songti SC", "STSong", "Noto Serif SC", serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 2px 10px rgba(0, 0, 0, .2); transition: opacity .4s; }
 .tl-feed-row small { font: 600 12px var(--font); color: #f3c26b; margin-right: 8px; }
 .tl-feed-row:hover { background: rgba(29, 25, 21, .92); opacity: 1 !important; }
 .tl-feed-row.flash { animation: tlFlash .5s ease; }
-.tl-feed-more { pointer-events: auto; cursor: pointer; border: 0; display: inline-flex; align-items: center; gap: 6px; font: 12px var(--font); color: rgba(251, 246, 234, .86); background: rgba(29, 25, 21, .58); padding: 4px 8px 4px 12px; border-radius: 999px; backdrop-filter: blur(4px); box-shadow: 0 2px 8px rgba(0, 0, 0, .16); transition: background .15s; }
+.tl-feed-more { pointer-events: auto; cursor: pointer; border: 0; display: inline-flex; align-items: center; gap: 6px; font: 12px var(--font); color: rgba(251, 246, 234, .86); background: rgba(29, 25, 21, .66); padding: 4px 8px 4px 12px; border-radius: 999px; box-shadow: 0 2px 8px rgba(0, 0, 0, .16); transition: background .15s; }
 .tl-feed-more b { font-weight: 600; color: #f3c26b; }
 .tl-feed-more svg { width: 14px; height: 14px; fill: none; stroke: #f3c26b; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .tl-feed-more:hover { background: rgba(29, 25, 21, .86); }
@@ -490,20 +490,32 @@ body.tl-on .tl-city { top: 12px; }
 .tl-focus .tf-reigns li { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto 40px; align-items: baseline; gap: 6px; padding: 4px 6px; border-radius: 6px; }
 .tl-focus .tf-reigns li:hover { background: var(--hover); }
 .tl-focus .tf-reigns li em { font: 500 10px var(--num); font-style: normal; color: var(--t3); text-align: right; }
-.tl-focus .tf-reigns li span { min-width: 0; color: var(--t1); font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
+.tl-focus .tf-reigns li span { min-width: 0; color: var(--t1); font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-focus .tf-reigns li span em { font-style: normal; font-weight: 400; color: var(--t3); margin-right: 4px; }
-.tl-focus .tf-reigns li span small { display: block; font-size: 10.5px; color: var(--t3); font-weight: 400; }
+.tl-focus .tf-reigns li span small { margin-left: 6px; font-size: 10.5px; color: var(--t3); font-weight: 400; }
 .tl-focus .tf-reigns li b { font: 500 10.5px var(--num); color: var(--t3); }
 .tl-focus .tf-reigns li s { text-decoration: none; font-size: 10.5px; color: var(--t2); text-align: right; }
 .tl-focus .tf-reigns li.cur { background: rgba(var(--pc), .14); }
 .tl-focus .tf-reigns li.cur span { font-weight: 700; }
 .tl-focus .tf-reigns li.none { display: block; color: var(--t3); font-size: 11px; }
-
-/* 桌面纸页打开时让地图控件与字幕避开纸页，时间轴脉络展开时也不遮住纸页底部。 */
-@media (min-width: 1101px) and (min-height: 541px) {
-  body.tl-on:has(.tl-focus:not([hidden]), .tl-city:not([hidden])) .bottomright { right: 354px; }
-  body.tl-on:has(.person-panel:not([hidden])) .bottomright { right: 388px; }
-  body.tl-on:has(.tl-focus:not([hidden]), .tl-city:not([hidden])) .tl-caption {
-    max-width: min(620px, calc(100vw - var(--rail) - 700px));
-  }
-}
+/* 君主上位与生平 */
+.tf-reign-now .tf-life-now { align-self: flex-start; margin-top: 6px; padding: 3px 10px; border: 1px solid rgba(var(--pc), .45); border-radius: 999px; background: rgba(255, 255, 255, .6); font: 500 11px var(--font); color: var(--t1); cursor: pointer; }
+.tf-reign-now .tf-life-now:hover { background: rgba(var(--pc), .16); }
+.tl-focus .tf-reigns li { grid-template-columns: 22px minmax(0, 1fr) auto 34px 28px; gap: 5px; }
+.tl-focus .tf-reigns li .tf-life-btn { padding: 1px 0; border: 0; border-radius: 4px; background: transparent; font: 500 10.5px var(--font); color: var(--t3); cursor: pointer; }
+.tl-focus .tf-reigns li .tf-life-btn:hover { color: var(--t1); background: rgba(var(--pc), .16); }
+.tf-life { margin-top: 10px; padding: 10px 12px 8px; border-radius: 10px; background: rgba(var(--pc), .06); border: 1px solid rgba(var(--pc), .22); }
+.tf-life header { display: flex; align-items: flex-start; gap: 8px; }
+.tf-life header > div { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.tf-life header small { font-size: 10.5px; color: var(--t3); }
+.tf-life header b { font: 700 16px/1.3 "Songti SC", "STSong", "Noto Serif SC", serif; color: var(--t1); }
+.tf-life header span { font-size: 11px; color: var(--t2); }
+.tf-life header .tl-icon { position: static; flex: none; width: 24px; height: 24px; }
+.tf-life-sum { margin: 8px 0; font-size: 12px; line-height: 1.6; color: var(--t1); }
+.tf-life-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; scrollbar-width: none; }
+.tf-life-list::-webkit-scrollbar { display: none; }
+.tl-focus .tf-life-list li { display: grid; grid-template-columns: 20px 40px minmax(0, 1fr); gap: 6px; align-items: baseline; padding: 4px 2px; border-top: 1px solid var(--hair); }
+.tf-life-list li i { font: 600 11px "Songti SC", "STSong", serif; font-style: normal; color: rgb(var(--pc)); text-align: center; }
+.tf-life-list li b { font: 500 10.5px var(--num); color: var(--t3); }
+.tf-life-list li span { font-size: 12px; line-height: 1.55; color: var(--t1); }
+.tf-life-list li.k-accession span, .tf-life-list li.k-death span { font-weight: 600; }

@@ -21,9 +21,9 @@
     /* 上缘一道压痕：纸从顶栏的缝里抽出来 */
     box-shadow: inset 0 14px 12px -12px rgba(8, 30, 33, .42), 0 0 0 1px rgba(168, 130, 63, .42), inset 0 0 0 3px rgba(253, 249, 239, .9), inset 0 0 0 4px rgba(199, 161, 90, .22), 0 14px 30px -10px rgba(20, 30, 28, .32), 0 2px 6px rgba(20, 30, 28, .12);
   }
-  .tl-city { max-height: calc(100vh - var(--bar) - var(--tlh, 0px) - var(--tld, 0px) - 28px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding-top: 18px; }
+  .tl-city { max-height: calc(100vh - var(--bar) - var(--tlh, 0px) - 28px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding-top: 18px; }
   .tl-city::-webkit-scrollbar { display: none; }
-  .tl-focus { max-height: calc(100vh - var(--bar) - var(--tlh, 0px) - var(--tld, 0px) - 28px); }
+  .tl-focus { max-height: calc(100vh - var(--bar) - var(--tlh, 0px) - 28px); }
   /* 纸页底边：一道淡金线收口 */
   .tl-city::after, .tl-focus::after { content: ''; display: block; height: 0; }
 }

@@ -2,6 +2,7 @@
 .gradle/
 build/
 dist/
+release/
 .local/
 __pycache__/
 *.py[cod]

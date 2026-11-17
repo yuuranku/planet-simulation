@@ -32,11 +32,41 @@
 
 `tests/` 中部分历史规则回归使用旧版测试夹具，尚未适配当前生成数据结构；相关夹具和断言有待更新。
 
+## 构建与发布
+
+项目只发布 **Windows 便携版** 和 **Android APK** 两端，二者共用 `site/`。版本号集中定义在根目录 `version.json`，由脚本同步到各端，避免散落不一致。
+
+依赖 Node.js 18+（脚本只用内置模块，无需 `npm install` 即可构建/校验；只有重新生成球体等产物时才需要 `npm ci` 安装 esbuild）。
+
+```bash
+npm run sync-version     # 把 version.json 的版本同步到 build.gradle / README / index.html
+npm run build            # 校验引用与离线可用性，统一缓存串，生成 dist/windows 与 dist/android
+npm run verify           # 发布前校验：版本一致性、关键文件、产物齐全
+npm run smoke            # 本地冒烟：启动服务，请求首页/脚本/Worker 验证可访问
+npm run check:city       # 检查 city/ 与 citygen/assets/ 的同源分叉状态
+npm run package:windows  # 打包 dist/windows 为 release/*.zip（需系统 zip 命令）
+npm run release:android  # 定位 release APK，打印签名/校验/冒烟清单（不碰密钥）
+```
+
+标准发布流程：
+
+1. 更新 `version.json`（版本号、`versionCode` 递增、`build` 缓存串），运行 `npm run sync-version`。
+2. `npm run build` → `npm run verify` → `npm run smoke`。
+3. Windows：`npm run package:windows`，把 `release/` 下的 ZIP 上传到 Releases。
+4. Android：在 `android/` 运行 `gradle assembleRelease`，用**仓库外的原发布密钥**签名并 `zipalign`/`apksigner verify`，确认 `versionCode` 递增后上传；签名密钥与密码绝不提交到仓库。
+
+关于缓存串：前端是「全局脚本 + Worker `importScripts`」双上下文架构，不能简单合并为单个 bundle。`index.html`、`worker.js` 等处的 `?build=` 缓存串过去手工维护、取值不一；`npm run build` 会在产物中把它们统一为 `version.json` 的 `build` 值，一处定义、全局一致。源码本身的取值差异属正常，校验脚本会提示但不会报错。
+
+关于城市模块：`site/city/`（主应用城市面板）与 `site/citygen/assets/`（独立生成器）同源但服务于不同功能，且 citygen 含专属改良，属**刻意分叉**，不可简单互相覆盖。`npm run check:city` 用于让分叉状态透明，防止误改。
+
 ## 项目结构与授权
 
 - `site/`：共享网页、世界生成代码与资源。
 - `windows/`：本机服务入口。
 - `android/`：安卓 WebView 容器和构建配置。
 - `tests/`：建国及历史规则回归。
+- `tools/`：构建、校验、打包与发布辅助脚本（Node.js）。
+- `version.json`：版本号与缓存串的单一来源。
+- `dist/`、`release/`：构建产物与发布包（生成物，不入版本库）。
 
 第三方素材和组件按各自附带的许可或声明使用，见 `site/licenses/`、`site/globe/` 和 `android/assets/licenses/`。项目其余源码的授权条款尚未指定。

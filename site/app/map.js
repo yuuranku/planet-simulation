@@ -70,6 +70,7 @@
 
   MP.setData = function (d) {
     this.d = d; this.W = d.W; this.H = d.H; this.cityScore = null; this.urban = new Map(); this.urbanReq = new Set(); this.stemCache = null;
+    if (G.CityLayer && G.CityLayer._i) G.CityLayer._i.detach();
     this.kmPerGrid = 2 * Math.PI * d.cfg.radius / d.W;
     this.buildPaths();
     this.tex = null; this.texKey = ''; if (this.tiles) this.tiles.clear(); if (this.inflight) this.inflight.clear(); if (this.inflightId) this.inflightId.clear(); this.queue = [];
@@ -131,7 +132,7 @@
   MP.fitScale = function () { if (!this.d) return 1; const f = Math.min(this.vw / this.W, this.vh / this.H); return this.vw < this.vh ? Math.max(f, this.vh / this.H * 0.62) : f; };
   MP.fit = function () { if (!this.d) return; const s = this.fitScale(); this.view.s = s; this.view.x = (this.vw - this.W * s) / 2; this.view.y = (this.vh - this.H * s) / 2; };
   MP.minScale = function () { return this.fitScale() * 0.85; };
-  MP.maxScale = function () { return this.fitScale() * 48; };
+  MP.maxScale = function () { return this.fitScale() * (typeof G.cityMaxRel === 'function' ? G.cityMaxRel() : 48); };
   MP.clamp = function () {
     if (!this.d) return;
     const v = this.view, mh = this.H * v.s;
@@ -398,6 +399,8 @@
     if (aux.polar) this.drawPolar();
     if (aux.landform && tab !== 'plates') this.drawSymbols(ks, zr);
     app.drawTools && app.drawTools(c, this, ks);
+    // 无缝地图：高倍缩放下把城市细节直接绘入主画布（同一相机），不再需要点开独立面板
+    if (G.CityLayer && G.CityLayer._i) { try { G.CityLayer._i.draw(this, zr); } catch (e) { /* 城市层异常不影响主地图 */ } }
     this.drawLabels(ks, zr, lv);
     if (app.drawHistoryTop) app.drawHistoryTop(c, this, ks); // 历史时间线：摇篮与文明名称
     this.ctx = mainCtx;

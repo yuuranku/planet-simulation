@@ -30,6 +30,18 @@
 
 网页所需脚本已随仓库提供。修改球体、世界文件或 PNG 解码入口后，可安装 Node.js 和 npm，运行 `npm ci`，然后按需运行 `npm run build:globe`、`npm run build:world-package` 或 `npm run build:png-decoder`。
 
+### 无缝缩放地图
+
+主地图支持从星球一路滚轮放大到城市街道、建筑，**中途无需点击切换**。跨越缩放阈值时城市细节按层级渐入：
+
+- 全局/区域/地方级：地形、河流、边界、道路（沿用世界矢量地图）。
+- 城市群级起：城市建成区轮廓淡入。
+- 城区/街道/建筑级：程序化生成城市的地形底图、城区格网、街巷、建筑、城墙、道路逐级显现。
+
+实现上把城市配方直接绘入主画布，与地形共用同一个相机和坐标系（`site/core/wgs.js` 统一坐标层）。城市数据按需从推演 Worker 获取、LRU 缓存、接近阈值时预取，底图边缘做羽化处理以融入地形。分端策略：Windows 显示到建筑细节，Android（触摸/窄屏）封顶在街道级并降低细节与缓存，兼顾性能。原「点击城市打开独立大图」功能保留不变。
+
+相关自测：`npm run test:wgs`、`npm run test:city-layer`（渲染效果以真机/浏览器缩放体验为准）。
+
 `tests/` 中部分历史规则回归使用旧版测试夹具，尚未适配当前生成数据结构；相关夹具和断言有待更新。
 
 ## 构建与发布
@@ -44,6 +56,8 @@ npm run build            # 校验引用与离线可用性，统一缓存串，�
 npm run verify           # 发布前校验：版本一致性、关键文件、产物齐全
 npm run smoke            # 本地冒烟：启动服务，请求首页/脚本/Worker 验证可访问
 npm run check:city       # 检查 city/ 与 citygen/assets/ 的同源分叉状态
+npm run test:wgs         # 统一坐标层等价性测试（与旧公式逐点一致）
+npm run test:city-layer  # 无缝城市层模块契约测试
 npm run package:windows  # 打包 dist/windows 为 release/*.zip（需系统 zip 命令）
 npm run release:android  # 定位 release APK，打印签名/校验/冒烟清单（不碰密钥）
 ```

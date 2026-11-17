@@ -364,6 +364,8 @@
 
   // ---------- 地图 / 球体 ----------
   const map = new G.MapView($('map'), app); app.map = map;
+  // 无缝地图：城市细节层挂到 app（共享 app.call / app.map），实例供 setData 清缓存
+  if (G.CityLayer) { G.CityLayer._i = new G.CityLayer(); G.CityLayer._i.attach(app); }
   app.onTexture = (img) => {
     const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
     const x = c.getContext('2d'); x.drawImage(img, 0, 0);

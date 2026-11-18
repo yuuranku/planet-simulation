@@ -11,8 +11,8 @@ android {
         applicationId 'cn.planet.world'
         minSdk 26
         targetSdk 35
-        versionCode 24
-        versionName '1.4.5.3'
+        versionCode 25
+        versionName '1.4.6.0'
     }
 
     sourceSets {
@@ -33,12 +33,15 @@ dependencies {
 }
 
 // WebViewAssetLoader expects the shared site under assets/site in the APK.
+// 从 dist/android/site 打包（而非源码 site/），确保缓存串已被 build.mjs 统一、产物可复现。
+// 构建顺序：先 `npm run build` 生成 dist/，再用 Gradle 打包 APK。
+def distSite = '../dist/android/site'
 def copySite = tasks.register('copySite', Sync) {
-    from '../site'
+    from distSite
     into layout.buildDirectory.dir('generated/site-assets/site')
     doFirst {
-        if (!file('../site/index.html').isFile()) {
-            throw new GradleException('Shared site/index.html is missing')
+        if (!file(distSite + '/index.html').isFile()) {
+            throw new GradleException('dist/android/site/index.html is missing — run `npm run build` before assembling the APK.')
         }
     }
 }

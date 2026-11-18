@@ -1,0 +1,40 @@
+MIT License
+
+Copyright (c) 2026 Zhang Sitong (sitong-zhang)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+说明（非许可条款正文，仅为范围澄清）：
+
+本项目是从 https://github.com/yuuranku/planet-simulation （基线提交 8257686）
+导入的 fork。上述 MIT 许可仅适用于本 fork 中新增或改动的原创代码（发布工程
+tools/、无缝地图 city-layer.js 与 wgs.js、相关测试与文档等）。
+
+项目内的第三方素材与组件（包括但不限于 site/city/ 与 site/citygen/assets/ 下
+的预构建城市模块、site/globe/ 的天体贴图与 three.js、site/app/ 下的 fast-png /
+fflate 依赖等）按各自附带的许可或声明使用，不在上述 MIT 授权范围内。详见
+site/licenses/、site/globe/ 与 android/assets/licenses/。若上游对这些内容另有
+授权限制，以原始权利人的条款为准。
+
+上游本体源码与算法（从 yuuranku/planet-simulation 继承的 site/core/、site/app/
+等原有代码）的授权条款尚未由上游指定，本 fork 无权替上游授予。因此上述 MIT
+许可不构成对整个仓库的商用或再分发授权：如需商业使用或对外再分发，须另行联系
+上游权利人取得授权，并满足各第三方组件的许可要求。本声明不构成对授权状态的担保。

@@ -4,7 +4,7 @@
  * 使用仓库自带的 windows/server.py（本机 127.0.0.1:18768），无需额外依赖。
  * 注意：会占用 18768 端口数秒；若该端口已被占用则跳过启动、直接复用。
  *
- * 用法： node tools/smoke-test.mjs
+ * 用法： node tools/smoke-test.mjs [--port 18768]
  */
 import { spawn } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
@@ -12,7 +12,10 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BASE = 'http://127.0.0.1:18768';
+const portArg = process.argv.indexOf('--port');
+const PORT = portArg >= 0 && process.argv[portArg + 1] ? Number(process.argv[portArg + 1]) : 18768;
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) { console.error('--port 必须是 1-65535 的端口'); process.exit(1); }
+const BASE = `http://127.0.0.1:${PORT}`;
 const targets = [
   ['/', 'text/html', '世界生成器'],
   ['/style.css', 'text/css', null],
@@ -36,7 +39,7 @@ async function main() {
   } else {
     const py = 'windows/server.py';
     if (!existsSync(join(ROOT, py))) { console.error('  \x1b[31m✗\x1b[0m 缺少 server.py'); process.exit(1); }
-    server = spawn('python3', [py, '--no-browser'], { cwd: ROOT, stdio: 'ignore' });
+    server = spawn('python3', [py, '--no-browser', '--port', String(PORT)], { cwd: ROOT, stdio: 'ignore' });
     started = true;
     for (let i = 0; i < 30; i++) {
       await new Promise(r => setTimeout(r, 200));
@@ -57,11 +60,17 @@ async function main() {
       else { console.error(`  \x1b[31m✗\x1b[0m ${path} 状态=${r.status} 内容校验=${okBody}`); errors++; }
     } catch (e) { console.error(`  \x1b[31m✗\x1b[0m ${path} 请求失败：${e.message}`); errors++; }
   }
-  finish(errors ? 1 : 0);
+  await finish(errors ? 1 : 0);
 }
 
-function finish(code) {
-  if (server && started) server.kill();
+async function finish(code) {
+  if (server && started && !server.killed) {
+    await new Promise(resolve => {
+      const timer = setTimeout(() => { try { server.kill('SIGKILL'); } catch {} resolve(); }, 2000);
+      server.once('exit', () => { clearTimeout(timer); resolve(); });
+      server.kill('SIGTERM');
+    });
+  }
   console.log(code ? '\n\x1b[31m冒烟测试失败\x1b[0m\n' : '\n\x1b[32m\x1b[1m冒烟测试通过 ✓\x1b[0m\n');
   process.exit(code);
 }

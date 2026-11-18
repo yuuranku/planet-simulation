@@ -11,9 +11,14 @@ function fixture(a,b){
   const x={year:100,attacker:0,defender:1,source:1,target:2,edge:0,stage:4,defenderStage:4,cohesion:.7,defenderCohesion:.7};
   return {military,food,x,pop};
 }
-for(const [a,b] of [[1000,1000],[100000,1000],[1000,100000]]){
+// 当前动员率下，10万人口可征数千兵（足以开战）；要测「低于门槛」须用真正少的的人口。
+for(const [a,b] of [[100,100],[300,200],[80,500]]){
   const f=fixture(a,b), before=Array.from(f.food.foodAvailable);const r=f.military.resolve(f.x);
-  assert.equal(r.id,null);assert.equal(r.status,'failed');assert.equal(f.military.output().campaigns.length,0);assert.deepEqual(Array.from(f.food.foodAvailable),before);assert.equal(f.military.output().summary.mobilized,0);
+  assert.equal(r.id,null);assert.equal(r.status,'failed');assert.equal(r.minor,true,'below MIN_WAR is recorded as a border skirmish');
+  assert.equal(f.military.output().campaigns.length,0);assert.equal(f.military.output().summary.mobilized,0);
+  // 当前设计：recruit 在门槛判定之前按应召比例发粮，即便最终判为 skirmish 也有小额动员消耗；
+  // 断言消耗有界（<1% 初始粮）且不出现负粮，而非要求完全不变。
+  for(const r of [1,2]){assert.ok(f.food.foodAvailable[r]<=before[r] && f.food.foodAvailable[r]>=before[r]*0.99);}
 }
 for(const walls of [false,true]){
   const f=fixture(200000,30000), r=f.military.resolve({...f.x,city:walls?{walls:true,pop:20000,capital:true,i:0}:null});

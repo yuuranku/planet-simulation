@@ -14,7 +14,7 @@
  *
  * 用法： node tools/check-city-sync.mjs
  */
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,8 +26,12 @@ const B = join(ROOT, 'site/citygen/assets');
 // 已知刻意分叉（citygen 为改良版）的文件
 const KNOWN_FORKS = new Set(['city-site.js', 'city-detail.js', 'city-map.js']);
 // 同名且应保持一致的文件
-const SHARED = ['city-character.js', 'city-era.js', 'city-layout-store.js', 'city-worker.js', 'atlas-interaction.js'];
-const ALL = [...SHARED, ...KNOWN_FORKS];
+const SHARED = new Set(['city-character.js', 'city-era.js', 'city-layout-store.js', 'city-worker.js', 'atlas-interaction.js']);
+// 扫描两侧目录取交集，避免硬编码名单导致新增文件漏检
+const jsOf = dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.js')) : [];
+const inA = jsOf(A), inB = jsOf(B);
+const ALL = [...new Set([...inA, ...inB])].sort();
+const REGISTERED = new Set([...SHARED, ...KNOWN_FORKS]);
 
 const md5 = p => createHash('md5').update(readFileSync(p)).digest('hex');
 const forked = p => (readFileSync(p, 'utf8').match(/星球推演/g) || []).length;
@@ -42,6 +46,12 @@ for (const f of ALL) {
   const pa = join(A, f), pb = join(B, f);
   if (!existsSync(pa) || !existsSync(pb)) {
     console.log(`  ${f.padEnd(24)}\x1b[33m缺失\x1b[0m`.padEnd(44) + '一侧文件不存在');
+    continue;
+  }
+  if (!REGISTERED.has(f)) {
+    unexpected++;
+    const where = inA.includes(f) && inB.includes(f) ? '两侧都有' : (inA.includes(f) ? '仅 city/' : '仅 citygen/');
+    console.log(`  ${f.padEnd(24)}\x1b[33m未登记\x1b[0m`.padEnd(44) + `${where}：新文件需人工确认分叉策略并登记到 KNOWN_FORKS/SHARED`);
     continue;
   }
   const same = md5(pa) === md5(pb);

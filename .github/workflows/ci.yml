@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: 构建与校验
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 版本一致性
+        run: npm run sync-version
+
+      - name: 构建发布产物
+        run: npm run build
+
+      - name: 全量校验（含测试）
+        run: npm run verify
+
+      - name: 冒烟测试
+        run: npm run smoke

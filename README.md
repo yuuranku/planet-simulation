@@ -1,6 +1,10 @@
 # 星球推演 · 世界生成器
 
-当前版本：**1.4.5.3**。在本机生成世界、探索地图并推演文明历史，Windows 和安卓共用 `site/` 的代码。
+> **来源与授权**：本项目是从 [yuuranku/planet-simulation](https://github.com/yuuranku/planet-simulation)（基线提交 `8257686`）导入的 fork，由 `sitong-zhang` 维护。本 fork 新增/改动的原创代码以 [MIT License](LICENSE) 授权；仓库内的第三方素材与预构建组件（城市模块、天体贴图、three.js、fast-png、fflate 等）按各自许可使用，不在 MIT 范围内，详见 [LICENSE](LICENSE) 与 `site/licenses/`。
+>
+> **上游同步**：本地已配置 `upstream` remote，可用 `git fetch upstream` 追踪上游更新；本 fork 的创新工作（发布工程、无缝地图）独立维护，合并上游改动前请先跑完整 `npm run verify`。
+
+当前版本：**1.4.6.0**。在本机生成世界、探索地图并推演文明历史，Windows 和安卓共用 `site/` 的代码。
 
 - 调整安卓安全区及手机布局：城市地图保留世界地图视野，历史地图的播放倍速可见。
 - 优化历史军报传递，降低打开历史地图时的数据复制压力。

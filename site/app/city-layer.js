@@ -27,15 +27,20 @@
   // 到达 L4 才请求完整 cityMap（昂贵），L3 先用轻量 urban 建成区轮廓过渡。
   const LOD = { URBAN: 16, CITY: 26, STREETS: 46, BUILDINGS: 90, TEXTURE: 240 };
   const MAX_REL = 900;                 // 主地图缩放上限：fitScale × 900 ≈ 街/建筑级
-  const CACHE_MAX = 12;                // 城市配方 LRU 容量（Windows；Android 见 cap()）
+  const CACHE_MAX = 8;                 // 城市配方 LRU 容量（Windows；Android 见 cap()）——单张位图约 7.8MB，8 张封顶控内存
   const PREFETCH = 4;                  // 接近阈值时预取的城市数
+  const MAX_CONCURRENCY = 2;           // 同时发往单线程 Worker 的 cityMap 上限，避免挤占 probe/route 等交互请求（B4）
+  const URBAN_TTL = 120000;            // 轻量建成区缓存 ttl（ms），过期淘汰，避免长时间探索内存不回落（B6）
 
-  // 分端配置：Android（窄屏/触摸）收紧细节上限与缓存，控制内存与帧率
+  // 分端配置：Android（窄屏/触摸）收紧细节上限与缓存，控制内存与帧率。
+  // px 按视口实际像素推导（≤视口长边 ×1.2），避免在小屏上仍申请 1400² 位图（B6）。
   function cap() {
     const phone = (typeof matchMedia === 'function' && matchMedia('(pointer:coarse)').matches) || (window.innerWidth < 700);
+    const viewportMax = Math.max(window.innerWidth || 1280, window.innerHeight || 720);
+    const px = Math.min(phone ? 900 : 1400, Math.max(640, Math.round(viewportMax * 1.2)));
     return phone
-      ? { maxRel: 520, buildings: false, texture: false, cache: 6, px: 900 }
-      : { maxRel: MAX_REL, buildings: true, texture: true, cache: CACHE_MAX, px: 1400 };
+      ? { maxRel: 520, buildings: false, texture: false, cache: 5, px }
+      : { maxRel: MAX_REL, buildings: true, texture: true, cache: CACHE_MAX, px };
   }
 
   // 城市地形底图边缘羽化：中心不透明、四周渐隐，消除矩形贴图与主地图地形的生硬接缝。
@@ -70,11 +75,22 @@
     this.app = null;
     this.enabled = true;
     this.fade = new Map();       // idx -> 0..1 淡入进度
+    this.gen = 0;                // 世界代际：换世界后递增，丢弃在飞的旧请求
+    this.stats = { requests: 0, hits: 0, misses: 0, failed: 0, totalMs: 0, discarded: 0 };
+    this.queue = [];             // 待发请求队列（idx 升序由调度填）
+    this.inflight = 0;           // 正在飞的请求数
   }
   const CL = CityLayer.prototype;
 
   CL.attach = function (app) { this.app = app; };
-  CL.detach = function () { this.cache.clear(); this.urban.clear(); this.req.clear(); this.fade.clear(); this._vis = null; this._visKey = null; };
+  // detach 时递增 gen：即使 in-flight promise 稍后返回，也会因 gen 不符被丢弃，
+  // 避免旧世界的城市配方按 idx 错配进新世界缓存（B2）。
+  CL.detach = function () {
+    this.gen++;
+    this.cache.clear(); this.urban.clear(); this.req.clear(); this.fade.clear();
+    this.queue.length = 0; this.inflight = 0;
+    this._vis = null; this._visKey = null;
+  };
   CL.maxRel = function () { return cap().maxRel; };
 
   // 全局开关：供图例/设置/调试使用
@@ -83,25 +99,61 @@
   // ---- 数据请求：轻量 urban（L3 建成区轮廓）----
   CL.requestUrban = function (idx) {
     if (!this.app || this.urban.has(idx) || this.urbanReq.has(idx)) return;
+    const gen = this.gen;
     this.urbanReq.add(idx);
+    this.stats.requests++;
     this.app.call('urban', { idx, detail: false }).then(m => {
       this.urbanReq.delete(idx);
+      if (gen !== this.gen) { this.stats.discarded++; return; } // 世界已切换，丢弃旧结果（B2）
       if (m && m.data) {
         this.urban.set(idx, { paths: this.urbanPaths(m.data), at: performance.now() });
-        while (this.urban.size > 160) this.urban.delete(this.urban.keys().next().value);
-        this.app.map.draw();
+        this.evictUrban();
+        if (this.app) this.app.map.draw();
       }
-    }, () => this.urbanReq.delete(idx));
+    }, err => {
+      this.urbanReq.delete(idx); this.stats.failed++;
+      if (typeof console !== 'undefined') console.warn('[CityLayer] urban 请求失败', idx, err); // B7
+    });
+  };
+
+  // urban 缓存淘汰：先按 TTL 清过期项，再按数量上限清最早项（B6）
+  CL.evictUrban = function () {
+    const now = performance.now();
+    for (const [idx, e] of this.urban) if (now - e.at > URBAN_TTL) this.urban.delete(idx);
+    const capN = cap().cache * 12;
+    while (this.urban.size > capN) this.urban.delete(this.urban.keys().next().value);
   };
 
   // ---- 数据请求：完整 cityMap（L4+ 城市配方）----
-  CL.requestCity = function (idx) {
+  // 请求走有界队列：单线程 Worker 同时最多 MAX_CONCURRENCY 个 cityMap，
+  // 避免放大时一次性发 8+4 个同步重活把 probe/route 等交互请求堵在后面（B4）。
+  CL.requestCity = function (idx, priority) {
     if (!this.app || this.cache.has(idx) || this.req.has(idx)) return;
-    this.req.add(idx);
+    if (this.queue.some(q => q.idx === idx)) return;
+    this.queue.push({ idx, priority: priority || 0 });
+    // 视口中心更近、更重要的优先（priority 越大越靠前）
+    this.queue.sort((a, b) => b.priority - a.priority);
+    this.pumpQueue();
+  };
+
+  CL.pumpQueue = function () {
+    while (this.inflight < MAX_CONCURRENCY && this.queue.length) {
+      const job = this.queue.shift();
+      if (this.cache.has(job.idx) || this.req.has(job.idx)) continue;
+      this.doCityRequest(job.idx);
+    }
+  };
+
+  CL.doCityRequest = function (idx) {
+    const gen = this.gen;
+    const started = performance.now();
+    this.req.add(idx); this.inflight++; this.stats.requests++;
     const px = cap().px;
     this.app.call('cityMap', { idx, px, extent: 'city' }).then(async m => {
-      this.req.delete(idx);
-      if (!m || !m.data) return;
+      this.req.delete(idx); this.inflight--;
+      if (gen !== this.gen) { this.stats.discarded++; this.pumpQueue(); return; } // B2
+      this.stats.totalMs += performance.now() - started;
+      if (!m || !m.data) { this.pumpQueue(); return; }
       const D = m.data;
       let bmp = null;
       try {
@@ -110,23 +162,49 @@
           if (window.createImageBitmap) bmp = await createImageBitmap(new ImageData(new Uint8ClampedArray(arr), D.w, D.h));
           else { const t = document.createElement('canvas'); t.width = D.w; t.height = D.h; t.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(arr), D.w, D.h), 0, 0); bmp = t; }
         }
-      } catch (e) { bmp = null; }
+      } catch (e) { bmp = null; if (typeof console !== 'undefined') console.warn('[CityLayer] 位图解码失败', idx, e); }
+      if (gen !== this.gen) { this.stats.discarded++; this.pumpQueue(); return; }
       if (bmp) bmp = feather(bmp, D.w, D.h);
       this.cache.set(idx, { data: D, bmp, paths: null, at: performance.now() });
       this.fade.set(idx, 0);
-      const max = cap().cache;
-      while (this.cache.size > max) { const old = this.cache.keys().next().value; this.cache.delete(old); this.fade.delete(old); }
-      this.app.map.draw();
-      // 淡入动画
-      const start = performance.now();
-      const tick = () => {
-        const f = Math.min(1, (performance.now() - start) / 260);
+      this.evictCache();
+      this.startFade();
+      this.pumpQueue();
+    }, err => {
+      this.req.delete(idx); this.inflight--; this.stats.failed++;
+      if (typeof console !== 'undefined') console.warn('[CityLayer] cityMap 请求失败', idx, err); // B7
+      this.pumpQueue();
+    });
+  };
+
+  // LRU 淘汰：capacity 按 cap()；被淘汰的城市同时清淡入态（B3）
+  CL.evictCache = function () {
+    const max = cap().cache;
+    while (this.cache.size > max) {
+      const old = this.cache.keys().next().value;
+      this.cache.delete(old); this.fade.delete(old);
+    }
+  };
+
+  // 统一淡入 ticker：所有正在淡入的城市共享一个 rAF 循环（B5），缩短到 160ms，
+  // 避免「每个城市各起一条 rAF + 每帧全量重绘」，多城同时到达时只重绘一次/帧。
+  CL.startFade = function () {
+    if (this._fading) return;
+    this._fading = true;
+    const step = () => {
+      if (!this.app || !this.fade.size) { this._fading = false; return; }
+      let active = false;
+      for (const [idx, f0] of this.fade) {
+        if (f0 >= 1) continue;
+        const f = Math.min(1, f0 + 1 / 10); // ~160ms @60fps
         this.fade.set(idx, f);
-        if (this.app) this.app.map.draw();
-        if (f < 1) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }, () => this.req.delete(idx));
+        if (f < 1) active = true;
+      }
+      this.app.map.draw();
+      if (active) requestAnimationFrame(step);
+      else this._fading = false;
+    };
+    requestAnimationFrame(step);
   };
 
   // ---- 可见城市：视口中心附近、按重要性排序；含世界副本环绕 ----
@@ -163,12 +241,14 @@
 
     // 调度：L3 请求轻量建成区；L4+ 请求完整配方；接近阈值时预取
     const wantCity = rel >= LOD.CITY;
+    // 优先级 = 重要性/距离分数：视口中心附近的大城市先取，预取的靠后（B4）。
+    const prio = o => o.sig / (1 + o.dist * o.dist);
     for (let n = 0; n < Math.min(near.length, 8); n++) {
       const o = near[n];
-      if (wantCity) this.requestCity(o.i);
+      if (wantCity) this.requestCity(o.i, 100 + prio(o));
       else this.requestUrban(o.i);
     }
-    if (wantCity) for (let n = 0; n < Math.min(near.length, PREFETCH); n++) this.requestCity(near[n].i);
+    if (wantCity) for (let n = 0; n < Math.min(near.length, PREFETCH); n++) this.requestCity(near[n].i, prio(near[n]));
 
     // 绘制：先画建成区轮廓（过渡），再在高缩放画完整配方
     if (rel < LOD.CITY) { this.drawUrbanLayer(map, zr); return; }
@@ -228,6 +308,8 @@
       const U = D.urban;
       const U0 = D.x0, U1 = D.x0 + D.w * D.s, V0 = D.y0, V1 = D.y0 + D.h * D.s;
       const fade = this.fade.has(idx) ? this.fade.get(idx) : 1;
+      // B3（真 LRU）：本帧访问到该城市，把它移到 Map 末尾（最近使用），淘汰时 keys().next() 才是真正最久未用的。
+      this.cache.delete(idx); this.cache.set(idx, e);
       // 缓存 Path2D（世界网格坐标，与副本 k 无关，只需构建一次）
       if (!e.paths) {
         try {
@@ -239,9 +321,14 @@
           const wall = U.wall ? pathOf(U.wall, true) : null;
           const rivers = (D.rivers || []).map(r => { const p = new Path2D(); p.moveTo(r[0], r[1]); for (let i = 3; i < r.length; i += 3) p.lineTo(r[i], r[i + 1]); return p; });
           const roads = {}; for (const cls of ['local', 'regional', 'trunk']) { const p = new Path2D(); for (const l of (D.roads[cls] || [])) p.addPath(pathOf(l)); roads[cls] = p; }
-          const buildings = showB && U.buildings ? [0, 1, 2, 3, 4].map(t => quads(U.buildings, q => U.bTone[q] === t)) : null;
-          e.paths = { fill, parks, lanes, minor, art, wall, rivers, roads, buildings };
-        } catch (err) { e.paths = {}; }
+          // B1：建筑路径单独缓存，不随首次进入时的 LOD 固化。低 LOD 先画其它层，
+          // 放大到 BUILDINGS 时再按需构建 e.buildings，之后一直复用。
+          e.paths = { fill, parks, lanes, minor, art, wall, rivers, roads };
+        } catch (err) { e.paths = {}; if (typeof console !== 'undefined') console.warn('[CityLayer] 路径构建失败', idx, err); }
+      }
+      if (showB && U.buildings && !e.buildings) {
+        try { e.buildings = [0, 1, 2, 3, 4].map(t => quads(U.buildings, q => U.bTone[q] === t)); }
+        catch (err) { e.buildings = []; if (typeof console !== 'undefined') console.warn('[CityLayer] 建筑路径构建失败', idx, err); }
       }
       const P = e.paths;
 
@@ -261,7 +348,7 @@
           c.save(); if (P.fill) c.clip(P.fill, 'evenodd');
           if (P.parks) { c.fillStyle = ST.park; c.fill(P.parks); }
           if (showLanes && P.lanes) { c.strokeStyle = ST.street; c.lineWidth = w(1.2); c.stroke(P.lanes); }
-          if (P.buildings) { const pal = ['#c37d6c', '#a85a4b', '#c99586', '#9e3328', '#6b4aa0']; for (let t = 0; t < pal.length; t++) { c.fillStyle = pal[t]; c.fill(P.buildings[t]); } }
+          if (showB && e.buildings) { const pal = ['#c37d6c', '#a85a4b', '#c99586', '#9e3328', '#6b4aa0']; for (let t = 0; t < pal.length; t++) { if (e.buildings[t]) { c.fillStyle = pal[t]; c.fill(e.buildings[t]); } } }
           c.restore();
           c.strokeStyle = ST.edge; c.lineWidth = w(0.9); c.stroke(P.fill);
         }

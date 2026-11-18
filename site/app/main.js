@@ -134,7 +134,7 @@
   let worker = null, seq = 0;
   const pending = new Map(), strips = new Map();
   function startWorker() {
-    worker = new Worker('core/worker.js?build=20261108e');
+    worker = new Worker('core/worker.js?build=20261118a');
     worker.onmessage = e => onMsg(e.data);
     worker.onerror = e => {
       const error = new Error('推演线程失败：' + e.message);
@@ -365,7 +365,7 @@
   // ---------- 地图 / 球体 ----------
   const map = new G.MapView($('map'), app); app.map = map;
   // 无缝地图：城市细节层挂到 app（共享 app.call / app.map），实例供 setData 清缓存
-  if (G.CityLayer) { G.CityLayer._i = new G.CityLayer(); G.CityLayer._i.attach(app); }
+  if (G.CityLayer) { const cl = new G.CityLayer(); cl.attach(app); app.map.cityLayer = cl; G.CityLayer._i = cl; }
   app.onTexture = (img) => {
     const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
     const x = c.getContext('2d'); x.drawImage(img, 0, 0);

@@ -33,6 +33,9 @@ for (const f of ['site/index.html', 'windows/server.py', 'android/build.gradle',
 head('版本一致性');
 if (gradle.includes(`versionName '${v.version}'`)) ok('build.gradle 版本一致'); else fail('build.gradle 版本与 version.json 不一致（运行 npm run sync-version）');
 if (gradle.includes(`versionCode ${v.versionCode}`)) ok('build.gradle versionCode 一致'); else fail('build.gradle versionCode 不一致');
+const manifest = read('android/AndroidManifest.xml');
+if (manifest.includes(`android:versionName="${v.version}"`)) ok('AndroidManifest versionName 一致'); else fail('AndroidManifest versionName 与 version.json 不一致（运行 npm run sync-version）');
+if (manifest.includes(`android:versionCode="${v.versionCode}"`)) ok('AndroidManifest versionCode 一致'); else fail('AndroidManifest versionCode 不一致');
 if (read('README.md').includes(`当前版本：**${v.version}**`)) ok('README 版本一致'); else fail('README 版本不一致');
 if (read('site/index.html').includes(`世界生成器 ${v.version}`)) ok('index.html 页脚版本一致'); else fail('index.html 页脚版本不一致');
 

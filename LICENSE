@@ -33,3 +33,8 @@ tools/、无缝地图 city-layer.js 与 wgs.js、相关测试与文档等）。
 fflate 依赖等）按各自附带的许可或声明使用，不在上述 MIT 授权范围内。详见
 site/licenses/、site/globe/ 与 android/assets/licenses/。若上游对这些内容另有
 授权限制，以原始权利人的条款为准。
+
+上游本体源码与算法（从 yuuranku/planet-simulation 继承的 site/core/、site/app/
+等原有代码）的授权条款尚未由上游指定，本 fork 无权替上游授予。因此上述 MIT
+许可不构成对整个仓库的商用或再分发授权：如需商业使用或对外再分发，须另行联系
+上游权利人取得授权，并满足各第三方组件的许可要求。本声明不构成对授权状态的担保。

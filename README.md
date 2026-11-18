@@ -87,4 +87,14 @@ npm run release:android  # 定位 release APK，打印签名/校验/冒烟清单
 - `version.json`：版本号与缓存串的单一来源。
 - `dist/`、`release/`：构建产物与发布包（生成物，不入版本库）。
 
-第三方素材和组件按各自附带的许可或声明使用，见 `site/licenses/`、`site/globe/` 和 `android/assets/licenses/`。项目其余源码的授权条款尚未指定。
+### 授权链说明（商用 / 再分发前必读）
+
+本仓库的授权分三层，**不可混为一谈**：
+
+| 层次 | 范围 | 授权 |
+|---|---|---|
+| 本 fork 原创/改动代码 | `tools/`、`site/core/wgs.js`、`site/app/city-layer.js`、相关测试与文档等 | [MIT License](LICENSE) |
+| 上游本体源码与算法 | 从 `yuuranku/planet-simulation` 继承的 `site/core/`、`site/app/` 等原有代码 | **上游未指定授权条款**，本 fork 无权替上游授予 |
+| 第三方素材与组件 | 城市模块、天体贴图、three.js、fast-png、fflate 等 | 按各自附带的许可使用，见 `site/licenses/`、`site/globe/`、`android/assets/licenses/` |
+
+**结论**：MIT 仅覆盖本 fork 新增/改动的原创代码，不覆盖上游本体，也不覆盖第三方组件。由于**上游本体授权仍为空白**，本仓库整体**不构成可自由商用或再分发的完整授权**——若用于商业用途或对外再分发，需自行联系上游权利人 `yuuranku` 取得授权，并逐一满足第三方组件许可。仓库内的 MIT 声明不构成对上述内容授权状态的担保。

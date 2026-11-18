@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
  * 版本同步脚本：把 version.json 作为唯一事实来源，同步到所有散落位置。
- *   - android/build.gradle  : versionName / versionCode
- *   - README.md             : 顶部「当前版本」
- *   - site/index.html       : 页脚「世界生成器 x.y.z」
+ *   - android/build.gradle     : versionName / versionCode
+ *   - android/AndroidManifest.xml : android:versionCode / android:versionName（兼容旧工具链读取）
+ *   - README.md                : 顶部「当前版本」
+ *   - site/index.html          : 页脚「世界生成器 x.y.z」
  * 用法： node tools/sync-version.mjs
  */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -25,6 +26,9 @@ console.log(`\x1b[1m同步版本 ${v.version} (code ${v.versionCode})\x1b[0m`);
 sync('android/build.gradle', s => s
   .replace(/versionCode\s+\d+/, `versionCode ${v.versionCode}`)
   .replace(/versionName\s+'[^']*'/, `versionName '${v.version}'`));
+sync('android/AndroidManifest.xml', s => s
+  .replace(/android:versionCode="\d+"/, `android:versionCode="${v.versionCode}"`)
+  .replace(/android:versionName="[^"]*"/, `android:versionName="${v.version}"`));
 sync('README.md', s => s.replace(/当前版本：\*\*[^*]+\*\*/, `当前版本：**${v.version}**`));
 sync('site/index.html', s => s.replace(/世界生成器\s+\d+(?:\.\d+)*/, `世界生成器 ${v.version}`));
 console.log(changed ? `\n\x1b[32m完成：更新了 ${changed} 个文件\x1b[0m\n` : '\n\x1b[32m无需变更\x1b[0m\n');

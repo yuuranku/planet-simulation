@@ -10,10 +10,26 @@
  * 见 core/citysite.js 的 coordinateSpace 标注）——这正是 P0 统一坐标层 WGS 的结论。
  * 本模块只读数据、不改任何生成算法；关闭时主地图行为与旧版完全一致。
  *
+ * 所有「网格 ↔ 公里」换算一律走 core/wgs.js 的统一坐标层 G.WGS，不再内联 2πR/W：
+ *   - 唯一接入点是 G.WGS.recipeSpace(city, world)，其 cellKm 即 colKmRaw(2πR/W)；
+ *   - worldRadius / urbanPaths 的 cellKm 均从该接入点取得，不再各自内联公式。
+ * wgs.js 在本模块之前加载（见 index.html / worker.js），故此处取用是硬依赖、有契约测试守护。
+ *
  * 能力：单一相机渲染 / LOD 调度 / LRU 缓存 / 请求去重 / 预取 / 淡入 / 分端配置。
  */
 (function (G) {
   'use strict';
+
+  // P0 统一坐标层：模块加载即解析，缺失时快速失败而非静默回退到内联公式。
+  const WGS = G.WGS;
+  if (!WGS || typeof WGS.colKmRaw !== 'function' || typeof WGS.recipeSpace !== 'function') {
+    throw new Error('[CityLayer] 依赖 core/wgs.js 的统一坐标层 G.WGS，请先加载 wgs.js');
+  }
+  // 城市配方空间的唯一接入点：P0 的 recipeSpace() 同时给出 cellKm / kx / ky / 经纬度。
+  // 传一个占位中心（仅取与纬度无关的赤道 cellKm/kx/ky），避免任何内联 2πR/W。
+  const spaceOf = (W, H, R) => WGS.recipeSpace({ x: 0, y: H / 2 }, { W, H, R });
+  // 赤道每网格单元公里数，本模块唯一的 cellKm 来源，经 recipeSpace 取得。
+  const cellKmOf = (W, H, R) => spaceOf(W, H, R).cellKm;
 
   const ST = {
     fill: 'rgba(214,150,132,.93)', fillOld: 'rgba(196,124,108,.95)', edge: 'rgba(132,70,58,.9)',
@@ -260,7 +276,7 @@
     const era = map.d.stats.era, dens = era === 'industrial' ? 3450 : 3200;
     const td = { metropolis: 0.82, city: 0.98, town: 1.18, site: 0.76 }[ct.tier] || 1;
     const A = Math.max(0.12, (ct.pop || 1000) / (dens * td) * (era === 'industrial' ? 1.25 : 1));
-    const rKm = Math.sqrt(A / Math.PI), cellKm = 2 * Math.PI * map.d.cfg.radius / map.W;
+    const rKm = Math.sqrt(A / Math.PI), cellKm = cellKmOf(map.W, map.H, map.d.cfg.radius);
     return rKm / cellKm * 4.5;
   };
 
@@ -269,7 +285,8 @@
     const fill = P(), minor = P(), art = P(), wall = P(), ring = P(), parks = P();
     (g.rings || []).forEach(r => add(fill, r, true)); (g.minor || []).forEach(l => add(minor, l)); (g.arterials || []).forEach(l => add(art, l));
     add(wall, g.wall, true); add(ring, g.ring, true); (g.parks || []).forEach(r => add(parks, r, true));
-    return { fill, minor, art, wall, ring, parks, hasWall: !!g.wall, hasRing: !!g.ring, spacing: g.spacing, cellKm: 2 * Math.PI * this.app.map.d.cfg.radius / this.app.map.W };
+    const map = this.app.map;
+    return { fill, minor, art, wall, ring, parks, hasWall: !!g.wall, hasRing: !!g.ring, spacing: g.spacing, cellKm: cellKmOf(map.W, map.H, map.d.cfg.radius) };
   };
 
   // L3：轻量建成区（复用 map.js 里那套 URB 风格，升级为可调用）

@@ -1,21 +1,10 @@
 {
   "name": "planet-simulation",
   "private": true,
-  "license": "MIT",
   "scripts": {
-    "build": "node tools/build.mjs",
     "build:globe": "esbuild site/globe-src/entry.js --bundle --minify --format=esm --outfile=site/globe/globe-bundle.js",
     "build:world-package": "esbuild site/app/world-package-src.js --bundle --minify --format=iife --global-name=WorldPackage --outfile=site/app/world-package.js",
-    "build:png-decoder": "esbuild site/app/png-decoder-src.js --bundle --minify --format=iife --global-name=PngDecoder --outfile=site/app/png-decoder.js",
-    "sync-version": "node tools/sync-version.mjs",
-    "test": "node tools/run-tests.mjs",
-    "test:wgs": "node --test tests/wgs.test.cjs",
-    "test:city-layer": "node --test tests/city-layer.test.cjs",
-    "verify": "node tools/verify.mjs",
-    "check:city": "node tools/check-city-sync.mjs",
-    "package:windows": "node tools/package-windows.mjs",
-    "release:android": "node tools/android-release.mjs",
-    "smoke": "node tools/smoke-test.mjs"
+    "build:png-decoder": "esbuild site/app/png-decoder-src.js --bundle --minify --format=iife --global-name=PngDecoder --outfile=site/app/png-decoder.js"
   },
   "dependencies": {
     "fast-png": "8.0.0",
@@ -23,7 +12,6 @@
     "three": "0.186.1"
   },
   "devDependencies": {
-    "esbuild": "0.25.12",
-    "playwright-core": "1.49.1"
+    "esbuild": "0.25.12"
   }
 }

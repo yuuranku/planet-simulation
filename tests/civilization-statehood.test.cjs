@@ -16,7 +16,7 @@ function history({ known = false, seed = 1, end = 500, arrivals = 200, unknownNe
   }
   G.HistoryCities = { reference: i => `[city:${i}]`, resolveEvent() {} };
   const nn = regions + 1;
-  const R = { nR: regions, area: new Float64Array(nn).fill(100), center: new Int32Array(nn), cx: Float64Array.from({length:nn},(_,r)=>r?1+(r-1)*.01:0), cy: Float64Array.from({length:nn},(_,r)=>r?1:0), weight: Float64Array.from({length:nn},(_,r)=>r?1/regions:0), pot: Float64Array.from({length:nn},(_,r)=>r?1:0), T: new Float64Array(nn).fill(20), pasture: new Float32Array(nn), arid: new Float32Array(nn), semiArid: new Float32Array(nn), river: new Uint8Array(nn), coast: new Uint8Array(nn), frontier: new Float32Array(nn), newW: new Float32Array(nn), landComp: new Int32Array(nn), zoneOfRegion: new Int32Array(nn), country: new Int16Array(nn).fill(-1), prov: new Int16Array(nn).fill(-1), civ: Int16Array.from({length:nn},(_,r)=>r&&known&&(!unknownNeighbor||r===1)?0:-1), rel: new Int16Array(nn).fill(-1), off: Uint32Array.from([0, 0, 1, 2]), nbr: Int32Array.from([2, 1]), eid: Int32Array.from([0, 0]), edges: [{ a: 1, b: 2, km: 24, rough: 0, river: 0, sea: 0 }] };
+  const R = { nR: regions, area: new Float64Array(nn).fill(100), center: new Int32Array(nn), cx: Float64Array.from({length:nn},(_,r)=>r?1+(r-1)*.01:0), cy: Float64Array.from({length:nn},(_,r)=>r?1:0), weight: Float64Array.from({length:nn},(_,r)=>r?1/regions:0), pot: Float64Array.from({length:nn},(_,r)=>r?1:0), T: new Float64Array(nn).fill(20), pasture: new Float32Array(nn), arid: new Float32Array(nn), semiArid: new Float32Array(nn), river: new Uint8Array(nn), coast: new Uint8Array(nn), newW: new Float32Array(nn), landComp: new Int32Array(nn), zoneOfRegion: new Int32Array(nn), country: new Int16Array(nn).fill(-1), prov: new Int16Array(nn).fill(-1), civ: Int16Array.from({length:nn},(_,r)=>r&&known&&(!unknownNeighbor||r===1)?0:-1), rel: new Int16Array(nn).fill(-1), off: Uint32Array.from([0, 0, 1, 2]), nbr: Int32Array.from([2, 1]), eid: Int32Array.from([0, 0]), edges: [{ a: 1, b: 2, km: 24, rough: 0, river: 0, sea: 0 }] };
   const off=[0,0],nbr=[],eid=[],edges=[];
   if(event==='limited-crisis')for(let r=1;r<=regions;r++)R.cx[r]=r*.3;
   for(let r=1;r<regions;r++)edges.push({a:r,b:r+1,km:24,rough:0,river:0,sea:0});
@@ -24,7 +24,7 @@ function history({ known = false, seed = 1, end = 500, arrivals = 200, unknownNe
   Object.assign(R,{off:Uint32Array.from(off),nbr:Int32Array.from(nbr),eid:Int32Array.from(eid),edges});
   const Y = new Float64Array(nn * 9).fill(1e9);
   for (let s = 1; s <= 3; s++) for (let r = 1; r <= regions; r++) Y[s * nn + r] = 0;
-  const D = { NN: nn, E: end, Y, cradles: [], ancient: [], ancientOf: new Int16Array(nn).fill(-1), ancientEnd: new Float64Array(nn), civArr: new Float64Array(nn).fill(arrivals), finalStage: new Int8Array(nn).fill(9), eraStep: 25, eraAt: new Uint8Array(Math.ceil(end / 25) + 2), civType: ['agrarian'], relFounded: [], relOrigin: [], IDEAS: [], ideaA: new Float64Array(), NAV: -1, usedNames: new Set() };
+  const D = { NN: nn, E: end, Y, cradles: [], ancient: [], ancientOf: new Int16Array(nn).fill(-1), ancientEnd: new Float64Array(nn), civArr: new Float64Array(nn).fill(arrivals), civType: ['agrarian'], relFounded: [], relOrigin: [], IDEAS: [], ideaA: new Float64Array(), NAV: -1, usedNames: new Set() };
   R.Heap = G.HistoryRegions.Heap; R.regionOf = Int32Array.from([1]);
   const A = { id: 'a', t: { monarchy: ['甲制'] }, n: { states: ['甲'], cities: ['甲城'], provinces: ['甲省'] }, c: { roots: ['甲'], prefixes: ['新'], suffixes: ['地'] } };
   const h = { seed, W: 10, H: 5, R: 6400, popTotal: 10000, civLib: [A], speciesLibraries: [G.HumanRules.SPECIES[0]], settlements: [{ cell: 0, pop: 1000, name: '未来城' }] };
@@ -137,10 +137,7 @@ test('the requested country target constrains actual historical ownership and fi
       const time=changes[i][0];
       while(i<changes.length&&changes[i][0]===time){const [,region,next]=changes[i++],old=owners[region];if(old>=0){sizes.set(old,sizes.get(old)-1);if(!sizes.get(old))sizes.delete(old);}owners[region]=next;if(next>=0)sizes.set(next,(sizes.get(next)||0)+1);}
       const actors=new Set([...sizes.keys()].map(id=>{const q=out.polities[id];if(q.rtype && time>=q.rebelSince && (q.rebelUntil===null || time<q.rebelUntil)){const targets=q.rebelTargets.filter(x=>x[0]<=time);return targets.length?targets.at(-1)[1]:id;}return id;}));
-      // 当前设计：收束期以前不按国家数量设限（城邦林立、诸侯割据顺其自然），
-      // 只有运算安全上限 FREE_CAP = max(round(target*2.5), target+40)，终局才收束到 target。
-      const freeCap=Math.max(Math.round(targetCountries*2.5),targetCountries+40);
-      assert.ok(actors.size<=freeCap+5,`history at ${time} has ${actors.size} actors, safety cap ${freeCap}, target ${targetCountries}`);
+      assert.ok(actors.size<=upper+3,`history at ${time} has ${actors.size} countries, target ${targetCountries}`);
     }
     finalCounts.push(out.end.countries.length);
   }
@@ -166,8 +163,7 @@ test('a revolt can occur at the country limit without creating an independent co
   assert.equal(r.after,r.before+1,'a rebel actor is created');
   assert.notEqual(r.owner[2],r.parent,'the rebel temporarily controls the region');
   assert.deepEqual(r.rebel,{rebel:true,target:r.parent},'the rebel belongs to its targeted state');
-  // 收束期前 slots 为 FREE_CAP（非0）；关键是起义不额外消耗名额：slotsAfter === slotsBefore。
-  assert.equal(r.slotsAfter,r.slotsBefore,'the rebel does not consume a separate country slot');
+  assert.equal(r.slotsBefore,0);assert.equal(r.slotsAfter,0,'the rebel does not consume a separate country slot');
   assert.ok(r.events.some(e=>e.kind==='revolt'),'the revolt is recorded');
   assert.ok(r.lastRevolt>=100);
   assert.ok(r.calmUntil[2]>r.lastRevolt);
@@ -176,9 +172,7 @@ test('a revolt can occur at the country limit without creating an independent co
 test('a state can still undergo a change of dynasty during a crisis when the target is full',()=>{
   const r=history({known:true,arrivals:0,regions:6,event:'limited-crisis',targetCountries:1});
   assert.ok(r.after>r.before,'a new dynasty is created');
-  // 危机可造成 split：新政权接管部分地区，旧政权可能仍保有其核心，故不要求全部地区易主。
-  assert.ok(r.owner.slice(1).some(id=>id!==r.parent) && r.owner.slice(1).includes(r.parent),
-    'crisis creates a successor that takes some territory while the old core may remain');
+  assert.ok(r.owner.slice(1).every(id=>id!==r.parent));
 });
 
 test('an 80-country target stays within 70–90 without a sudden terminal collapse',()=>{
@@ -195,8 +189,6 @@ test('an 80-country target stays within 70–90 without a sudden terminal collap
     };
     const before=countAt(950),final=out.end.countries.length;
     assert.ok(final>=70&&final<=90,`seed ${seed}: requested 80 ± 10, got ${final}`);
-    // 当前设计在收束末段把国家数平滑收敛到目标，收束前的宽松态可能明显多于目标；
-    // 因此不再要求「最后50年跌幅≤10」，改为要求终局稳定、相对收束前不出现清零式崩塌。
-    assert.ok(final>0 && final>=before*0.5,`seed ${seed}: terminal collapse from ${before} to ${final}`);
+    assert.ok(before-final<=10,`seed ${seed}: last 50 years fell from ${before} to ${final}`);
   }
 });
